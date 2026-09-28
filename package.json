@@ -1,0 +1,15 @@
+{
+  "name": "delve",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Self-hosted dungeon map editor controlled through an API",
+  "scripts": {
+    "build": "sh scripts/build-release.sh",
+    "release": "npm run build && sudo /usr/local/sbin/delve-release",
+    "rollback": "sudo /usr/local/sbin/delve-release --rollback"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

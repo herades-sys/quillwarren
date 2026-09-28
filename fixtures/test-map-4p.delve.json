@@ -1,0 +1,36 @@
+{
+  "format": "delve.map",
+  "version": 1,
+  "id": "map_test4p",
+  "name": "Test dungeon (4 players)",
+  "grid": { "type": "square", "unit": "5 ft", "bounds": [0, 0, 20, 32] },
+  "style": { "preset": "classic-hatching" },
+  "seed": 4721,
+  "objects": [
+    { "id": "r1", "type": "room", "shape": { "rect": [7, 25, 6, 6] },  "label": "1", "name": "Entrance hall" },
+    { "id": "r2", "type": "room", "shape": { "rect": [6, 15, 8, 6] },  "label": "2", "name": "Crossroads" },
+    { "id": "r3", "type": "room", "shape": { "rect": [0, 13, 4, 8] },  "label": "3", "name": "Barracks" },
+    { "id": "r4", "type": "room", "shape": { "rect": [16, 14, 4, 6] }, "label": "4", "name": "Storeroom" },
+    { "id": "r5", "type": "room", "shape": { "rect": [4, 1, 12, 10] }, "label": "5", "name": "Boss chamber",
+      "notes": "Cult leader + 4 acolytes. Pillars give half cover." },
+    { "id": "r6", "type": "room", "shape": { "rect": [17, 3, 3, 5] },  "label": "6", "name": "Vault" },
+
+    { "id": "c1", "type": "corridor", "from": "r1", "to": "r2", "width": 2, "path": [[10, 25], [10, 21]] },
+    { "id": "c2", "type": "corridor", "from": "r2", "to": "r3", "width": 2, "path": [[6, 18], [4, 18]] },
+    { "id": "c3", "type": "corridor", "from": "r2", "to": "r4", "width": 2, "path": [[14, 18], [16, 18]] },
+    { "id": "c4", "type": "corridor", "from": "r2", "to": "r5", "width": 2, "path": [[10, 15], [10, 11]] },
+    { "id": "c5", "type": "corridor", "from": "r5", "to": "r6", "width": 1, "path": [[16, 5.5], [17, 5.5]] },
+
+    { "id": "p1", "type": "cutout", "shape": { "rect": [6, 3, 1, 1] },  "name": "Pillar" },
+    { "id": "p2", "type": "cutout", "shape": { "rect": [13, 3, 1, 1] }, "name": "Pillar" },
+    { "id": "p3", "type": "cutout", "shape": { "rect": [6, 8, 1, 1] },  "name": "Pillar" },
+    { "id": "p4", "type": "cutout", "shape": { "rect": [13, 8, 1, 1] }, "name": "Pillar" },
+
+    { "id": "d1", "type": "door", "at": [9, 25],  "along": "x", "width": 2, "style": "normal" },
+    { "id": "d2", "type": "door", "at": [4, 17],  "along": "y", "width": 2, "style": "normal" },
+    { "id": "d3", "type": "door", "at": [16, 17], "along": "y", "width": 2, "style": "normal" },
+    { "id": "d4", "type": "door", "at": [9, 11],  "along": "x", "width": 2, "style": "normal" },
+    { "id": "d5", "type": "door", "at": [9, 31],  "along": "x", "width": 2, "style": "normal" },
+    { "id": "d6", "type": "door", "at": [16, 5],  "along": "y", "width": 1, "style": "secret" }
+  ]
+}
