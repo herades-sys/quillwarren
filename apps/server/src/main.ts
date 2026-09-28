@@ -21,9 +21,15 @@ const dataDir = process.env.DELVE_DATA || './data';
 mkdirSync(dataDir, { recursive: true });
 const store = new MapStore(join(dataDir, 'delve.db'));
 const token = process.env.DELVE_API_TOKEN || undefined;
+const passwordHash = process.env.DELVE_EDIT_PASSWORD_HASH || undefined;
+const openEdit = process.env.DELVE_INSECURE_OPEN_EDIT === '1';
 
-const app = buildApp({ version: readVersion(), started: new Date().toISOString() }, { logger: true, store, token });
+const app = buildApp(
+  { version: readVersion(), started: new Date().toISOString() },
+  { logger: true, store, token, passwordHash, openEdit },
+);
 if (!token) app.log.warn('DELVE_API_TOKEN is not set: the API is read-only');
+if (!passwordHash && !openEdit) app.log.info('no editor password set (run delve-passwd): the browser editor is read-only');
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {

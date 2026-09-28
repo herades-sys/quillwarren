@@ -1,23 +1,26 @@
-// Live map viewer. Renders with @delve/core in the browser, follows every
-// change over the WebSocket, and pans to whatever Claude focuses on.
-// Read-only: it never needs the API token.
-import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type View } from '@delve/core';
+// Live map viewer, and host for the editor. Renders with @delve/core in the
+// browser, follows every change over the WebSocket, and pans to whatever
+// Claude focuses on. Viewing never needs a login; editing does.
+import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
+import { SVG_NS } from './ctx.ts';
+import { initEditor } from './editor.ts';
 import { ago, changedIds, countOps, easeInOut, lerpBounds, objectBounds, pad, unionBounds, zoomAt } from './logic.ts';
 
 interface Initial {
   id: string;
   rev: number;
   map: DelveMap;
+  edit: { loggedIn: boolean; passwordSet: boolean };
 }
 type Incoming =
   | { type: 'hello'; rev: number; map: DelveMap }
   | { type: 'ops'; rev: number; by: string; kind: string; ops: Op[] }
   | { type: 'focus'; ids: string[]; by: string }
   | { type: 'deleted' }
-  | { type: 'error'; error: string }
+  | { type: 'ack'; rev: number; ref?: number }
+  | { type: 'error'; error: string; ref?: number }
   | { type: 'pong' };
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const initial = JSON.parse($('delve-initial').textContent ?? '{}') as Initial;
@@ -29,13 +32,15 @@ let view: View = params.get('view') === 'players' ? 'players' : 'gm';
 let styleOverride = params.get('style') && PRESETS[params.get('style')!] ? params.get('style') : null;
 
 const stage = $<HTMLDivElement>('stage'); // takes the pointer input
-const canvas = $<HTMLDivElement>('canvas'); // holds the SVG, replaced on every render
+const canvas = $<HTMLDivElement>('canvas'); // holds the map SVG, replaced on every render
+const overlay = document.getElementById('overlay') as unknown as SVGSVGElement; // highlights and editor marks
 const ui = {
   name: $('map-name'),
   rev: $('map-rev'),
   dot: $('conn-dot'),
   conn: $('conn-text'),
   activity: $('activity'),
+  toast: $('toast'),
   style: $<HTMLSelectElement>('style-select'),
   png: $<HTMLAnchorElement>('png-link'),
   fit: $<HTMLButtonElement>('fit'),
@@ -48,14 +53,16 @@ let vb: Bounds | null = null;
 let userMoved = false;
 let lastChange: { at: number; text: string } | null = null;
 const highlights: { b: Bounds; until: number; kind: 'focus' | 'change' }[] = [];
+const renderHooks: (() => void)[] = [];
+const viewHooks: (() => void)[] = [];
+const handled = new WeakSet<Event>();
 
 // ---------- drawing ----------
 
 function render(): void {
   const m = styleOverride ? { ...map, style: { ...map.style, preset: styleOverride } } : map;
   const scene = buildScene(m, { view });
-  const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '';
-  stage.style.background = bg;
+  stage.style.background = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '';
   canvas.innerHTML = sceneToSvg(scene, { ppg: 20 });
   svg = canvas.querySelector('svg');
   if (!svg) return;
@@ -65,19 +72,21 @@ function render(): void {
   bounds = scene.bounds;
   if (!vb || !userMoved) vb = { ...bounds };
   applyViewBox();
-  drawHighlights();
   updateChrome();
+  renderHooks.forEach((f) => f());
 }
 
 function applyViewBox(): void {
-  if (!svg || !vb) return;
-  svg.setAttribute('viewBox', `${vb.x0} ${vb.y0} ${vb.x1 - vb.x0} ${vb.y1 - vb.y0}`);
+  if (!vb) return;
+  const box = `${vb.x0} ${vb.y0} ${vb.x1 - vb.x0} ${vb.y1 - vb.y0}`;
+  svg?.setAttribute('viewBox', box);
+  overlay.setAttribute('viewBox', box);
+  viewHooks.forEach((f) => f());
 }
 
 let highlightTimer: number | undefined;
 function drawHighlights(): void {
-  if (!svg) return;
-  svg.querySelector('g.hl')?.remove();
+  overlay.querySelector('g.hl')?.remove();
   const now = performance.now();
   for (let i = highlights.length - 1; i >= 0; i--) if (highlights[i]!.until <= now) highlights.splice(i, 1);
   if (!highlights.length) return;
@@ -86,15 +95,11 @@ function drawHighlights(): void {
   for (const h of highlights) {
     const b = pad(h.b, 0.2);
     const r = document.createElementNS(SVG_NS, 'rect');
-    r.setAttribute('x', String(b.x0));
-    r.setAttribute('y', String(b.y0));
-    r.setAttribute('width', String(b.x1 - b.x0));
-    r.setAttribute('height', String(b.y1 - b.y0));
-    r.setAttribute('rx', '0.25');
+    for (const [k, v] of Object.entries({ x: b.x0, y: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, rx: 0.25 })) r.setAttribute(k, String(v));
     r.setAttribute('class', `hl-${h.kind}`);
     g.appendChild(r);
   }
-  svg.appendChild(g);
+  overlay.prepend(g);
   clearTimeout(highlightTimer);
   highlightTimer = window.setTimeout(drawHighlights, Math.max(50, Math.min(...highlights.map((h) => h.until)) - now));
 }
@@ -119,7 +124,9 @@ function updateChrome(): void {
   const q = new URLSearchParams({ view, ...(styleOverride ? { style: styleOverride } : {}) });
   ui.png.href = `/api/v1/maps/${encodeURIComponent(mapId)}/render.png?${q}`;
   const url = new URL(location.href);
-  url.search = new URLSearchParams({ ...(view === 'players' ? { view } : {}), ...(styleOverride ? { style: styleOverride } : {}) }).toString();
+  for (const k of ['view', 'style']) url.searchParams.delete(k);
+  if (view === 'players') url.searchParams.set('view', view);
+  if (styleOverride) url.searchParams.set('style', styleOverride);
   history.replaceState(null, '', url);
 }
 
@@ -133,7 +140,16 @@ function showActivity(): void {
 }
 setInterval(showActivity, 5000);
 
-// ---------- view animation ----------
+let toastTimer: number | undefined;
+function toast(msg: string, kind: 'error' | 'info' = 'error'): void {
+  ui.toast.textContent = msg;
+  ui.toast.dataset.kind = kind;
+  ui.toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (ui.toast.hidden = true), kind === 'error' ? 6000 : 2500);
+}
+
+// ---------- view animation, pan and zoom ----------
 
 let anim: number | undefined;
 function animateTo(target: Bounds, ms = 650): void {
@@ -156,14 +172,14 @@ function fit(): void {
   animateTo({ ...bounds }, 400);
 }
 
-// ---------- pan and zoom ----------
-
-function toMap(clientX: number, clientY: number): [number, number] | null {
+function toMap(clientX: number, clientY: number): Point | null {
   const ctm = svg?.getScreenCTM();
   if (!svg || !ctm) return null;
   const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
   return [p.x, p.y];
 }
+
+const squaresPerPx = (): number => 1 / (svg?.getScreenCTM()?.a || 20);
 
 stage.addEventListener(
   'wheel',
@@ -182,6 +198,7 @@ stage.addEventListener(
 
 let drag: { x: number; y: number; vb: Bounds; scale: number } | null = null;
 stage.addEventListener('pointerdown', (e) => {
+  if (handled.has(e) || e.button !== 0) return;
   const ctm = svg?.getScreenCTM();
   if (!vb || !ctm) return;
   cancelAnimationFrame(anim ?? 0);
@@ -203,11 +220,14 @@ const endDrag = () => {
 };
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
-stage.addEventListener('dblclick', fit);
+stage.addEventListener('dblclick', (e) => {
+  if (!handled.has(e)) fit();
+});
 ui.fit.addEventListener('click', fit);
 window.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLSelectElement || !vb || !bounds) return;
-  const centre: [number, number] = [(vb.x0 + vb.x1) / 2, (vb.y0 + vb.y1) / 2];
+  const t = e.target as HTMLElement;
+  if (t.closest('input, select, textarea') || e.ctrlKey || e.metaKey || !vb || !bounds) return;
+  const centre: Point = [(vb.x0 + vb.x1) / 2, (vb.y0 + vb.y1) / 2];
   const maxW = (bounds.x1 - bounds.x0) * 3;
   if (e.key === 'f' || e.key === '0') fit();
   else if (e.key === '+' || e.key === '=') {
@@ -220,8 +240,6 @@ window.addEventListener('keydown', (e) => {
     applyViewBox();
   }
 });
-
-// ---------- controls ----------
 
 for (const b of viewButtons) {
   b.addEventListener('click', () => {
@@ -244,12 +262,17 @@ async function resync(): Promise<void> {
   rev = body.rev;
 }
 
+let ws: WebSocket | null = null;
+let nextRef = 1;
+const pending = new Map<number, { ok: (rev: number) => void; fail: (e: Error) => void }>();
+
 let retry = 1000;
 function connect(): void {
   setConnection('connecting');
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/maps/${encodeURIComponent(mapId)}/live`);
+  const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/maps/${encodeURIComponent(mapId)}/live`);
+  ws = socket;
   let gone = false;
-  ws.onmessage = async (ev) => {
+  socket.onmessage = async (ev) => {
     const msg = JSON.parse(String(ev.data)) as Incoming;
     switch (msg.type) {
       case 'hello':
@@ -291,16 +314,28 @@ function connect(): void {
         showActivity();
         break;
       }
+      case 'ack':
+        if (msg.ref !== undefined) pending.get(msg.ref)?.ok(msg.rev);
+        if (msg.ref !== undefined) pending.delete(msg.ref);
+        break;
+      case 'error':
+        if (msg.ref !== undefined && pending.has(msg.ref)) {
+          pending.get(msg.ref)!.fail(new Error(msg.error));
+          pending.delete(msg.ref);
+        } else toast(msg.error);
+        break;
       case 'deleted':
         gone = true;
         setConnection('deleted');
-        ws.close();
+        socket.close();
         break;
       default:
         break;
     }
   };
-  ws.onclose = () => {
+  socket.onclose = () => {
+    for (const p of pending.values()) p.fail(new Error('connection lost; the change may not have been saved'));
+    pending.clear();
     if (gone) return;
     setConnection('offline');
     setTimeout(connect, retry);
@@ -308,6 +343,49 @@ function connect(): void {
   };
 }
 
+function send(ops: Op[]): Promise<number> {
+  return new Promise((ok, fail) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return fail(new Error('not connected; wait a moment and try again'));
+    const ref = nextRef++;
+    pending.set(ref, { ok, fail });
+    ws.send(JSON.stringify({ type: 'ops', ops, ref, by: 'editor' }));
+  });
+}
+
+async function historyAction(action: 'undo' | 'redo'): Promise<void> {
+  const res = await fetch(`/api/v1/maps/${encodeURIComponent(mapId)}/${action}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ by: 'editor' }),
+  });
+  if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? `${action} failed`);
+}
+
+// ---------- start ----------
+
 render();
+drawHighlights();
 showActivity();
 connect();
+
+if (initial.edit.loggedIn) {
+  initEditor({
+    mapId,
+    stage,
+    overlay,
+    handled,
+    map: () => map,
+    rev: () => rev,
+    toMap,
+    squaresPerPx,
+    send,
+    history: historyAction,
+    onRender: (cb) => renderHooks.push(cb),
+    onView: (cb) => viewHooks.push(cb),
+    toast,
+    setEditing: (on) => {
+      document.body.classList.toggle('editing', on);
+      requestAnimationFrame(() => applyViewBox());
+    },
+  });
+}

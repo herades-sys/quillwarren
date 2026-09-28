@@ -9,6 +9,15 @@ Base URL on the LAN: `http://192.168.1.9:8790/api/v1`. Everything is JSON unless
 - The live token is `DELVE_API_TOKEN` in `/etc/delve/delve.env` (root only). A server started without a token refuses all changes with `503`.
 - Tokens in URLs are masked in the server log.
 
+### Browser editor login
+
+- **Password:** `sudo delve-passwd` on the container sets the editor password. Only its scrypt hash goes into `/etc/delve/delve.env`, and Delve restarts.
+- **Login:** `/login` exchanges the password for a 30-day session cookie `delve_session` (HttpOnly, SameSite=Strict, signed with a key derived from the API token, so rotating the token logs everyone out). `/logout` ends it.
+- **What the cookie allows:** the same writes as the token, over REST and the WebSocket, but only from Delve's own origin.
+- **Brute force:** after 5 wrong passwords in a minute, an address is blocked for a minute.
+- **Session check:** `GET /api/v1/session` → `{ loggedIn, passwordSet }`.
+- **Development only:** `DELVE_INSECURE_OPEN_EDIT=1` makes every browser count as logged in. Never use it on the live server.
+
 ## Errors
 
 Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.

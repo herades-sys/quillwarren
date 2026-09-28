@@ -14,7 +14,9 @@ import {
   type View,
 } from '@delve/core';
 import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 'json' };
+import { editorSession, errorResponse, newMap } from './api.ts';
 import type { AppInfo } from './app.ts';
+import { isLoggedIn, type EditorAuth } from './login.ts';
 import { LABEL_FONT_FILE } from './png.ts';
 import { asView, exportName, render, RenderQueryError, ROLL20_PPG, sceneFor, sizeInSquares, type RenderQuery } from './render.ts';
 import type { MapStore } from './store.ts';
@@ -56,7 +58,22 @@ function savedMaps(store: MapStore): string {
 <tbody>${rows}</tbody></table></div>`;
 }
 
-function page(info: AppInfo, view: View, store: MapStore): string {
+function accountBar(loggedIn: boolean, passwordSet: boolean): string {
+  if (loggedIn) return `<form method="post" action="/logout" class="inline"><button class="button" type="submit">Log out</button></form>`;
+  return passwordSet ? `<a class="button" href="/login">Log in to edit</a>` : `<span class="note">Editing: set a password with <code>delve-passwd</code> on the container</span>`;
+}
+
+function newMapForm(): string {
+  const styles = Object.entries(PRESETS).map(([k, s]) => `<option value="${esc(k)}">${esc(s.name)}</option>`).join('');
+  return `<form method="post" action="/maps/new" class="newmap">
+  <label>Name <input name="name" required maxlength="200" placeholder="e.g. Goblin warren"></label>
+  <label>Style <select name="style">${styles}</select></label>
+  <label>Start from <select name="template"><option value="empty">an empty map</option><option value="test-dungeon">the test dungeon</option></select></label>
+  <button class="button primary" type="submit">New map</button>
+</form>`;
+}
+
+function page(info: AppInfo, view: View, store: MapStore, loggedIn: boolean, passwordSet: boolean): string {
   const cards = Object.entries(PRESETS)
     .map(([preset, style]) => {
       const scene = testScene(preset, view);
@@ -134,6 +151,13 @@ function page(info: AppInfo, view: View, store: MapStore): string {
   .links { display: flex; flex-wrap: wrap; gap: 6px; }
   pre { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: .84rem; line-height: 1.6; }
   .note { color: var(--muted); font-size: .9rem; margin: 0; }
+  .spacer { flex: 1; }
+  form.inline { display: inline; margin: 0; }
+  button.button { font: inherit; cursor: pointer; background: transparent; }
+  button.button.primary { background: var(--accent); }
+  .newmap { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .newmap label { display: grid; gap: 4px; font-size: .82rem; color: var(--muted); }
+  .newmap input, .newmap select { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 12rem; }
 </style>
 </head>
 <body>
@@ -146,10 +170,13 @@ function page(info: AppInfo, view: View, store: MapStore): string {
       <span><code>${FORMAT} v${FORMAT_VERSION}</code></span>
       <a href="/health">/health</a> <a href="/api/v1/maps">/api/v1/maps</a>
     </div>
+    <span class="spacer"></span>
+    ${accountBar(loggedIn, passwordSet)}
   </div>
 
   <section>
     <h2>Saved maps</h2>
+    ${loggedIn ? newMapForm() : ''}
     ${savedMaps(store)}
   </section>
 
@@ -176,12 +203,26 @@ ${cards}
 </html>`;
 }
 
-export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapStore): void {
+export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth): void {
   const font = readFileSync(LABEL_FONT_FILE);
 
   app.get('/', async (req, reply) => {
     const view = asView((req.query as { view?: string }).view);
-    return reply.type('text/html; charset=utf-8').send(page(info, view, store));
+    const html = page(info, view, store, isLoggedIn(auth, req), Boolean(auth.passwordHash) || auth.sessions.open);
+    return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(html);
+  });
+
+  // The start page's "New map" form (logged-in editors only).
+  app.post('/maps/new', async (req, reply) => {
+    if (!editorSession(auth.sessions, req)) return reply.code(401).type('text/plain').send('log in to create maps');
+    const body = (req.body ?? {}) as { name?: unknown; style?: unknown; template?: unknown };
+    try {
+      const change = store.create(newMap(body), 'editor');
+      return reply.redirect(`/maps/${encodeURIComponent(change.mapId)}?edit=1`, 303);
+    } catch (e) {
+      const { status, body: err } = errorResponse(e);
+      return reply.code(status).type('text/plain').send(err.error);
+    }
   });
 
   app.get('/fonts/im-fell-english.ttf', async (_req, reply) =>

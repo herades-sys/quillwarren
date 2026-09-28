@@ -4,6 +4,7 @@
 import { randomInt } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  ConnectError,
   describeMap,
   FORMAT,
   FORMAT_VERSION,
@@ -14,7 +15,7 @@ import {
   type DelveMap,
 } from '@delve/core';
 import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 'json' };
-import { bearer, checkToken } from './auth.ts';
+import { bearer, checkToken, readCookie, sameOrigin, SESSION_COOKIE, type Sessions } from './auth.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
 import { render, RenderQueryError, type RenderQuery } from './render.ts';
 import type { MapService } from './service.ts';
@@ -23,6 +24,7 @@ import { ConflictError, newMapId, NotFoundError, StaleError } from './store.ts';
 export interface ApiDeps {
   service: MapService;
   token: string | undefined;
+  sessions: Sessions;
 }
 
 interface ErrorBody {
@@ -37,7 +39,7 @@ export function errorResponse(e: unknown): { status: number; body: ErrorBody } {
   if (e instanceof StaleError) return { status: 409, body: { error: e.message, rev: e.rev } };
   if (e instanceof ConflictError) return { status: 409, body: { error: e.message } };
   if (e instanceof ValidationError) return { status: 400, body: { error: e.message, problems: e.problems } };
-  if (e instanceof OpError || e instanceof RenderQueryError) return { status: 400, body: { error: e.message } };
+  if (e instanceof OpError || e instanceof RenderQueryError || e instanceof ConnectError) return { status: 400, body: { error: e.message } };
   throw e;
 }
 
@@ -73,13 +75,27 @@ export function tokenGuard(token: string | undefined) {
   };
 }
 
-export function registerApi(app: FastifyInstance, { service, token }: ApiDeps): void {
+/** An editor session counts only for requests from the page's own origin (the cookie is SameSite=Strict too). */
+export function editorSession(sessions: Sessions, req: FastifyRequest): boolean {
+  return sessions.valid(readCookie(req.headers.cookie, SESSION_COOKIE)) && sameOrigin(req.headers.origin, req.headers.host);
+}
+
+/** preHandler for writes: the API token, or a logged-in editor. */
+export function writeGuard(token: string | undefined, sessions: Sessions) {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    if (checkToken(token, bearer(req.headers.authorization)) === 'ok' || editorSession(sessions, req)) return;
+    if (!token && !sessions.open) return reply.code(503).send({ error: 'this server has no API token configured, so changes are disabled' });
+    return reply.code(401).send({ error: 'changes need the API token ("Authorization: Bearer <token>") or an editor login' });
+  };
+}
+
+export function registerApi(app: FastifyInstance, { service, token, sessions }: ApiDeps): void {
   const { store } = service;
   const fail = (reply: FastifyReply, e: unknown) => {
     const { status, body } = errorResponse(e);
     return reply.code(status).send(body);
   };
-  const writer = tokenGuard(token);
+  const writer = writeGuard(token, sessions);
 
   app.get('/api/v1', async () => ({
     app: 'delve',
@@ -200,7 +216,7 @@ export function registerApi(app: FastifyInstance, { service, token }: ApiDeps): 
       socket.close(4404, 'map not found');
       return;
     }
-    const canWrite = checkToken(token, (req.query as { token?: string }).token) === 'ok';
+    const canWrite = checkToken(token, (req.query as { token?: string }).token) === 'ok' || editorSession(sessions, req);
     service.hub.join(id, socket);
     LiveHub.send(socket, { type: 'hello', rev: cur.rev, map: cur.map });
 
@@ -214,7 +230,7 @@ export function registerApi(app: FastifyInstance, { service, token }: ApiDeps): 
       if (msg.type === 'ping') return LiveHub.send(socket, { type: 'pong' });
       if (msg.type !== 'ops') return LiveHub.send(socket, { type: 'error', error: `unknown message type ${JSON.stringify(msg.type)}`, ref: msg.ref });
       if (!canWrite) {
-        return LiveHub.send(socket, { type: 'error', error: 'this connection is read-only; connect with ?token=<token> to make changes', ref: msg.ref });
+        return LiveHub.send(socket, { type: 'error', error: 'this connection is read-only: log in to edit (or connect with ?token=<token>)', ref: msg.ref });
       }
       try {
         const baseRev = Number.isInteger(msg.baseRev) ? (msg.baseRev as number) : undefined;

@@ -6,15 +6,16 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
-  corridorPath,
+  connectOps,
   describeMap,
   DOOR_STYLES,
+  nextId,
+  nextLabel,
   parseOps,
   PRESETS,
   shapeBounds,
   ValidationError,
-  type Corridor,
-  type DelveMap,
+  withAttachedDoors,
   type MapObject,
   type Op,
   type Point,
@@ -73,30 +74,9 @@ function oneShape(a: { rect?: [number, number, number, number]; poly?: Point[]; 
   return given[0]!;
 }
 
-function nextId(map: DelveMap, prefix: string): string {
-  let max = 0;
-  for (const o of map.objects) {
-    const m = new RegExp(`^${prefix}(\\d+)$`).exec(o.id);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `${prefix}${max + 1}`;
-}
-
-function nextLabel(map: DelveMap): string {
-  let max = 0;
-  for (const o of map.objects) if (o.type === 'room' && /^\d+$/.test(o.label ?? '')) max = Math.max(max, Number(o.label));
-  return String(max + 1);
-}
-
 function where(shape: Shape): string {
   const b = shapeBounds(shape);
   return `${b.x1 - b.x0}×${b.y1 - b.y0} squares at ${b.x0},${b.y0}`;
-}
-
-/** A door across the corridor mouth at one end of a routed path. */
-function doorAtEnd(path: Point[], end: 'start' | 'end', width: number): { at: Point; along: 'x' | 'y' } {
-  const [p, q] = end === 'start' ? [path[0]!, path[1]!] : [path.at(-1)!, path.at(-2)!];
-  return p[0] === q[0] ? { at: [p[0] - width / 2, p[1]], along: 'x' } : { at: [p[0], p[1] - width / 2], along: 'y' };
 }
 
 export function buildMcpServer(service: MapService, base: string, version: string): McpServer {
@@ -212,25 +192,17 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const map = store.get(a.map).map;
-        const rooms = new Map(map.objects.filter((o): o is Room => o.type === 'room').map((r) => [r.id, r]));
-        for (const r of [a.from, a.to]) if (!rooms.has(r)) throw new ValidationError([`no room with id "${r}"`]);
-        const width = a.width ?? 2;
-        const corridor: Corridor = { id: a.id ?? nextId(map, 'c'), type: 'corridor', from: a.from, to: a.to, width };
-        const path = corridorPath(corridor, rooms);
-        if (!path) throw new ValidationError([`${a.from} and ${a.to} overlap, so there is nothing to connect`]);
-        const ops: Op[] = [{ op: 'add', object: corridor }];
-        const ends = a.doors === 'both' ? (['start', 'end'] as const) : a.doors === 'from' ? (['start'] as const) : a.doors === 'to' ? (['end'] as const) : [];
-        const firstDoor = Number(nextId(map, 'd').slice(1));
-        const doorIds = ends.map((_, i) => `d${firstDoor + i}`);
-        ends.forEach((end, i) => {
-          const d = doorAtEnd(path, end, width);
-          ops.push({ op: 'add', object: { id: doorIds[i]!, type: 'door', ...d, width, style: a.door_style ?? 'normal' } });
+        const { ops, corridor, path, doorIds } = connectOps(map, a.from, a.to, {
+          width: a.width,
+          doors: a.doors,
+          doorStyle: a.door_style,
+          id: a.id,
         });
         const len = path.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0);
         return change(
           a.map,
           ops,
-          `Added corridor ${corridor.id} from ${a.from} to ${a.to}: ${width} wide, ${len} squares long, path ${JSON.stringify(path)}${doorIds.length ? `; doors ${doorIds.join(', ')}` : ''}.`,
+          `Added corridor ${corridor.id} from ${a.from} to ${a.to}: ${corridor.width} wide, ${len} squares long, path ${JSON.stringify(path)}${doorIds.length ? `; doors ${doorIds.join(', ')}` : ''}.`,
         );
       }),
   );
@@ -311,10 +283,15 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'move',
     {
       title: 'Move objects',
-      description: 'Move objects by dx, dy squares. Auto-routed corridors follow their rooms.',
+      description: 'Move objects by dx, dy squares. Auto-routed corridors follow their rooms, and doors on a moved room\'s edges move with it.',
       inputSchema: { map: mapId, ids: z.array(z.string()).min(1), dx: z.number(), dy: z.number() },
     },
-    (a) => guarded(() => change(a.map, [{ op: 'move', ids: a.ids, dx: a.dx, dy: a.dy }], `Moved ${a.ids.join(', ')} by ${a.dx},${a.dy}.`)),
+    (a) =>
+      guarded(() => {
+        const ids = withAttachedDoors(store.get(a.map).map, a.ids);
+        const extra = ids.filter((id) => !a.ids.includes(id));
+        return change(a.map, [{ op: 'move', ids, dx: a.dx, dy: a.dy }], `Moved ${a.ids.join(', ')}${extra.length ? ` (and doors ${extra.join(', ')})` : ''} by ${a.dx},${a.dy}.`);
+      }),
   );
 
   server.registerTool(

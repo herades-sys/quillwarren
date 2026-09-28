@@ -31,7 +31,12 @@ export function objectBounds(o: MapObject, map: DelveMap): Bounds | null {
       const [a, b] = doorSegment(o);
       return { x0: Math.min(a[0], b[0]) - 0.3, y0: Math.min(a[1], b[1]) - 0.3, x1: Math.max(a[0], b[0]) + 0.3, y1: Math.max(a[1], b[1]) + 0.3 };
     }
-    case 'label':
+    case 'label': {
+      // roughly the drawn text: about half an em per character, centred on `at`
+      const size = o.size ?? 0.63;
+      const hw = Math.max(0.5, (o.text.length * size * 0.52) / 2);
+      return { x0: o.at[0] - hw, y0: o.at[1] - size * 0.6, x1: o.at[0] + hw, y1: o.at[1] + size * 0.6 };
+    }
     case 'prop':
       return { x0: o.at[0] - 0.6, y0: o.at[1] - 0.6, x1: o.at[0] + 0.6, y1: o.at[1] + 0.6 };
   }
