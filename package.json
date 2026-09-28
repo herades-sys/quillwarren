@@ -9,6 +9,7 @@
     "release": "npm run build && sudo /usr/local/sbin/delve-release",
     "rollback": "sudo /usr/local/sbin/delve-release --rollback",
     "test": "vitest run",
+    "render": "node apps/server/src/cli/render.ts",
     "typecheck": "tsc -p . && tsc -p packages/core && tsc -p packages/core/tsconfig.test.json && tsc -p apps/server"
   },
   "engines": {

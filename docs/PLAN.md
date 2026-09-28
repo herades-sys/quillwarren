@@ -148,7 +148,7 @@ Sizes are rough (S, M, L) and show relative effort only.
 
 0. **Groundwork (S), done 2026-09-28.** Container, service, release flow, npm workspaces (`packages/core`, `apps/server`), TypeScript, Vitest, and a Fastify server bundled by esbuild into `release/main.mjs`.
 1. **Core model (M), done 2026-09-28.** zod schema and validation with id-and-field messages, ops with exact inverses, geometry (floor, corridors with auto-routing, walls with door gaps), `describeMap`. The test dungeon's floor matches the `.ds` fixture exactly (XOR area 0).
-2. **Renderer (L).** Floor, grid, walls with roughness, shadow, hatching, doors, labels, four presets, seeded randomness. *Done when* the test dungeon's PNG holds up next to the Dungeon Scrawl version. Expect tuning rounds with the user.
+2. **Renderer (L), first version 2026-09-28.** `buildScene` in core turns a map into drawing layers: background, shading band, hatching, shadow, floor, grid, stairs, walls (slightly rough), doors, labels. `sceneToSvg` writes SVG, and the server's `svgToPng` (resvg) makes PNGs. Four presets: `classic-hatching`, `clean`, `old-school-blue`, `print`. The GM and players' views differ in room numbers and secret doors. Hatching clusters sit on a lattice seeded by (map seed, cell), so edits only change nearby hatching. `npm run render -- <map> <out.png> [--ppg 70] [--view players] [--style clean]`. *Done when* the user is happy with the look. Still to tune: hatch density and stroke length, and the label font (IM FELL's old-style "1" reads like an "I").
 3. **Server and API (M).** Fastify, SQLite, REST, WebSocket, conflicts, token, PNG and SVG export. *Done when* a script builds the test dungeon over HTTP and gets a PNG back.
 4. **MCP and live viewer (M), the first real milestone.** MCP tools, plus a read-only live viewer with pan, zoom and `focus`. *Done when* the user asks for a dungeon in one sentence and watches it appear.
 5. **Editor (L).** Select, move and resize with snapping; room, polygon, corridor, cutout, door, stairs and label tools; properties panel; undo and redo; map list. Edits from the user and from Claude show up for each other live.
@@ -164,6 +164,8 @@ Sizes are rough (S, M, L) and show relative effort only.
 - **TypeScript 7** (the native compiler) works with our settings (`tsconfig.base.json`).
 - **Revisions live in the server**, not in the map file. `applyOps(map, ops)` returns the new map plus the exact inverse ops, and the server stores `rev` and undo history.
 - **Auto-routed corridors** snap their edges to whole squares.
+- **Label font:** IM FELL English (OFL) from `@expo-google-fonts/im-fell-english`, which ships TTF files. resvg loads only that file, so PNGs never depend on system fonts. The web editor will load the same file.
+- **Image bounds** cover `grid.bounds` and the floor, plus hatching reach and a 1-square margin, snapped to whole squares so a VTT grid lines up.
 - **Doors vs walls:** walls are the floor's edge. A door that lies on that edge (like d5, the entrance to outside) cuts a gap in the wall. A door across an opening (a corridor mouth, like d1–d4 and d6) doesn't change the walls. For line of sight, closed doors are portals.
 - **Still open:** LAN only (current) or public later (public needs a login first); whether the user has Roll20 Pro (for walls/doors via a mod); the final name ("Delve" is a working name).
 

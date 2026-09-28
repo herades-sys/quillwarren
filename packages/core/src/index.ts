@@ -12,5 +12,25 @@ export {
   type Bounds,
 } from './geometry/shapes.ts';
 export { autoRoute, corridorPath, corridorOutline, pathLength } from './geometry/corridors.ts';
-export { computeFloor, floorPaths, floorArea } from './geometry/floor.ts';
-export { computeWalls, doorSegment, boundarySegments, segmentLength, type Segment } from './geometry/walls.ts';
+export { computeFloor, floorPaths, floorArea, polygonsOf } from './geometry/floor.ts';
+export {
+  computeWalls,
+  wallPolylines,
+  doorSegment,
+  boundarySegments,
+  segmentLength,
+  type Segment,
+  type Polyline,
+} from './geometry/walls.ts';
+export { buildScene, type Scene, type Layer, type RenderOptions, type View } from './render/scene.ts';
+export { sceneToSvg, type SvgOptions } from './render/svg.ts';
+export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
+
+import type { DelveMap } from './schema.ts';
+import { buildScene, type RenderOptions } from './render/scene.ts';
+import { sceneToSvg, type SvgOptions } from './render/svg.ts';
+
+/** One call from map to SVG string. */
+export function renderSvg(map: DelveMap, opts: RenderOptions & SvgOptions = {}): string {
+  return sceneToSvg(buildScene(map, opts), opts);
+}

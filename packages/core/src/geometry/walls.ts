@@ -73,6 +73,59 @@ export function computeWalls(map: DelveMap, floor: readonly Polygon[] = computeF
   return boundarySegments(floor).flatMap((seg) => subtract(seg, doors));
 }
 
+export interface Polyline {
+  points: Point[];
+  closed: boolean;
+}
+
+const same = (a: Point, b: Point): boolean => Math.abs(a[0] - b[0]) < EPS && Math.abs(a[1] - b[1]) < EPS;
+
+/** Join a ring's consecutive segments into polylines, wrapping round the ring's start. */
+function chain(segs: readonly Segment[]): Polyline[] {
+  if (!segs.length) return [];
+  const lines: Point[][] = [];
+  let cur: Point[] = [segs[0]![0], segs[0]![1]];
+  for (const [a, b] of segs.slice(1)) {
+    if (same(a, cur.at(-1)!)) cur.push(b);
+    else {
+      lines.push(cur);
+      cur = [a, b];
+    }
+  }
+  lines.push(cur);
+  if (lines.length > 1 && same(lines.at(-1)!.at(-1)!, lines[0]![0]!)) {
+    const last = lines.pop()!;
+    lines[0] = [...last, ...lines[0]!.slice(1)];
+  }
+  return lines.map((pts) =>
+    lines.length === 1 && pts.length > 2 && same(pts[0]!, pts.at(-1)!)
+      ? { points: pts.slice(0, -1), closed: true }
+      : { points: pts, closed: false },
+  );
+}
+
+/**
+ * Walls as polylines for drawing: closed rings where no door interrupts them,
+ * open runs between door gaps. `cuts` decides which doors open a gap (the
+ * players' view keeps secret doors shut).
+ */
+export function wallPolylines(
+  map: DelveMap,
+  floor: readonly Polygon[] = computeFloor(map),
+  cuts: (d: Door) => boolean = () => true,
+): Polyline[] {
+  const gaps = map.objects.filter((o): o is Door => o.type === 'door' && cuts(o)).map(doorSegment);
+  const out: Polyline[] = [];
+  for (const poly of floor) {
+    for (const ring of [poly.outer, ...poly.holes]) {
+      const segs: Segment[] = [];
+      for (let i = 0; i < ring.length; i++) segs.push(...subtract([ring[i]!, ring[(i + 1) % ring.length]!], gaps));
+      out.push(...chain(segs));
+    }
+  }
+  return out;
+}
+
 export function segmentLength([a, b]: Segment): number {
   return Math.hypot(b[0] - a[0], b[1] - a[1]);
 }

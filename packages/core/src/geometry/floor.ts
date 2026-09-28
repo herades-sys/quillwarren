@@ -55,6 +55,11 @@ function collect(node: PolyPathD, out: Polygon[]): void {
 /** Floor as polygons with holes: what renderers and wall tracing use. */
 export function computeFloor(map: DelveMap): Polygon[] {
   const { add, cut } = floorParts(map);
+  return polygonsOf(add, cut);
+}
+
+/** Polygons with holes for `add` minus `cut` (NonZero), via Clipper's PolyTree. */
+export function polygonsOf(add: PathsD, cut: PathsD = []): Polygon[] {
   const tree = new PolyTreeD();
   booleanOpDWithPolyTree(ClipType.Difference, add, cut, tree, FillRule.NonZero, PRECISION);
   const out: Polygon[] = [];
