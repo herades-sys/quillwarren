@@ -9,7 +9,7 @@ rm -rf release
 mkdir -p release/node_modules/@resvg release/fonts
 npx esbuild apps/server/src/main.ts \
   --bundle --platform=node --format=esm --target=node24 \
-  --external:@resvg/resvg-js \
+  --external:@resvg/resvg-js --external:bufferutil --external:utf-8-validate \
   --outfile=release/main.mjs --log-level=warning \
   --banner:js="import { createRequire as __delveRequire } from 'node:module'; const require = __delveRequire(import.meta.url);"
 for pkg in node_modules/@resvg/*; do cp -R "$pkg" release/node_modules/@resvg/; done

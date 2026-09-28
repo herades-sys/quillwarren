@@ -10,6 +10,7 @@
     "rollback": "sudo /usr/local/sbin/delve-release --rollback",
     "test": "vitest run",
     "render": "node apps/server/src/cli/render.ts",
+    "demo": "node apps/server/src/cli/demo.ts",
     "typecheck": "tsc -p . && tsc -p packages/core && tsc -p packages/core/tsconfig.test.json && tsc -p apps/server"
   },
   "engines": {

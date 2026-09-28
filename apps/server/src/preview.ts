@@ -1,14 +1,12 @@
-// The start page: the test dungeon in every style, GM or players' view, with
-// SVG and Roll20-ready PNG downloads. A stand-in until the editor (phase 4).
+// The start page: saved maps with downloads, and the test dungeon in every
+// style with a GM / players' view switch. A stand-in until the editor (phase 4).
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import {
-  buildScene,
   describeMap,
   FORMAT,
   FORMAT_VERSION,
   PRESETS,
-  resolveStyle,
   sceneToSvg,
   validateMap,
   type DelveMap,
@@ -16,55 +14,60 @@ import {
   type View,
 } from '@delve/core';
 import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 'json' };
-import { LABEL_FONT_FILE, svgToPng } from './png.ts';
 import type { AppInfo } from './app.ts';
+import { LABEL_FONT_FILE } from './png.ts';
+import { asView, exportName, render, RenderQueryError, ROLL20_PPG, sceneFor, sizeInSquares, type RenderQuery } from './render.ts';
+import type { MapStore } from './store.ts';
 
 const TEST_MAP: DelveMap = validateMap(structuredClone(testMapJson));
-const ROLL20_PPG = 70;
 
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-const asView = (v: unknown): View => (v === 'players' ? 'players' : 'gm');
-
-function mapWithStyle(preset: string): DelveMap {
-  return { ...TEST_MAP, style: { ...TEST_MAP.style, preset } };
-}
 
 const scenes = new Map<string, Scene>();
-function sceneFor(preset: string, view: View, grid = true): Scene {
-  const key = `${preset}|${view}|${grid}`;
+function testScene(preset: string, view: View): Scene {
+  const key = `${preset}|${view}`;
   let s = scenes.get(key);
-  if (!s) {
-    const map = mapWithStyle(preset);
-    s = buildScene(map, { view, grid }, resolveStyle(map));
-    scenes.set(key, s);
-  }
+  if (!s) scenes.set(key, (s = sceneFor(TEST_MAP, { style: preset, view })));
   return s;
 }
 
-function size(scene: Scene): { w: number; h: number } {
-  return { w: scene.bounds.x1 - scene.bounds.x0, h: scene.bounds.y1 - scene.bounds.y0 };
+function savedMaps(store: MapStore): string {
+  const maps = store.list();
+  if (!maps.length) {
+    return `<p class="note">No saved maps yet. Create one with <code>POST /api/v1/maps</code> (see docs/API.md).</p>`;
+  }
+  const rows = maps
+    .map((m) => {
+      const base = `/api/v1/maps/${encodeURIComponent(m.id)}`;
+      return `<tr>
+  <td><strong>${esc(m.name)}</strong><br><code>${esc(m.id)}</code></td>
+  <td class="num">${m.rev}</td><td class="num">${m.objects}</td>
+  <td class="meta">${esc(m.updated.replace('T', ' ').slice(0, 16))}</td>
+  <td class="links"><a class="button primary" href="${base}/render.png?view=players">Roll20 PNG · players</a>
+    <a class="button" href="${base}/render.png">PNG · GM</a> <a class="button" href="${base}/render.svg">SVG</a>
+    <a class="button" href="${base}/describe">Text</a></td>
+</tr>`;
+    })
+    .join('\n');
+  return `<div class="table"><table>
+<thead><tr><th>Map</th><th class="num">Rev</th><th class="num">Objects</th><th>Updated (UTC)</th><th>Downloads</th></tr></thead>
+<tbody>${rows}</tbody></table></div>`;
 }
 
-function fileName(preset: string, view: View, scene: Scene, ext: string): string {
-  const { w, h } = size(scene);
-  return `${slug(TEST_MAP.name)}_${preset}_${view}_${w}x${h}.${ext}`;
-}
-
-function page(info: AppInfo, view: View): string {
+function page(info: AppInfo, view: View, store: MapStore): string {
   const cards = Object.entries(PRESETS)
     .map(([preset, style]) => {
-      const scene = sceneFor(preset, view);
-      const { w, h } = size(scene);
+      const scene = testScene(preset, view);
+      const { w, h } = sizeInSquares(scene);
       const svg = sceneToSvg(scene, { ppg: 12, idPrefix: `${preset}-` });
       const q = `?view=${view}`;
       return `<article class="card">
   <header><h3>${esc(style.name)}</h3><code>${esc(preset)}</code></header>
   <div class="map">${svg}</div>
   <footer>
-    <a class="button primary" href="/preview/${preset}.png${q}" download="${esc(fileName(preset, view, scene, 'png'))}">PNG for Roll20</a>
-    <a class="button" href="/preview/${preset}.svg${q}" download="${esc(fileName(preset, view, scene, 'svg'))}">SVG</a>
+    <a class="button primary" href="/preview/${preset}.png${q}" download="${esc(exportName(TEST_MAP, preset, view, scene, 'png'))}">PNG for Roll20</a>
+    <a class="button" href="/preview/${preset}.svg${q}" download="${esc(exportName(TEST_MAP, preset, view, scene, 'svg'))}">SVG</a>
     <span class="meta">${w}×${h} squares · ${w * ROLL20_PPG}×${h * ROLL20_PPG} px</span>
   </footer>
 </article>`;
@@ -97,13 +100,12 @@ function page(info: AppInfo, view: View): string {
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
-  .page { max-width: 1320px; margin: 0 auto; padding: 28px 20px 64px; display: grid; gap: 28px; }
+  .page { max-width: 1320px; margin: 0 auto; padding: 28px 20px 64px; display: grid; gap: 32px; }
   .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
   h1 { font: 400 2.6rem/1 "IM FELL English", Georgia, serif; margin: 0; }
   h2 { font: 400 1.6rem/1.2 "IM FELL English", Georgia, serif; margin: 0; }
   h3 { font-size: 1rem; margin: 0; }
   .status { color: var(--muted); font-size: .88rem; display: flex; flex-wrap: wrap; gap: 6px 14px; }
-  .status code { font-size: .82rem; }
   code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
   code { background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: .85em; }
   .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
@@ -118,12 +120,19 @@ function page(info: AppInfo, view: View): string {
   .card header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 12px 14px; }
   .map svg { display: block; width: 100%; height: auto; }
   .card footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
-  .button { display: inline-block; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-weight: 500; font-size: .9rem; }
+  .button { display: inline-block; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-weight: 500; font-size: .88rem; white-space: nowrap; }
   .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .meta { color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
   section { display: grid; gap: 12px; }
+  .table { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-weight: 600; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .links { display: flex; flex-wrap: wrap; gap: 6px; }
   pre { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: .84rem; line-height: 1.6; }
-  .note { color: var(--muted); font-size: .88rem; margin: 0; }
+  .note { color: var(--muted); font-size: .9rem; margin: 0; }
 </style>
 </head>
 <body>
@@ -134,38 +143,44 @@ function page(info: AppInfo, view: View): string {
       <span>Release <code>${esc(info.version)}</code></span>
       <span>Started ${esc(info.started)}</span>
       <span><code>${FORMAT} v${FORMAT_VERSION}</code></span>
-      <a href="/health">/health</a>
+      <a href="/health">/health</a> <a href="/api/v1/maps">/api/v1/maps</a>
     </div>
   </div>
 
-  <div class="bar">
-    <div>
-      <h2>${esc(TEST_MAP.name)}</h2>
-      <p>The test dungeon in every style. The GM view shows room numbers and secret doors. The players’ view hides both and walls the secret door shut. PNGs come out at Roll20’s 70 px per square with edges on whole squares, so Roll20’s grid lines up.</p>
-    </div>
-    <nav class="segmented" aria-label="View">${toggle}</nav>
-  </div>
+  <section>
+    <h2>Saved maps</h2>
+    ${savedMaps(store)}
+  </section>
 
-  <div class="grid">
+  <section>
+    <div class="bar">
+      <div>
+        <h2>Style preview: ${esc(TEST_MAP.name)}</h2>
+        <p>The GM view shows room numbers and secret doors. The players’ view hides both and walls the secret door shut. PNGs come out at Roll20’s 70 px per square with edges on whole squares, so Roll20’s grid lines up.</p>
+      </div>
+      <nav class="segmented" aria-label="View">${toggle}</nav>
+    </div>
+    <div class="grid">
 ${cards}
-  </div>
+    </div>
+  </section>
 
   <section>
     <h2>What the API sees</h2>
     <pre>${esc(describeMap(TEST_MAP))}</pre>
-    <p class="note">Preview page from phase 2. Saving maps, the API and live editing come in phases 3–5.</p>
+    <p class="note">The map editor with live updates comes in phases 4–5.</p>
   </section>
 </main>
 </body>
 </html>`;
 }
 
-export function registerPreview(app: FastifyInstance, info: AppInfo): void {
+export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapStore): void {
   const font = readFileSync(LABEL_FONT_FILE);
 
   app.get('/', async (req, reply) => {
     const view = asView((req.query as { view?: string }).view);
-    return reply.type('text/html; charset=utf-8').send(page(info, view));
+    return reply.type('text/html; charset=utf-8').send(page(info, view, store));
   });
 
   app.get('/fonts/im-fell-english.ttf', async (_req, reply) =>
@@ -178,18 +193,12 @@ export function registerPreview(app: FastifyInstance, info: AppInfo): void {
     if (!m || !PRESETS[m[1]!]) {
       return reply.code(404).send({ error: `no preview "${file}"; try one of ${Object.keys(PRESETS).map((p) => `${p}.png`).join(', ')}` });
     }
-    const [, preset, ext] = m as unknown as [string, string, 'svg' | 'png'];
-    const q = req.query as { view?: string; ppg?: string; grid?: string };
-    const view = asView(q.view);
-    const scene = sceneFor(preset, view, q.grid !== '0');
-    const ppg = q.ppg === undefined ? ROLL20_PPG : Number(q.ppg);
-    if (!Number.isInteger(ppg) || ppg < 10 || ppg > 300) {
-      return reply.code(400).send({ error: 'ppg must be a whole number from 10 to 300' });
+    try {
+      const out = await render(TEST_MAP, { ...(req.query as RenderQuery), style: m[1]! }, m[2] as 'svg' | 'png');
+      return reply.type(out.type).header('content-disposition', `inline; filename="${out.name}"`).send(out.body);
+    } catch (e) {
+      if (e instanceof RenderQueryError) return reply.code(400).send({ error: e.message });
+      throw e;
     }
-    const svg = sceneToSvg(scene, { ppg });
-    const disposition = `inline; filename="${fileName(preset, view, scene, ext)}"`;
-    if (ext === 'svg') return reply.type('image/svg+xml').header('content-disposition', disposition).send(svg);
-    const png = await svgToPng(svg);
-    return reply.type('image/png').header('content-disposition', disposition).send(png);
   });
 }

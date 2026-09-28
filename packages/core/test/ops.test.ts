@@ -9,6 +9,7 @@ describe('applyOps', () => {
     ['update a door', [{ op: 'update', id: 'd6', set: { style: 'normal', open: true } }]],
     ['delete doors', [{ op: 'delete', ids: ['d5', 'd2'] }]],
     ['unset a field', [{ op: 'update', id: 'r5', unset: ['notes'] }]],
+    ['change map name and style', [{ op: 'update_map', set: { name: 'Crypt', style: { preset: 'clean' } }, unset: ['seed'] }]],
     [
       'a mixed batch',
       [
@@ -52,6 +53,11 @@ describe('applyOps', () => {
     // deleting a room that corridors point at leaves dangling references
     expect(() => applyOps(testMap(), [{ op: 'delete', ids: ['r3'] }])).toThrow(/c2 .*from|c2 .*to/);
     expect(() => applyOps(testMap(), [{ op: 'update', id: 'c1', set: { width: 0 } }])).toThrow(/width: must be greater than 0/);
+  });
+
+  it('limits update_map to name, grid, style and seed', () => {
+    expect(() => applyOps(testMap(), [{ op: 'update_map', set: { objects: [] } }])).toThrow(/"objects" can't be changed with update_map/);
+    expect(() => applyOps(testMap(), [{ op: 'update_map', set: { name: '' } }])).toThrow(/name/);
   });
 
   it('refuses to change id or type', () => {

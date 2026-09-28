@@ -11,7 +11,11 @@ export type Op =
   | { op: 'update'; id: string; set?: Record<string, unknown>; unset?: string[] }
   | { op: 'move'; ids: string[]; dx: number; dy: number }
   | { op: 'delete'; ids: string[] }
+  | { op: 'update_map'; set?: Record<string, unknown>; unset?: string[] }
   | { op: 'batch'; ops: Op[] };
+
+/** Top-level map fields that update_map may change. */
+export const MAP_FIELDS = ['name', 'grid', 'style', 'seed'] as const;
 
 export const OpSchema: z.ZodType<Op> = z.lazy(() =>
   z.discriminatedUnion('op', [
@@ -24,6 +28,11 @@ export const OpSchema: z.ZodType<Op> = z.lazy(() =>
     }),
     z.strictObject({ op: z.literal('move'), ids: z.array(Id).min(1), dx: z.number(), dy: z.number() }),
     z.strictObject({ op: z.literal('delete'), ids: z.array(Id).min(1) }),
+    z.strictObject({
+      op: z.literal('update_map'),
+      set: z.record(z.string(), z.unknown()).optional(),
+      unset: z.array(z.string()).optional(),
+    }),
     z.strictObject({ op: z.literal('batch'), ops: z.array(OpSchema) }),
   ]),
 );
@@ -47,7 +56,23 @@ export function parseOps(input: unknown): Op[] {
 }
 
 const FIXED_KEYS = new Set(['id', 'type']);
+const MAP_KEYS = new Set<string>(MAP_FIELDS);
 type Obj = Record<string, unknown> & { id: string; type: string };
+
+/** Apply set/unset to a record; returns the set/unset that undoes it. */
+function patch(target: Record<string, unknown>, set: Record<string, unknown> = {}, unset: string[] = []) {
+  const keys = [...Object.keys(set), ...unset];
+  const prevSet: Record<string, unknown> = {};
+  const prevUnset: string[] = [];
+  for (const k of keys) {
+    if (k in prevSet || prevUnset.includes(k)) continue;
+    if (k in target) prevSet[k] = structuredClone(target[k]);
+    else prevUnset.push(k);
+  }
+  for (const k of unset) delete target[k];
+  Object.assign(target, structuredClone(set));
+  return { set: prevSet, ...(prevUnset.length ? { unset: prevUnset } : {}) };
+}
 
 function flatten(ops: readonly Op[]): Exclude<Op, { op: 'batch' }>[] {
   return ops.flatMap((o) => (o.op === 'batch' ? flatten(o.ops) : [o]));
@@ -97,19 +122,17 @@ export function applyOps(map: DelveMap, ops: readonly Op[]): ApplyResult {
       case 'update': {
         const i = indexOf(op.id);
         if (i === -1) fail(`no object with id "${op.id}"`);
-        const obj = objects[i]!;
         const keys = [...Object.keys(op.set ?? {}), ...(op.unset ?? [])];
         for (const k of keys) if (FIXED_KEYS.has(k)) fail(`"${k}" can't be changed; delete and re-add instead`);
-        const prevSet: Record<string, unknown> = {};
-        const prevUnset: string[] = [];
+        undo.push([{ op: 'update', id: op.id, ...patch(objects[i]!, op.set, op.unset) }]);
+        break;
+      }
+      case 'update_map': {
+        const keys = [...Object.keys(op.set ?? {}), ...(op.unset ?? [])];
         for (const k of keys) {
-          if (k in prevSet || prevUnset.includes(k)) continue;
-          if (k in obj) prevSet[k] = structuredClone(obj[k]);
-          else prevUnset.push(k);
+          if (!MAP_KEYS.has(k)) fail(`"${k}" can't be changed with update_map (allowed: ${MAP_FIELDS.join(', ')})`);
         }
-        for (const k of op.unset ?? []) delete obj[k];
-        Object.assign(obj, structuredClone(op.set ?? {}));
-        undo.push([{ op: 'update', id: op.id, set: prevSet, ...(prevUnset.length ? { unset: prevUnset } : {}) }]);
+        undo.push([{ op: 'update_map', ...patch(doc as unknown as Record<string, unknown>, op.set, op.unset) }]);
         break;
       }
       case 'move': {

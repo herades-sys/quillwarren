@@ -1,6 +1,6 @@
 export * from './schema.ts';
 export { validateMap, ValidationError } from './validate.ts';
-export { applyOps, parseOps, OpError, OpSchema, type Op, type ApplyResult } from './ops.ts';
+export { applyOps, parseOps, OpError, OpSchema, MAP_FIELDS, type Op, type ApplyResult } from './ops.ts';
 export { describeMap } from './describe.ts';
 export {
   shapePath,

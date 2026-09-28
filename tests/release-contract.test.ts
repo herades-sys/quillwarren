@@ -84,4 +84,16 @@ describe('release contract', () => {
     const buf = Buffer.from(await res.arrayBuffer());
     expect(buf.subarray(1, 4).toString()).toBe('PNG');
   });
+
+  it('stores maps (node:sqlite in DELVE_DATA) and renders them through the API', async () => {
+    const base = `http://127.0.0.1:${port}/api/v1`;
+    const headers = { authorization: 'Bearer test-token', 'content-type': 'application/json' };
+    const created = await fetch(`${base}/maps`, { method: 'POST', headers, body: JSON.stringify({ template: 'test-dungeon' }) });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    expect(existsSync(join(dataDir, 'delve.db'))).toBe(true);
+    const png = await fetch(`${base}/maps/${id}/render.png?ppg=10&view=players`);
+    expect(png.status).toBe(200);
+    expect(png.headers.get('content-type')).toBe('image/png');
+  });
 });
