@@ -1,0 +1,16 @@
+{
+  "name": "@delve/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "clipper2-ts": "2.0.1-18",
+    "zod": "^4.6.5"
+  }
+}

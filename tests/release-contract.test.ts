@@ -11,8 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const root = resolve(import.meta.dirname, '..');
 const entry = join(root, 'release', 'main.mjs');
 
-// Ask the OS for a free port. Never pass PORT=0: the entry would fall back to
-// the live port 8790.
+// Ask the OS for a free port up front so the test knows where to connect.
+// (PORT=0 also works now, but then the port is only in the log.)
 function freePort(): Promise<number> {
   return new Promise((ok, fail) => {
     const srv = createServer();
@@ -71,7 +71,7 @@ describe('release contract', () => {
     const res = await waitForHealth(`http://127.0.0.1:${port}/health`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/^application\/json/);
-    const body = await res.json();
+    const body = (await res.json()) as { ok?: unknown; app?: unknown; version?: unknown };
     expect(body).toMatchObject({ ok: true, app: 'delve' });
     expect(typeof body.version).toBe('string');
   });

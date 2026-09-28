@@ -1,0 +1,103 @@
+// describeMap: a short plain-text summary of a map, for people and for Claude.
+import { corridorBounds, corridorPath, pathLength, roomsById } from './geometry/corridors.ts';
+import { computeFloor } from './geometry/floor.ts';
+import { containsPoint, shapeArea, shapeBounds } from './geometry/shapes.ts';
+import { boundarySegments, collinearOverlap, doorSegment } from './geometry/walls.ts';
+import type { Corridor, Cutout, DelveMap, Door, Point, Room } from './schema.ts';
+
+const fmt = (n: number): string => String(Math.round(n * 100) / 100);
+
+function unitOf(map: DelveMap): { size: number; name: string } {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*([A-Za-z]+)\s*$/.exec(map.grid.unit ?? '');
+  return m ? { size: Number(m[1]), name: m[2]! } : { size: 5, name: 'ft' };
+}
+
+const roomName = (r: Room): string => [r.label, r.name ?? '(unnamed)'].filter(Boolean).join(' ');
+
+export function describeMap(map: DelveMap): string {
+  const unit = unitOf(map);
+  const ft = (sq: number): string => `${fmt(sq * unit.size)} ${unit.name}`;
+  const rooms = map.objects.filter((o): o is Room => o.type === 'room');
+  const corridors = map.objects.filter((o): o is Corridor => o.type === 'corridor');
+  const doors = map.objects.filter((o): o is Door => o.type === 'door');
+  const cutouts = map.objects.filter((o): o is Cutout => o.type === 'cutout');
+  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout'].includes(o.type));
+  const byId = roomsById(map);
+
+  const lines: string[] = [];
+  lines.push(
+    `${map.name} (${map.id}): ${rooms.length} rooms, ${corridors.length} corridors, ${doors.length} doors, ` +
+      `${cutouts.length} cutouts. 1 square = ${unit.size} ${unit.name}.`,
+  );
+
+  lines.push('Rooms:');
+  for (const r of rooms) {
+    const b = shapeBounds(r.shape);
+    const w = b.x1 - b.x0;
+    const h = b.y1 - b.y0;
+    const size =
+      'rect' in r.shape
+        ? `${fmt(w)}×${fmt(h)} sq (${ft(w)} × ${ft(h)})`
+        : 'circle' in r.shape
+          ? `circle, radius ${fmt(r.shape.circle[2])} sq`
+          : `polygon, ${fmt(shapeArea(r.shape))} sq²`;
+    lines.push(`  ${roomName(r)} [${r.id}]: ${size} at ${fmt(b.x0)},${fmt(b.y0)}`);
+  }
+
+  // Which room or corridor areas a door's midpoint touches.
+  const corridorArea = new Map(
+    corridors.map((c) => {
+      const path = corridorPath(c, byId);
+      return [c.id, path ? corridorBounds(path, c.width) : null] as const;
+    }),
+  );
+  const doorMid = (d: Door): Point =>
+    d.along === 'x' ? [d.at[0] + d.width / 2, d.at[1]] : [d.at[0], d.at[1] + d.width / 2];
+  const doorText = (d: Door): string => `${d.id} (${d.style ?? 'normal'}${d.open ? ', open' : ''})`;
+  const usedDoors = new Set<string>();
+
+  if (corridors.length) lines.push('Connections:');
+  for (const c of corridors) {
+    const path = corridorPath(c, byId);
+    const ends = [c.from, c.to].map((id) => (id && byId.get(id) ? roomName(byId.get(id)!) : '(open end)'));
+    const area = corridorArea.get(c.id);
+    const its = area ? doors.filter((d) => containsPoint(area, doorMid(d))) : [];
+    its.forEach((d) => usedDoors.add(d.id));
+    const len = path ? pathLength(path) : 0;
+    lines.push(
+      `  ${c.id}: ${ends[0]} ↔ ${ends[1]}, ${fmt(c.width)} sq wide, ${fmt(len)} sq (${ft(len)}) long` +
+        `${c.path ? '' : ', auto-routed'}${path ? '' : ', NOT CONNECTED'}` +
+        `${its.length ? `; doors ${its.map(doorText).join(', ')}` : ''}`,
+    );
+  }
+
+  const rest = doors.filter((d) => !usedDoors.has(d.id));
+  if (rest.length) {
+    const edge = boundarySegments(computeFloor(map));
+    lines.push('Other doors:');
+    for (const d of rest) {
+      const touching = rooms.filter((r) => containsPoint(shapeBounds(r.shape), doorMid(d))).map(roomName);
+      const outside = edge.some((s) => collinearOverlap(s, doorSegment(d)) > 1e-6);
+      const where = touching.length ? touching.join(' ↔ ') : 'no room';
+      lines.push(`  ${doorText(d)}: ${where}${outside ? ', leads outside' : ''}`);
+    }
+  }
+
+  if (cutouts.length) {
+    const groups = new Map<string, string[]>();
+    for (const c of cutouts) {
+      const b = shapeBounds(c.shape);
+      const mid: Point = [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+      const inRoom = rooms.find((r) => containsPoint(shapeBounds(r.shape), mid));
+      const key = inRoom ? `in ${roomName(inRoom)}` : 'outside rooms';
+      groups.set(key, [...(groups.get(key) ?? []), `${c.id}${c.name ? ` ${c.name.toLowerCase()}` : ''}`]);
+    }
+    lines.push(`Cutouts: ${[...groups].map(([k, ids]) => `${ids.join(', ')} ${k}`).join('; ')}`);
+  }
+  if (others.length) {
+    const counts = new Map<string, number>();
+    for (const o of others) counts.set(o.type, (counts.get(o.type) ?? 0) + 1);
+    lines.push(`Also: ${[...counts].map(([t, n]) => `${n} ${t}`).join(', ')}`);
+  }
+  return lines.join('\n');
+}

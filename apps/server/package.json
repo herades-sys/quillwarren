@@ -1,0 +1,14 @@
+{
+  "name": "@delve/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env.dev src/main.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@delve/core": "*",
+    "fastify": "^5.12.5"
+  }
+}
