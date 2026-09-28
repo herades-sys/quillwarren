@@ -79,10 +79,10 @@ export function pathLength(path: readonly Point[]): number {
   return len;
 }
 
-/** Bounds of a corridor's area: its centerline grown by half the width. */
+/** Bounds of the area a corridor covers (butt ends: it doesn't stick out past its path's ends). */
 export function corridorBounds(path: readonly Point[], width: number): Bounds {
-  const xs = path.map((p) => p[0]);
-  const ys = path.map((p) => p[1]);
-  const h = width / 2;
-  return { x0: Math.min(...xs) - h, y0: Math.min(...ys) - h, x1: Math.max(...xs) + h, y1: Math.max(...ys) + h };
+  const pts = corridorOutline(path, width).flat();
+  const xs = pts.length ? pts.map((p) => p.x) : path.map((p) => p[0]);
+  const ys = pts.length ? pts.map((p) => p.y) : path.map((p) => p[1]);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
 }

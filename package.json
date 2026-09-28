@@ -6,12 +6,14 @@
   "description": "Self-hosted dungeon map editor controlled through an API",
   "scripts": {
     "build": "sh scripts/build-release.sh",
+    "build:web": "sh scripts/build-web.sh",
     "release": "npm run build && sudo /usr/local/sbin/delve-release",
     "rollback": "sudo /usr/local/sbin/delve-release --rollback",
     "test": "vitest run",
     "render": "node apps/server/src/cli/render.ts",
     "demo": "node apps/server/src/cli/demo.ts",
-    "typecheck": "tsc -p . && tsc -p packages/core && tsc -p packages/core/tsconfig.test.json && tsc -p apps/server"
+    "mcp": "node apps/server/src/cli/mcp-call.ts",
+    "typecheck": "tsc -p . && tsc -p packages/core && tsc -p packages/core/tsconfig.test.json && tsc -p apps/server && tsc -p apps/web && tsc -p apps/web/tsconfig.test.json"
   },
   "engines": {
     "node": ">=24"
@@ -24,6 +26,7 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/server"
+    "apps/server",
+    "apps/web"
   ]
 }

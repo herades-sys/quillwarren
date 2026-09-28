@@ -12,6 +12,7 @@ npx esbuild apps/server/src/main.ts \
   --external:@resvg/resvg-js --external:bufferutil --external:utf-8-validate \
   --outfile=release/main.mjs --log-level=warning \
   --banner:js="import { createRequire as __delveRequire } from 'node:module'; const require = __delveRequire(import.meta.url);"
+sh scripts/build-web.sh release/web
 for pkg in node_modules/@resvg/*; do cp -R "$pkg" release/node_modules/@resvg/; done
 cp node_modules/@expo-google-fonts/im-fell-english/400Regular/IMFellEnglish_400Regular.ttf release/fonts/
 printf '%s\n' "$(git rev-parse --short HEAD 2>/dev/null || echo nogit)-$(date +%Y%m%d%H%M)" > release/VERSION

@@ -80,6 +80,24 @@ describe('preview page', () => {
     expect((await app.inject({ url: '/preview/clean.png?ppg=5' })).statusCode).toBe(400);
   });
 
+  it('serves a live viewer page for a saved map', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/maps', headers: { authorization: 'Bearer t' }, payload: {} });
+    // this app has no token, so creation is refused: use a token-enabled app instead
+    expect(created.statusCode).toBe(503);
+    const withToken = buildApp({ version: 'v1', started: 'now' }, { token: 't' });
+    const res = await withToken.inject({ method: 'POST', url: '/api/v1/maps', headers: { authorization: 'Bearer t' }, payload: { template: 'test-dungeon', name: 'Viewer test' } });
+    const { id } = res.json();
+    const page = await withToken.inject({ url: `/maps/${id}?view=players` });
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('<script id="delve-initial" type="application/json">');
+    expect(page.body).toContain('<script type="module" src="/assets/viewer.js?v=v1">');
+    expect(page.body).toContain('aria-pressed="true">Players’ view');
+    expect(page.body).toMatch(/<svg [^>]*viewBox=/); // first picture is server-rendered
+    expect((await withToken.inject({ url: '/' })).body).toContain(`href="/maps/${id}"`);
+    expect((await withToken.inject({ url: '/maps/map_nope' })).statusCode).toBe(404);
+    await withToken.close();
+  });
+
   it('serves the label font', async () => {
     const res = await app.inject({ url: '/fonts/im-fell-english.ttf' });
     expect(res.statusCode).toBe(200);

@@ -3,8 +3,11 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { FORMAT, FORMAT_VERSION } from '@delve/core';
 import { registerApi } from './api.ts';
 import { LiveHub } from './live.ts';
+import { registerMcp } from './mcp.ts';
 import { registerPreview } from './preview.ts';
+import { MapService } from './service.ts';
 import { MapStore } from './store.ts';
+import { registerViewer } from './viewer.ts';
 
 export interface AppInfo {
   version: string;
@@ -35,7 +38,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   });
   const store = opts.store ?? new MapStore(':memory:');
   if (!opts.store) app.addHook('onClose', async () => store.close());
-  const hub = new LiveHub();
+  const service = new MapService(store, new LiveHub());
 
   app.get('/health', async () => ({
     ok: true,
@@ -47,7 +50,9 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
 
   void app.register(websocket);
   void app.register(async (scoped) => {
-    registerApi(scoped, { store, hub, token: opts.token });
+    registerApi(scoped, { service, token: opts.token });
+    registerMcp(scoped, { service, token: opts.token, version: info.version });
+    registerViewer(scoped, info, store);
     registerPreview(scoped, info, store);
   });
   return app;

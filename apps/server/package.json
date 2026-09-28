@@ -11,8 +11,10 @@
     "@delve/core": "*",
     "@expo-google-fonts/im-fell-english": "^0.4.0",
     "@fastify/websocket": "^11.3.1",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@resvg/resvg-js": "^2.6.2",
-    "fastify": "^5.12.5"
+    "fastify": "^5.12.5",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1"

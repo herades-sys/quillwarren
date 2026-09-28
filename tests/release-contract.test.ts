@@ -95,5 +95,28 @@ describe('release contract', () => {
     const png = await fetch(`${base}/maps/${id}/render.png?ppg=10&view=players`);
     expect(png.status).toBe(200);
     expect(png.headers.get('content-type')).toBe('image/png');
+
+    // the live viewer page and its browser bundle ship in release/web
+    const page = await fetch(`http://127.0.0.1:${port}/maps/${id}`);
+    expect(page.status).toBe(200);
+    const js = await fetch(`http://127.0.0.1:${port}/assets/viewer.js`);
+    expect(js.status).toBe(200);
+    expect(await js.text()).toContain('WebSocket');
+  });
+
+  it('answers MCP from the bundle', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-token', 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'contract-test', version: '1' } },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { result?: { serverInfo?: { name?: string } } };
+    expect(body.result?.serverInfo?.name).toBe('delve');
   });
 });

@@ -44,7 +44,8 @@ function savedMaps(store: MapStore): string {
   <td><strong>${esc(m.name)}</strong><br><code>${esc(m.id)}</code></td>
   <td class="num">${m.rev}</td><td class="num">${m.objects}</td>
   <td class="meta">${esc(m.updated.replace('T', ' ').slice(0, 16))}</td>
-  <td class="links"><a class="button primary" href="${base}/render.png?view=players">Roll20 PNG · players</a>
+  <td class="links"><a class="button primary" href="/maps/${encodeURIComponent(m.id)}">Open live view</a>
+    <a class="button" href="${base}/render.png?view=players">Roll20 PNG · players</a>
     <a class="button" href="${base}/render.png">PNG · GM</a> <a class="button" href="${base}/render.svg">SVG</a>
     <a class="button" href="${base}/describe">Text</a></td>
 </tr>`;

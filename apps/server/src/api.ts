@@ -17,11 +17,11 @@ import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 
 import { bearer, checkToken } from './auth.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
 import { render, RenderQueryError, type RenderQuery } from './render.ts';
-import { ConflictError, newMapId, NotFoundError, StaleError, type Change, type MapStore } from './store.ts';
+import type { MapService } from './service.ts';
+import { ConflictError, newMapId, NotFoundError, StaleError } from './store.ts';
 
 export interface ApiDeps {
-  store: MapStore;
-  hub: LiveHub;
+  service: MapService;
   token: string | undefined;
 }
 
@@ -44,7 +44,7 @@ export function errorResponse(e: unknown): { status: number; body: ErrorBody } {
 const byOf = (v: unknown, fallback: string): string =>
   typeof v === 'string' && v.trim() ? v.trim().slice(0, 40) : fallback;
 
-function newMap(body: { name?: unknown; style?: unknown; template?: unknown }): DelveMap {
+export function newMap(body: { name?: unknown; style?: unknown; template?: unknown }): DelveMap {
   const template = body.template ?? 'empty';
   if (template !== 'empty' && template !== 'test-dungeon') {
     throw new ValidationError([`template must be "empty" or "test-dungeon", got ${JSON.stringify(template)}`]);
@@ -64,22 +64,22 @@ function newMap(body: { name?: unknown; style?: unknown; template?: unknown }): 
   };
 }
 
-export function registerApi(app: FastifyInstance, { store, hub, token }: ApiDeps): void {
-  const fail = (reply: FastifyReply, e: unknown) => {
-    const { status, body } = errorResponse(e);
-    return reply.code(status).send(body);
-  };
-
-  /** preHandler for writes. */
-  const writer = async (req: FastifyRequest, reply: FastifyReply) => {
+/** Fastify preHandler that lets a request through only with the API token. */
+export function tokenGuard(token: string | undefined) {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
     const r = checkToken(token, bearer(req.headers.authorization));
     if (r === 'unconfigured') return reply.code(503).send({ error: 'this server has no API token configured, so changes are disabled' });
     if (r !== 'ok') return reply.code(401).send({ error: 'changes need the API token: send "Authorization: Bearer <token>"' });
   };
+}
 
-  const publish = (c: Change) => {
-    hub.broadcast(c.mapId, { type: 'ops', rev: c.rev, by: c.by, kind: c.kind, ops: c.ops });
+export function registerApi(app: FastifyInstance, { service, token }: ApiDeps): void {
+  const { store } = service;
+  const fail = (reply: FastifyReply, e: unknown) => {
+    const { status, body } = errorResponse(e);
+    return reply.code(status).send(body);
   };
+  const writer = tokenGuard(token);
 
   app.get('/api/v1', async () => ({
     app: 'delve',
@@ -93,7 +93,7 @@ export function registerApi(app: FastifyInstance, { store, hub, token }: ApiDeps
   app.post('/api/v1/maps', { preHandler: writer }, async (req, reply) => {
     const body = (req.body ?? {}) as { map?: unknown; name?: unknown; style?: unknown; template?: unknown; by?: unknown };
     try {
-      const change = store.create(body.map ?? newMap(body), byOf(body.by, 'api'));
+      const change = service.create(body.map ?? newMap(body), byOf(body.by, 'api'));
       return reply.code(201).send({ id: change.mapId, rev: change.rev, map: change.map });
     } catch (e) {
       return fail(reply, e);
@@ -113,8 +113,7 @@ export function registerApi(app: FastifyInstance, { store, hub, token }: ApiDeps
   app.delete('/api/v1/maps/:id', { preHandler: writer }, async (req, reply) => {
     const { id } = req.params as { id: string };
     try {
-      store.delete(id);
-      hub.broadcast(id, { type: 'deleted' });
+      service.delete(id);
       return reply.code(204).send();
     } catch (e) {
       return fail(reply, e);
@@ -128,8 +127,7 @@ export function registerApi(app: FastifyInstance, { store, hub, token }: ApiDeps
       if (body.baseRev !== undefined && !Number.isInteger(body.baseRev)) {
         throw new ValidationError(['baseRev must be a whole number']);
       }
-      const change = store.apply(id, parseOps(body.ops), { baseRev: body.baseRev as number | undefined, by: byOf(body.by, 'api') });
-      publish(change);
+      const change = service.apply(id, parseOps(body.ops), { baseRev: body.baseRev as number | undefined, by: byOf(body.by, 'api') });
       return { rev: change.rev };
     } catch (e) {
       return fail(reply, e);
@@ -141,8 +139,7 @@ export function registerApi(app: FastifyInstance, { store, hub, token }: ApiDeps
       const { id } = req.params as { id: string };
       const by = byOf((req.body as { by?: unknown } | undefined)?.by, 'api');
       try {
-        const change = action === 'undo' ? store.undo(id, by) : store.redo(id, by);
-        publish(change);
+        const change = action === 'undo' ? service.undo(id, by) : service.redo(id, by);
         return { rev: change.rev };
       } catch (e) {
         return fail(reply, e);
@@ -154,11 +151,9 @@ export function registerApi(app: FastifyInstance, { store, hub, token }: ApiDeps
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { ids?: unknown; by?: unknown };
     try {
-      store.get(id);
       const ids = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === 'string') : [];
       if (!ids.length) throw new ValidationError(['ids must be a non-empty list of object ids']);
-      hub.broadcast(id, { type: 'focus', ids, by: byOf(body.by, 'api') });
-      return { viewers: hub.count(id) };
+      return { viewers: service.focus(id, ids, byOf(body.by, 'api')) };
     } catch (e) {
       return fail(reply, e);
     }
@@ -206,7 +201,7 @@ export function registerApi(app: FastifyInstance, { store, hub, token }: ApiDeps
       return;
     }
     const canWrite = checkToken(token, (req.query as { token?: string }).token) === 'ok';
-    hub.join(id, socket);
+    service.hub.join(id, socket);
     LiveHub.send(socket, { type: 'hello', rev: cur.rev, map: cur.map });
 
     socket.on('message', (raw) => {
@@ -223,9 +218,11 @@ export function registerApi(app: FastifyInstance, { store, hub, token }: ApiDeps
       }
       try {
         const baseRev = Number.isInteger(msg.baseRev) ? (msg.baseRev as number) : undefined;
-        const change = store.apply(id, parseOps(msg.ops), { baseRev, by: byOf(msg.by, 'editor') });
-        LiveHub.send(socket, { type: 'ack', rev: change.rev, ref: msg.ref });
-        publish(change);
+        service.apply(id, parseOps(msg.ops), {
+          baseRev,
+          by: byOf(msg.by, 'editor'),
+          onCommit: (c) => LiveHub.send(socket, { type: 'ack', rev: c.rev, ref: msg.ref }),
+        });
       } catch (e) {
         let body: ErrorBody;
         try {

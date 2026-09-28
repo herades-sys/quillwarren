@@ -60,6 +60,38 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 3. Other messages: `{ type: "focus", ids, by }`, `{ type: "deleted" }` and `{ type: "pong" }` (the reply to `{ type: "ping" }`).
 4. With `?token=` the socket can also write: send `{ type: "ops", ops, baseRev?, by?, ref? }`. You get `{ type: "ack", rev, ref }` or `{ type: "error", error, problems?, rev?, ref? }`, and everyone, you included, gets the usual `ops` message.
 
+## MCP: `/mcp` (for Claude Code)
+
+- **Transport:** Streamable HTTP, stateless (every POST stands alone) and JSON responses. Needs `Authorization: Bearer <token>`; GET and DELETE return 405.
+- **Registering it** (once, on the machine that runs Claude Code): `claude mcp add --transport http --scope user delve http://192.168.1.9:8790/mcp --header "Authorization: Bearer <token>"`.
+- **Attribution:** every change made through MCP is recorded with `by: "claude"`.
+- **Server instructions** tell the model the coordinate rules (squares, y down, top-left origin) and the usual workflow.
+
+| Tool | Does |
+|---|---|
+| `list_maps`, `create_map` (`name`, `style?`, `template?`) | Find or start maps. Returns the viewer link |
+| `get_map`, `describe_map` | Full JSON / plain-text summary |
+| `add_room` (`rect` \| `poly` \| `circle`, `name?`, `label?`, `notes?`) | The room number defaults to the next free one |
+| `connect` (`from`, `to`, `width?`=2, `doors?` none/from/to/both, `door_style?`) | Auto-routed corridor that follows its rooms, with doors across its mouths |
+| `add_cutout`, `add_door`, `add_stairs`, `add_label` | Details |
+| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed) | Changes |
+| `undo`, `redo` | History |
+| `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
+| `export` (`format?`, `view?`=players, `ppg?`=70) | A download link for the user |
+| `focus` (`ids`) | Pans and highlights every open viewer |
+| `apply_ops` | Raw ops, one undoable step |
+
+From a shell: `DELVE_API_TOKEN=… npm run mcp -- add_room '{"map":"map_…","rect":[0,0,6,6]}'` (`--list` shows the tools).
+
+## Live viewer: `/maps/:id`
+
+A read-only page:
+- **First paint:** rendered on the server, so the map shows before the script loads.
+- **Live changes:** the browser bundle `/assets/viewer.js` (built from `apps/web` by esbuild) redraws with `@delve/core` on every change and briefly highlights what changed.
+- **Controls:** drag to pan; wheel, `+` and `-` to zoom; double-click or `F` to fit. It follows `focus` with a short animation and an orange highlight.
+- **Options:** GM or players' view, style preview, a Roll20 PNG button.
+- **Connection:** it reconnects by itself (for example across a release) and resyncs if it missed a revision.
+
 ## Example
 
 ```sh

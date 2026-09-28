@@ -11,7 +11,7 @@ export {
   type Polygon,
   type Bounds,
 } from './geometry/shapes.ts';
-export { autoRoute, corridorPath, corridorOutline, pathLength } from './geometry/corridors.ts';
+export { autoRoute, corridorPath, corridorOutline, corridorBounds, pathLength, roomsById } from './geometry/corridors.ts';
 export { computeFloor, floorPaths, floorArea, polygonsOf } from './geometry/floor.ts';
 export {
   computeWalls,
