@@ -9,9 +9,9 @@ const map = validateMap(
 );
 
 describe('svgToPng', () => {
-  it('renders the test dungeon at Roll20 size (70 px per square)', () => {
+  it('renders the test dungeon at Roll20 size (70 px per square)', async () => {
     const scene = buildScene(map);
-    const png = svgToPng(sceneToSvg(scene, { ppg: 70 }));
+    const png = await svgToPng(sceneToSvg(scene, { ppg: 70 }));
     expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     expect(pngSize(png)).toEqual({
       width: (scene.bounds.x1 - scene.bounds.x0) * 70,
@@ -19,8 +19,8 @@ describe('svgToPng', () => {
     });
   });
 
-  it('renders the same bytes every time', () => {
+  it('renders the same bytes every time', async () => {
     const svg = sceneToSvg(buildScene(map), { ppg: 20 });
-    expect(svgToPng(svg).equals(svgToPng(svg))).toBe(true);
+    expect((await svgToPng(svg)).equals(await svgToPng(svg))).toBe(true);
   });
 });

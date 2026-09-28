@@ -75,4 +75,13 @@ describe('release contract', () => {
     expect(body).toMatchObject({ ok: true, app: 'delve' });
     expect(typeof body.version).toBe('string');
   });
+
+  it('renders a PNG from the bundle (native resvg and the font ship in release/)', async () => {
+    await waitForHealth(`http://127.0.0.1:${port}/health`);
+    const res = await fetch(`http://127.0.0.1:${port}/preview/print.png?ppg=10`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.subarray(1, 4).toString()).toBe('PNG');
+  });
 });

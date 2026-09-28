@@ -29,7 +29,7 @@ if (output.endsWith('.svg')) {
   writeFileSync(output, svg);
   console.log(`wrote ${output} (${(svg.length / 1024).toFixed(0)} KB)`);
 } else {
-  const png = svgToPng(svg);
+  const png = await svgToPng(svg);
   writeFileSync(output, png);
   const { width, height } = pngSize(png);
   console.log(`wrote ${output}: ${width}×${height} px, ${(png.length / 1024).toFixed(0)} KB, ${(performance.now() - started).toFixed(0)} ms`);

@@ -7,6 +7,8 @@ import type { Layer, Scene } from './scene.ts';
 export interface SvgOptions {
   /** Pixels per grid square. Roll20's default grid is 70. */
   ppg?: number;
+  /** Prefix for element ids, so several maps can sit inline on one HTML page. */
+  idPrefix?: string;
 }
 
 const n = (v: number): string => {
@@ -37,15 +39,15 @@ function linesD(lines: readonly Polyline[]): string {
   return d;
 }
 
-function common(layer: Layer): string {
+function common(layer: Layer, prefix: string): string {
   let a = '';
   if (layer.opacity !== undefined && layer.opacity !== 1) a += ` opacity="${n(layer.opacity)}"`;
-  if (layer.clip) a += ` clip-path="url(#clip-${layer.clip})"`;
+  if (layer.clip) a += ` clip-path="url(#${esc(prefix)}clip-${esc(layer.clip)})"`;
   return a;
 }
 
-function layerSvg(layer: Layer): string {
-  const g = (inner: string) => `<g data-layer="${esc(layer.name)}"${common(layer)}>${inner}</g>`;
+function layerSvg(layer: Layer, prefix: string): string {
+  const g = (inner: string) => `<g data-layer="${esc(layer.name)}"${common(layer, prefix)}>${inner}</g>`;
   switch (layer.kind) {
     case 'rect': {
       const b = layer.bounds;
@@ -91,17 +93,21 @@ function layerSvg(layer: Layer): string {
 
 export function sceneToSvg(scene: Scene, opts: SvgOptions = {}): string {
   const ppg = opts.ppg ?? 70;
+  const prefix = opts.idPrefix ?? '';
   const { x0, y0, x1, y1 } = scene.bounds;
   const w = x1 - x0;
   const h = y1 - y0;
   const clips = Object.entries(scene.clips)
-    .map(([id, polys]) => `<clipPath id="clip-${esc(id)}"><path d="${polygonsD(polys)}" clip-rule="evenodd"/></clipPath>`)
+    .map(
+      ([id, polys]) =>
+        `<clipPath id="${esc(prefix)}clip-${esc(id)}"><path d="${polygonsD(polys)}" clip-rule="evenodd"/></clipPath>`,
+    )
     .join('');
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w * ppg)}" height="${Math.round(h * ppg)}" ` +
     `viewBox="${n(x0)} ${n(y0)} ${n(w)} ${n(h)}">` +
     `<defs>${clips}</defs>` +
-    scene.layers.map(layerSvg).join('') +
+    scene.layers.map((l) => layerSvg(l, prefix)).join('') +
     `</svg>`
   );
 }

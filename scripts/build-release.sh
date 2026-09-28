@@ -1,13 +1,18 @@
 #!/bin/sh
 # Builds the live app into ./release (entry release/main.mjs, must answer GET /health).
-# The server and all its JS dependencies are bundled into one file by esbuild.
+# The server and its JS dependencies are bundled into one file by esbuild.
+# resvg is a native addon, so it stays external and ships in release/node_modules,
+# together with the label font in release/fonts.
 set -eu
 cd "$(dirname "$0")/.."
 rm -rf release
-mkdir -p release
+mkdir -p release/node_modules/@resvg release/fonts
 npx esbuild apps/server/src/main.ts \
   --bundle --platform=node --format=esm --target=node24 \
+  --external:@resvg/resvg-js \
   --outfile=release/main.mjs --log-level=warning \
   --banner:js="import { createRequire as __delveRequire } from 'node:module'; const require = __delveRequire(import.meta.url);"
+for pkg in node_modules/@resvg/*; do cp -R "$pkg" release/node_modules/@resvg/; done
+cp node_modules/@expo-google-fonts/im-fell-english/400Regular/IMFellEnglish_400Regular.ttf release/fonts/
 printf '%s\n' "$(git rev-parse --short HEAD 2>/dev/null || echo nogit)-$(date +%Y%m%d%H%M)" > release/VERSION
-echo "built release/ ($(cat release/VERSION), $(du -h --apparent-size release/main.mjs | cut -f1))"
+echo "built release/ ($(cat release/VERSION), $(du -sh --apparent-size release | cut -f1))"
