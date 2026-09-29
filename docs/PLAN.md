@@ -118,7 +118,7 @@ Fonts must be open-licence (OFL) and bundled, so the browser and resvg render id
 | Universal VTT `.dd2vtt` | Foundry (Universal Battlemap Importer), Fantasy Grounds Unity and others | PNG plus walls, doors and lights in grid units |
 | Foundry scene JSON | Foundry, direct | Only if the user plays on Foundry |
 | Dungeon Scrawl `.ds` | Opening in Dungeon Scrawl | Floor outline. See the `.ds` notes in CLAUDE.md |
-| Import | `.delve.json`, `.ds` | A `.ds` file comes in as one polygon room |
+| Import | `.delve.json`, `.ds` | A `.ds` file comes in as one polygon room per area, plus cutouts, doors and labels |
 | Text summary | Session notes, Claude | `GET .../describe`: rooms, sizes, exits, door types |
 
 ## API
@@ -158,7 +158,11 @@ Sizes are rough (S, M, L) and show relative effort only.
    - **Live:** edits go over the live WebSocket, so the user's and Claude's changes show up for each other.
    - **Login:** a password set with `sudo delve-passwd` (only a scrypt hash is stored) gives a 30-day HttpOnly SameSite=Strict session cookie, and cookie writes must be same-origin. There's a "New map" form on the start page.
    - **Tested:** all tools in a real browser against a dev server with `DELVE_INSECURE_OPEN_EDIT=1`.
-6. **Exports and imports (M).** Roll20 PNG first (70 px per square, players' view, size in filename). Then Universal VTT (Roll20 walls via a Pro mod, if the user has Pro), and `.ds` export and import. Foundry scene JSON is dropped unless that changes.
+6. **Exports and imports (M), `.ds` done 2026-09-29.** Roll20 PNG is done (70 px per square, players' view, size in filename).
+   - **`.ds` export and import:** `packages/core/src/interop/dungeonscrawl.ts` builds and reads the document, and `apps/server/src/zip.ts` writes and reads the ZIP. `GET /maps/:id/export.ds`, `POST /maps/import.ds`, an MCP `export` format, and an "Import .ds" button on the start page.
+   - **Tested:** importing the real Dungeon Scrawl fixture gives the test dungeon exactly (floor XOR 0 after the (+9, +2) shift, all 5 doors). Our export opened in the real Dungeon Scrawl with floor, pillars, doors, numbers and labels.
+   - **Node shapes:** Dungeon Scrawl crashes when a node lacks a field it expects (the first export missed `GRID.roughOptions`). A test now checks that every exported node type has exactly the fixture's fields.
+   - **Still to do:** Universal VTT (Roll20 walls via a Pro mod), only if the user has Pro. Foundry scene JSON is dropped unless that changes.
 7. **Extras (later).** Props from our own icons, a dungeon generator, fog of war with a players' screen and reveal-by-API, multiple levels, nightly backup to the NAS, a public subdomain with login, a Dashy tile.
 
 ## Decisions

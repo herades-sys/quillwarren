@@ -48,9 +48,12 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   const auth: EditorAuth = { sessions: new Sessions(opts.token, opts.openEdit ?? false), passwordHash: opts.passwordHash };
   if (opts.openEdit) app.log.warn('DELVE_INSECURE_OPEN_EDIT is on: every browser can edit. Never use this on the live server.');
 
-  // HTML forms (the login page) post urlencoded bodies.
+  // HTML forms (the login page) post urlencoded bodies; file imports post raw bytes.
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
     done(null, Object.fromEntries(new URLSearchParams(body as string)));
+  });
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: 20 * 1024 * 1024 }, (_req, body, done) => {
+    done(null, body);
   });
 
   app.get('/health', async () => ({

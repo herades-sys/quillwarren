@@ -49,6 +49,7 @@ function savedMaps(store: MapStore): string {
   <td class="links"><a class="button primary" href="/maps/${encodeURIComponent(m.id)}">Open live view</a>
     <a class="button" href="${base}/render.png?view=players">Roll20 PNG · players</a>
     <a class="button" href="${base}/render.png">PNG · GM</a> <a class="button" href="${base}/render.svg">SVG</a>
+    <a class="button" href="${base}/export.ds" title="Open this map in Dungeon Scrawl">Dungeon Scrawl</a>
     <a class="button" href="${base}/describe">Text</a></td>
 </tr>`;
     })
@@ -70,7 +71,26 @@ function newMapForm(): string {
   <label>Style <select name="style">${styles}</select></label>
   <label>Start from <select name="template"><option value="empty">an empty map</option><option value="test-dungeon">the test dungeon</option></select></label>
   <button class="button primary" type="submit">New map</button>
-</form>`;
+  <span class="or">or</span>
+  <label class="button" for="ds-file">Import Dungeon Scrawl file…</label>
+  <input id="ds-file" type="file" accept=".ds" hidden>
+  <span id="import-status" class="note" role="status"></span>
+</form>
+<script>
+  document.getElementById('ds-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const status = document.getElementById('import-status');
+    status.textContent = 'Importing ' + file.name + '…';
+    const name = file.name.replace(/\\.ds$/i, '');
+    const res = await fetch('/api/v1/maps/import.ds?name=' + encodeURIComponent(name), {
+      method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { status.textContent = 'Import failed: ' + (body.error || res.status); e.target.value = ''; return; }
+    location.href = '/maps/' + encodeURIComponent(body.id) + '?edit=1';
+  });
+</script>`;
 }
 
 function page(info: AppInfo, view: View, store: MapStore, loggedIn: boolean, passwordSet: boolean): string {
@@ -158,6 +178,8 @@ function page(info: AppInfo, view: View, store: MapStore, loggedIn: boolean, pas
   button.button.primary { background: var(--accent); }
   .newmap { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
   .newmap label { display: grid; gap: 4px; font-size: .82rem; color: var(--muted); }
+  .newmap label.button { display: inline-block; color: var(--ink); font-size: .88rem; cursor: pointer; }
+  .newmap .or { color: var(--muted); font-size: .85rem; align-self: center; }
   .newmap input, .newmap select { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 12rem; }
 </style>
 </head>

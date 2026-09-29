@@ -4,6 +4,16 @@ export { applyOps, parseOps, OpError, OpSchema, MAP_FIELDS, type Op, type ApplyR
 export { describeMap } from './describe.ts';
 export { nextId, nextLabel, doorAtEnd, connectOps, withAttachedDoors, ConnectError, type ConnectOptions, type ConnectPlan } from './build.ts';
 export {
+  toDungeonScrawl,
+  fromDungeonScrawl,
+  DsImportError,
+  DS_PX,
+  type DsDocument,
+  type DsGeometry,
+  type DsExportOptions,
+  type DsImportResult,
+} from './interop/dungeonscrawl.ts';
+export {
   shapePath,
   shapeBounds,
   shapeArea,

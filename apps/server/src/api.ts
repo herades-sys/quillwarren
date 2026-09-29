@@ -6,9 +6,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   ConnectError,
   describeMap,
+  DsImportError,
   FORMAT,
   FORMAT_VERSION,
+  fromDungeonScrawl,
   OpError,
+  toDungeonScrawl,
   parseOps,
   PRESETS,
   ValidationError,
@@ -20,6 +23,9 @@ import { LiveHub, type LiveMessage } from './live.ts';
 import { render, RenderQueryError, type RenderQuery } from './render.ts';
 import type { MapService } from './service.ts';
 import { ConflictError, newMapId, NotFoundError, StaleError } from './store.ts';
+import { unzipEntry, zipOne, ZipError } from './zip.ts';
+
+const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'map';
 
 export interface ApiDeps {
   service: MapService;
@@ -39,7 +45,9 @@ export function errorResponse(e: unknown): { status: number; body: ErrorBody } {
   if (e instanceof StaleError) return { status: 409, body: { error: e.message, rev: e.rev } };
   if (e instanceof ConflictError) return { status: 409, body: { error: e.message } };
   if (e instanceof ValidationError) return { status: 400, body: { error: e.message, problems: e.problems } };
-  if (e instanceof OpError || e instanceof RenderQueryError || e instanceof ConnectError) return { status: 400, body: { error: e.message } };
+  if (e instanceof OpError || e instanceof RenderQueryError || e instanceof ConnectError || e instanceof DsImportError || e instanceof ZipError) {
+    return { status: 400, body: { error: e.message } };
+  }
   throw e;
 }
 
@@ -189,6 +197,43 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
     const { id } = req.params as { id: string };
     try {
       return reply.type('text/plain; charset=utf-8').send(describeMap(store.get(id).map));
+    } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  // Dungeon Scrawl: download a map as .ds, or create a map from an uploaded .ds.
+  app.get('/api/v1/maps/:id/export.ds', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const { map } = store.get(id);
+      const view = (req.query as { view?: string }).view === 'players' ? 'players' : 'gm';
+      const file = zipOne('map', Buffer.from(JSON.stringify(toDungeonScrawl(map, { view }))));
+      return reply
+        .type('application/octet-stream')
+        .header('content-disposition', `attachment; filename="${slug(map.name)}${view === 'players' ? '_players' : ''}.ds"`)
+        .send(file);
+    } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  app.post('/api/v1/maps/import.ds', { preHandler: writer }, async (req, reply) => {
+    const q = req.query as { name?: string; by?: string };
+    try {
+      if (!Buffer.isBuffer(req.body) || !req.body.length) {
+        throw new ValidationError(['send the .ds file as the request body with content-type application/octet-stream']);
+      }
+      let doc: unknown;
+      try {
+        doc = JSON.parse(unzipEntry(req.body, 'map').toString('utf8'));
+      } catch (e) {
+        if (e instanceof ZipError) throw e;
+        throw new DsImportError('the file\'s "map" entry is not valid JSON');
+      }
+      const { map, notes } = fromDungeonScrawl(doc, { id: newMapId(), name: q.name, seed: randomInt(1, 2 ** 31) });
+      const change = service.create(map, byOf(q.by, 'import'));
+      return reply.code(201).send({ id: change.mapId, rev: change.rev, map: change.map, notes });
     } catch (e) {
       return fail(reply, e);
     }

@@ -59,8 +59,14 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 | `/maps/:id/render.png` | `ppg` (10–300, default **70**, Roll20's grid), `view` (`gm` or `players`), `style` (preset override), `grid=0` | PNG. The filename includes the size in squares, e.g. `crypt_classic-hatching_players_26x38.png` |
 | `/maps/:id/render.svg` | same | SVG, scalable, for print |
 | `/maps/:id/describe` | | Plain text: rooms, sizes, connections, doors |
+| `/maps/:id/export.ds` | `view` (`gm` or `players`) | A Dungeon Scrawl save file, e.g. `crypt.ds` or `crypt_players.ds`. Open it in Dungeon Scrawl with File → Open save file |
 
 The players' view hides room numbers and draws secret doors as solid wall. Styles are `classic-hatching`, `clean`, `old-school-blue` and `print`.
+
+### Dungeon Scrawl `.ds`
+
+- **Export** writes the floor (rooms, corridors and cutouts merged into one outline), normal/locked/barred doors, room numbers and labels. Secret doors become an "S" in the GM view and plain wall for players; archways stay open. Stairs and Delve's styles don't carry over (Dungeon Scrawl uses its own).
+- **Import:** `POST /maps/import.ds?name=` with the raw file as `application/octet-stream` (token or editor login). Returns `201 { id, rev, map, notes }`. Dungeon Scrawl keeps only the merged outline, so the floor comes in as one polygon room per area (holes become cutouts), door stamps become doors and text becomes labels. `notes` says what came across and what was left out. Bad files get a `400` that says why. The start page has an "Import .ds" button.
 
 ## Live: WebSocket `/maps/:id/live`
 
@@ -86,7 +92,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed) | Changes |
 | `undo`, `redo` | History |
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
-| `export` (`format?`, `view?`=players, `ppg?`=70) | A download link for the user |
+| `export` (`format?` png/svg/ds, `view?`=players, `ppg?`=70) | A download link for the user |
 | `focus` (`ids`) | Pans and highlights every open viewer |
 | `apply_ops` | Raw ops, one undoable step |
 
