@@ -163,6 +163,11 @@ Sizes are rough (S, M, L) and show relative effort only.
    - **Tested:** importing the real Dungeon Scrawl fixture gives the test dungeon exactly (floor XOR 0 after the (+9, +2) shift, all 5 doors). Our export opened in the real Dungeon Scrawl with floor, pillars, doors, numbers and labels.
    - **Node shapes:** Dungeon Scrawl crashes when a node lacks a field it expects (the first export missed `GRID.roughOptions`). A test now checks that every exported node type has exactly the fixture's fields.
    - **Still to do:** Universal VTT (Roll20 walls via a Pro mod), only if the user has Pro. Foundry scene JSON is dropped unless that changes.
+6b. **Chat in the editor (M), live 2026-09-29.**
+   - A Claude panel on the map page for logged-in editors. It runs Claude Code on the user's subscription through the chat bridge on the CT, with Delve's MCP tools only.
+   - It streams replies with tool chips, has a model picker (Sonnet, Opus, Haiku), shows subscription usage, and keeps the conversation per map. Each message carries the map, the selection and the view.
+   - See [API.md](API.md#chat-talking-to-claude-from-the-editor).
+   - Props art comes from Claude Design using the prompts in [ASSETS.md](ASSETS.md).
 7. **Extras (later).** Props from our own icons, a dungeon generator, fog of war with a players' screen and reveal-by-API, multiple levels, nightly backup to the NAS, a public subdomain with login, a Dashy tile.
 
 ## Decisions

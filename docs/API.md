@@ -98,6 +98,38 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 
 From a shell: `DELVE_API_TOKEN=… npm run mcp -- add_room '{"map":"map_…","rect":[0,0,6,6]}'` (`--list` shows the tools).
 
+## Chat: talking to Claude from the editor
+
+The map page has a **Claude** button for logged-in editors. It opens a chat panel, and Claude edits the map with the MCP tools while you watch.
+
+- **Where Claude runs:** it runs as Claude Code under the user's own subscription, through the **chat bridge** (`delve-chat.service`). The bridge runs as `dev`, the user Claude Code is logged in as, and listens only on `127.0.0.1:8792`. `DELVE_CHAT_URL=http://127.0.0.1:8792` in `/etc/delve/delve.env` switches the chat on.
+- **What Claude can use:** the bridge starts `claude -p` with Delve's tools only. There are no built-in tools (no shell or files), no other MCP servers, and no user or project settings, hooks or CLAUDE.md.
+- **Tokens:** every message gets its own short-lived MCP token (`chat/tokens.ts`), so the bridge never sees the live API token.
+- **What Claude is told:**
+  - The system prompt (`apps/server/src/chat/prompt.ts`) explains coordinates, walls and doors, every tool, the `apply_ops` format, styles, exports and dungeon design.
+  - Each message starts with a context block: the map, the selection, the visible area and the exact objects.
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET | `/api/v1/chat` | | `{ enabled, ok, claude, models, model }`, or `{ enabled: false }` when the chat isn't set up |
+| POST | `/api/v1/maps/:id/chat` | `{ message, session?, selection?: ids, view?: {x0,y0,x1,y1}, model?: sonnet \| opus \| haiku }` | A stream of JSON lines (`application/x-ndjson`) |
+
+**Stream events:**
+
+| Event | Meaning |
+|---|---|
+| `start {session, model}` | Keep `session` and send it back to continue the conversation |
+| `text {text}` | A piece of the reply; append it |
+| `tool {id, name, input}` | Claude called a tool |
+| `tool_done {id, ok, text}` | That tool finished |
+| `usage {fiveHour, sevenDay}` | Subscription use, 0 to 1 of each window |
+| `done {ok, turns, ms, error?}` | The reply is complete |
+| `error {error, code?}` | Something failed. `code` `no_session` means start a new conversation |
+
+- **Closing the request stops Claude.** Changes it already made stay, and undo removes them.
+- **Limits:** a run stops after 5 minutes, and at most 2 run at once (`429` otherwise).
+- **Bridge health:** `curl http://127.0.0.1:8792/health` on the CT.
+
 ## Live viewer: `/maps/:id`
 
 A read-only page:
