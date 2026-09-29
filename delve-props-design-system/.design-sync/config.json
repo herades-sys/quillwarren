@@ -1,0 +1,5 @@
+{
+  "projectId": "9b51a625-64d0-4bc5-b8e0-bea079628f99",
+  "shape": "prebuilt",
+  "notes": "Claude Design export (made in Cowork), uploaded as-is plus styles.css generated from tokens.json. design-system.json is left out (the export's app metadata, with blob ids from the old project). No _ds_sync.json (off-script layout)."
+}

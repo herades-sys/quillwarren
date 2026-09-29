@@ -1,0 +1,39 @@
+/* Delve Props tokens (from tokens.json) as CSS custom properties.
+   Prop SVGs never use these: they write the literal inks #000000, #FFFFFF and #999999,
+   which the Delve renderer swaps per map style. These are for cards and other design work. */
+@import url("https://fonts.googleapis.com/css2?family=IM+Fell+English&display=swap");
+
+:root {
+  /* inks (write the literal values in prop files) */
+  --ink: #000000;
+  --paper: #FFFFFF;
+  --shade: #999999;
+
+  /* overview cards and style sheet */
+  --parchment: #F0ECE0;
+  --grid-faint: #DDD6C3;
+  --label-ink: #4A4336;
+
+  /* type */
+  --font-display: "IM Fell English", "Iowan Old Style", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --card-label-size: 20px;
+  --card-label-line: 24px;
+  --sheet-title-size: 44px;
+  --sheet-title-line: 48px;
+  --sheet-note-size: 12px;
+  --sheet-note-line: 18px;
+
+  /* prop geometry, in prop units (1 square = 100) */
+  --square: 100;
+  --margin: 4;
+  --map-square: 70px;
+  --radius-joinery: 3;
+  --radius-worn: 6;
+  --stroke-outline: 4;
+  --stroke-detail: 2;
+  --stroke-texture: 1.5;
+  --wobble-outline: 0.6;
+  --wobble-detail: 0.35;
+  --wobble-texture: 0.2;
+}
