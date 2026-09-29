@@ -288,6 +288,15 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
       socket.close(4404, 'map not found');
       return;
     }
+    // ?screen=1: a players' screen. It gets no map data at all, only "changed" and "look".
+    if ((req.query as { screen?: string }).screen === '1') {
+      service.hub.join(id, socket, 'screen');
+      LiveHub.send(socket, { type: 'hello', rev: cur.rev });
+      socket.on('message', (raw) => {
+        if (String(raw).includes('"ping"')) LiveHub.send(socket, { type: 'pong' });
+      });
+      return;
+    }
     const canWrite = checkToken(token, (req.query as { token?: string }).token) === 'ok' || editorSession(sessions, req);
     service.hub.join(id, socket);
     LiveHub.send(socket, { type: 'hello', rev: cur.rev, map: cur.map });

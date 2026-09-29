@@ -132,19 +132,6 @@ function patternDefs(scene: Scene, prefix: string): string {
   return [...out.values()].join('');
 }
 
-const BACKGROUND_LAYERS = new Set(['background', 'background-grid']);
-
-/** The layers; with a content clip, everything but the background goes inside it. */
-function contentSvg(scene: Scene, prefix: string): string {
-  if (!scene.contentClip) return scene.layers.map((l) => layerSvg(l, prefix)).join('');
-  const back = scene.layers.filter((l) => BACKGROUND_LAYERS.has(l.name));
-  const rest = scene.layers.filter((l) => !BACKGROUND_LAYERS.has(l.name));
-  return (
-    back.map((l) => layerSvg(l, prefix)).join('') +
-    `<g clip-path="url(#${esc(prefix)}clip-${esc(scene.contentClip)})">${rest.map((l) => layerSvg(l, prefix)).join('')}</g>`
-  );
-}
-
 export function sceneToSvg(scene: Scene, opts: SvgOptions = {}): string {
   const ppg = opts.ppg ?? 70;
   const prefix = opts.idPrefix ?? '';
@@ -161,7 +148,7 @@ export function sceneToSvg(scene: Scene, opts: SvgOptions = {}): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w * ppg)}" height="${Math.round(h * ppg)}" ` +
     `viewBox="${n(x0)} ${n(y0)} ${n(w)} ${n(h)}">` +
     `<defs>${clips}${patternDefs(scene, prefix)}</defs>` +
-    contentSvg(scene, prefix) +
+    scene.layers.map((l) => layerSvg(l, prefix)).join('') +
     `</svg>`
   );
 }

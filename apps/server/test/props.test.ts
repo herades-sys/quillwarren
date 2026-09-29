@@ -172,19 +172,40 @@ describe('fog of war', () => {
     expect(res.text).toContain('Fog of war: on. Revealed: 1 Entrance hall [r1], c1.');
     expect(res.text).toContain(`/maps/${id}/screen`);
     expect((await call('fog', { map: id, reveal: ['zz'] })).isError).toBe(true);
+    // the players' screen carries no map data, only the picture of what's revealed
     const screen = await app.inject({ url: `/maps/${id}/screen` });
     expect(screen.statusCode).toBe(200);
-    expect(screen.body).toContain('clip-path="url(#clip-fog-visible)"');
     expect(screen.body).toContain('/assets/screen.js?v=test');
+    expect(screen.body).not.toContain('"objects"');
+    const payload = (await app.inject({ url: `/api/v1/maps/${id}/screen` })).json() as { svg: string; frame: unknown; hidden: boolean };
+    expect(payload.hidden).toBe(false);
+    expect(payload.frame).toEqual({ x0: 4.7, y0: 18.7, x1: 15.3, y1: 33.3 });
     const players = (await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=players&fog=1` })).body;
-    expect(players).toContain('clip-fog-visible');
+    const whole = (await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=players` })).body;
+    expect(players.length).toBeLessThan(whole.length / 2); // only room 1 and its corridor are in it
     const gm = (await app.inject({ url: `/api/v1/maps/${id}/render.svg?fog=1` })).body;
     expect(gm).toContain('data-layer="fog"');
-    // exports without fog=1 stay whole
-    expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=players` })).body).not.toContain('clip-fog-visible');
     const page = (await app.inject({ url: `/maps/${id}` })).body;
     expect(page).toContain('data-layer="fog"'); // the GM view's first picture is shaded
     await call('fog', { map: id, on: false });
     expect((await getMap(id)).map.fog?.on).toBe(false);
+  });
+});
+
+describe('the players screen socket', () => {
+  it('never sends map data, only that something changed', async () => {
+    const id = await newMapId();
+    await call('fog', { map: id, reveal: ['r1'] });
+    const ws = new WebSocket(`${base.replace('http', 'ws')}/api/v1/maps/${id}/live?screen=1`);
+    const got: Record<string, unknown>[] = [];
+    await new Promise<void>((resolve) => ws.addEventListener('message', (e) => (got.push(JSON.parse(String(e.data))), got.length === 1 && resolve())));
+    await call('add_label', { map: id, text: 'Hi', at: [10, 28] });
+    await call('focus', { map: id, ids: ['r1', 'r5'] }); // r5 isn't revealed: the screen only looks at r1
+    await expect.poll(() => got.length, { timeout: 3000 }).toBeGreaterThanOrEqual(3);
+    ws.close();
+    expect(got[0]).toEqual({ type: 'hello', rev: 2 });
+    expect(got[1]).toEqual({ type: 'changed', rev: 3 });
+    expect(got[2]).toEqual({ type: 'look', bounds: { x0: 7, y0: 25, x1: 13, y1: 31 } });
+    expect(JSON.stringify(got)).not.toContain('objects');
   });
 });

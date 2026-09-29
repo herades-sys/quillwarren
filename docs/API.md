@@ -45,7 +45,9 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 ## Fog of war
 
 - **Where it's kept:** `map.fog = { on, revealed?: ids, show?: shapes, hide?: shapes }`, changed with `update_map`, so it is live and undoable.
-- **Players' view** (2D, `/maps/:id/screen`, 3D): with fog on, only revealed rooms and corridors (plus `show` areas, minus `hide` areas) are drawn, with 0.3 squares of margin for walls and doors. Everything else simply isn't there, only the background.
+- **Players' view** (2D, `/maps/:id/screen`, 3D): with fog on, the picture is built only from what the players have seen: revealed rooms and corridors plus `show` areas, minus `hide` areas, with 0.3 squares of margin.
+  - Hidden rooms, their props, labels, doors and terrain never go into the scene. Walls are the real walls cut to the seen area, and hatching wraps the revealed rooms. Where a corridor carries on unseen, the opening stays open.
+  - The players' screen never receives map data: `GET /api/v1/maps/:id/screen` gives `{ rev, frame, hidden, svg }`, and its socket (`/live?screen=1`) sends only `hello {rev}`, `changed {rev}` and `look {bounds}` (GM focus on revealed things only).
 - **GM view:** the rest is shaded (`style.fog`).
 - **Exports stay whole** unless you add `fog=1` to `render.png` / `render.svg`.
 - **Players' screen** (`/maps/:id/screen`): full screen with no controls, following changes live. It frames what's revealed, glides to new reveals, and pans when the GM focuses on revealed things. F toggles full screen.

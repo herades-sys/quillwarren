@@ -1,10 +1,12 @@
 // buildScene: map + style -> an ordered list of drawing layers in grid squares.
 // sceneToSvg (svg.ts) writes it out; a Canvas backend can draw the same layers.
+import { differenceD, EndType, FillRule, inflatePathsD, intersectD, JoinType, type PathsD } from 'clipper2-ts';
 import { assetInfo, categoryOf, propBounds, type AssetLayer } from '../assets/catalog.ts';
-import { fogShade, visiblePolygons } from '../fog.ts';
+import { fogShade, visiblePaths } from '../fog.ts';
+import { clipPolylines, insidePolygons } from '../geometry/objects.ts';
 import type { Palette } from '../assets/svg.ts';
 import { computeFloor, floorPaths, polygonsOf } from '../geometry/floor.ts';
-import { fromPath, shapeBounds, shapePath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
+import { fromPath, PRECISION, shapeBounds, shapePath, toPath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
 import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
 import type { DelveMap, Door, Point, Prop, Room, Stairs, Terrain } from '../schema.ts';
 import { hatchStrokes, insidePaths, outsideBand } from './hatching.ts';
@@ -71,8 +73,6 @@ export interface Scene {
   bounds: Bounds;
   clips: Record<string, Polygon[]>;
   layers: Layer[];
-  /** A clip for everything but the background (fog of war in the players' view). */
-  contentClip?: string;
 }
 
 const open = (points: Point[]): Polyline => ({ points, closed: false });
@@ -174,16 +174,38 @@ function stairLines(s: Stairs): Polyline[] {
 export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style = resolveStyle(map)): Scene {
   const view = opts.view ?? 'gm';
   const seed = map.seed ?? hashString(map.id);
-  const floor = computeFloor(map);
-  const flat = floorPaths(map);
+  const reach = Math.max(style.hatching?.width ?? 0, style.shading?.width ?? 0) + (style.hatching ? style.hatching.length : 0);
+
+  // Fog of war in the players' view: the picture is built only from what they
+  // have seen. Walls are the real walls cut to that area, and nothing else of
+  // the map (hidden rooms, their props, labels, doors) goes into the scene.
+  const fogged = opts.fog === 'hide' && Boolean(map.fog?.on);
+  const seenPaths = fogged ? visiblePaths(map) : null;
+  const seenPolys = seenPaths ? polygonsOf(seenPaths) : null;
+  const seen = (p: Point) => !seenPolys || insidePolygons(seenPolys, p);
+  const fullFloor = computeFloor(map);
+  const fullFlat = floorPaths(map);
+  const flat = seenPaths ? intersectD(fullFlat, seenPaths, FillRule.NonZero, PRECISION) : fullFlat;
+  const floor = seenPaths ? polygonsOf(flat) : fullFloor;
+  // Where the floor carries on unseen past the edge of what's revealed, leave
+  // hatching and shading out, so openings stay open instead of being walled in.
+  const round = (paths: PathsD, d: number) => inflatePathsD(paths, d, JoinType.Round, EndType.Polygon, 2, PRECISION);
+  const beyond: PathsD = seenPaths
+    ? intersectD(round(differenceD(fullFlat, seenPaths, FillRule.NonZero, PRECISION), 0.15), round(seenPaths, reach + 0.5), FillRule.NonZero, PRECISION)
+    : [];
+
   const layers: Layer[] = [];
   const clips: Record<string, Polygon[]> = { floor };
-
-  const reach = Math.max(style.hatching?.width ?? 0, style.shading?.width ?? 0) + (style.hatching ? style.hatching.length : 0);
   const fb = floorBounds(floor);
   const margin = opts.margin ?? 1;
-  const props = map.objects.filter((o): o is Prop => o.type === 'prop' && (view === 'gm' || !categoryOf(o.asset)?.gmOnly));
-  const terrain = map.objects.filter((o): o is Terrain => o.type === 'terrain');
+  const props = map.objects.filter((o): o is Prop => o.type === 'prop' && (view === 'gm' || !categoryOf(o.asset)?.gmOnly) && seen(o.at));
+  const terrain = map.objects
+    .filter((o): o is Terrain => o.type === 'terrain')
+    .map((t) => ({
+      t,
+      polygons: seenPaths ? polygonsOf(intersectD([shapePath(t.shape)], seenPaths, FillRule.NonZero, PRECISION)) : [{ outer: fromPath(shapePath(t.shape)), holes: [] }],
+    }))
+    .filter((x) => x.polygons.length);
   // The picture covers grid.bounds, the floor, terrain and props (a compass rose
   // may sit outside the dungeon), plus room for hatching and a margin, snapped
   // to whole squares so a VTT grid lines up with the image.
@@ -191,7 +213,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const parts: Bounds[] = [
     ...(gb ? [{ x0: gb[0], y0: gb[1], x1: gb[0] + gb[2], y1: gb[1] + gb[3] }] : []),
     ...(fb ? [fb] : []),
-    ...terrain.map((t) => shapeBounds(t.shape)),
+    ...terrain.flatMap((x) => (floorBounds(x.polygons) ? [floorBounds(x.polygons)!] : [])),
     ...props.map(propBounds),
   ];
   const content: Bounds | null = parts.length
@@ -222,7 +244,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   }
 
   if (style.shading) {
-    layers.push({ name: 'shading', kind: 'fill', polygons: polygonsOf(outsideBand(flat, style.shading.width)), color: style.shading.color });
+    layers.push({ name: 'shading', kind: 'fill', polygons: polygonsOf(outsideBand(flat, style.shading.width), beyond), color: style.shading.color });
   }
 
   if (style.hatching) {
@@ -232,7 +254,9 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
       [bounds.x1, bounds.y1],
       [bounds.x0, bounds.y1],
     ];
-    clips['outside-floor'] = [{ outer: rect, holes: floor.flatMap((p) => [p.outer]) }, ...floor.flatMap((p) => p.holes.map((h) => ({ outer: h, holes: [] })))];
+    clips['outside-floor'] = seenPaths
+      ? polygonsOf([toPath(rect)], [...flat, ...beyond])
+      : [{ outer: rect, holes: floor.flatMap((p) => [p.outer]) }, ...floor.flatMap((p) => p.holes.map((h) => ({ outer: h, holes: [] })))];
     const strokes = hatchStrokes(outsideBand(flat, style.hatching.width), style.hatching, seed);
     layers.push({
       name: 'hatching',
@@ -258,11 +282,11 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   layers.push({ name: 'floor', kind: 'fill', polygons: floor, color: style.floor.color });
 
   // Terrain goes over the floor (and over open ground outside it), under the grid.
-  for (const t of terrain) {
+  for (const { t, polygons } of terrain) {
     layers.push({
       name: `terrain:${t.id}`,
       kind: 'pattern',
-      polygons: [{ outer: fromPath(shapePath(t.shape)), holes: [] }],
+      polygons,
       tile: t.asset,
       body: opts.assets?.(t.asset),
       tint: terrainTint(assetInfo(t.asset)?.tint, style),
@@ -285,7 +309,11 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     }
   }
 
-  const stairs = map.objects.filter((o): o is Stairs => o.type === 'stairs');
+  const stairs = map.objects.filter((o): o is Stairs => {
+    if (o.type !== 'stairs') return false;
+    const b = shapeBounds(o.shape);
+    return seen([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]);
+  });
   for (const s of stairs) {
     clips[`stairs-${s.id}`] = [{ outer: fromPath(shapePath(s.shape)), holes: [] }];
     layers.push({ name: `stairs:${s.id}`, kind: 'stroke', lines: stairLines(s), color: style.stairs.color, width: style.stairs.width, cap: 'butt', join: 'miter', clip: `stairs-${s.id}` });
@@ -296,10 +324,12 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   if (decals.length) layers.push({ name: 'decals', kind: 'assets', items: assetItems(decals, opts.assets), palette: style.props });
 
   // Walls. The players' view keeps secret doors shut: no gap, and a wall line across the opening.
+  // With fog, only the parts of real walls inside what the players have seen.
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
   const hidden = (d: Door) => view === 'players' && d.style === 'secret';
-  const walls = wallPolylines(map, floor, (d) => !hidden(d)).map((l) => roughen(l, style.walls.roughness, seed));
-  for (const d of doors.filter(hidden)) walls.push(open(doorSegment(d)));
+  const cut = (lines: Polyline[]) => (seenPolys ? clipPolylines(lines, seenPolys) : lines);
+  const walls = cut(wallPolylines(map, fullFloor, (d) => !hidden(d))).map((l) => roughen(l, style.walls.roughness, seed));
+  walls.push(...cut(doors.filter(hidden).map((d) => open(doorSegment(d)))));
   layers.push({ name: 'walls', kind: 'stroke', lines: walls, color: style.walls.color, width: style.walls.width, cap: 'square', join: 'miter' });
 
   // Doors
@@ -311,7 +341,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     const [a, b] = doorSegment(d);
     const mid: Point = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     const kind = d.style ?? 'normal';
-    if (kind === 'archway') continue;
+    if (kind === 'archway' || !seen(mid)) continue;
     if (kind === 'secret') {
       if (view === 'gm') {
         secretLines.push(open([a, b]));
@@ -352,17 +382,12 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   }
 
   // Free labels show in both views; room numbers are a GM key, drawn on top in a face with clear digits.
-  const labels = map.objects.flatMap((o) => (o.type === 'label' ? [{ text: o.text, at: o.at, size: o.size ?? style.labels.size * 0.7 }] : []));
+  const labels = map.objects.flatMap((o) => (o.type === 'label' && seen(o.at) ? [{ text: o.text, at: o.at, size: o.size ?? style.labels.size * 0.7 }] : []));
   if (labels.length) layers.push({ name: 'labels', kind: 'text', items: labels, color: style.labels.color, font: style.labels.font });
-  // Fog of war. The GM view shades what the players haven't seen (room numbers stay
-  // readable on top); the players' view draws nothing there at all, only the background.
-  let contentClip: string | undefined;
+  // Fog of war in the GM view: shade what the players haven't seen (room numbers stay readable on top).
   if (opts.fog === 'dim' && map.fog?.on) {
     const shade = fogShade(map, reach);
     if (shade.length) layers.push({ name: 'fog', kind: 'fill', polygons: shade, color: style.fog.color, opacity: style.fog.dim });
-  } else if (opts.fog === 'hide' && map.fog?.on) {
-    clips['fog-visible'] = visiblePolygons(map);
-    contentClip = 'fog-visible';
   }
   if (view === 'gm') {
     const numbers: { text: string; at: Point; size: number }[] = [];
@@ -374,5 +399,5 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     if (numbers.length) layers.push({ name: 'room-numbers', kind: 'text', items: numbers, color: style.labels.color, font: style.labels.numberFont });
   }
 
-  return { bounds, clips, layers, ...(contentClip ? { contentClip } : {}) };
+  return { bounds, clips, layers };
 }

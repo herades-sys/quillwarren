@@ -1,5 +1,5 @@
 // Pure viewer logic (no DOM), so it can be unit-tested.
-import { corridorBounds, corridorPath, doorSegment, propBounds, roomsById, shapeBounds, type Bounds, type DelveMap, type MapObject, type Op } from '@delve/core';
+import type { Bounds, Op } from '@delve/core';
 
 /** Ids of objects an op batch added, changed or moved (deleted ones are gone, nothing to show). */
 export function changedIds(ops: readonly Op[]): string[] {
@@ -16,32 +16,8 @@ export function changedIds(ops: readonly Op[]): string[] {
   return [...out];
 }
 
-/** Area an object covers, for zooming to it and highlighting it. */
-export function objectBounds(o: MapObject, map: DelveMap): Bounds | null {
-  switch (o.type) {
-    case 'room':
-    case 'cutout':
-    case 'stairs':
-    case 'terrain':
-      return shapeBounds(o.shape);
-    case 'corridor': {
-      const path = corridorPath(o, roomsById(map));
-      return path ? corridorBounds(path, o.width) : null;
-    }
-    case 'door': {
-      const [a, b] = doorSegment(o);
-      return { x0: Math.min(a[0], b[0]) - 0.3, y0: Math.min(a[1], b[1]) - 0.3, x1: Math.max(a[0], b[0]) + 0.3, y1: Math.max(a[1], b[1]) + 0.3 };
-    }
-    case 'label': {
-      // roughly the drawn text: about half an em per character, centred on `at`
-      const size = o.size ?? 0.63;
-      const hw = Math.max(0.5, (o.text.length * size * 0.52) / 2);
-      return { x0: o.at[0] - hw, y0: o.at[1] - size * 0.6, x1: o.at[0] + hw, y1: o.at[1] + size * 0.6 };
-    }
-    case 'prop':
-      return propBounds(o);
-  }
-}
+/** Area an object covers, for zooming to it and highlighting it (now shared from core). */
+export { objectBounds } from '@delve/core';
 
 export function unionBounds(list: readonly (Bounds | null)[]): Bounds | null {
   const bs = list.filter((b): b is Bounds => b !== null);

@@ -154,7 +154,7 @@ function build(l: Loaded): void {
   }
 
   // The floor picture covers the same bounds as the server's PNG (same scene code).
-  const b = buildScene(map, { view }).bounds;
+  const b = buildScene(map, { view, ...(view === 'players' ? { fog: 'hide' as const } : {}) }).bounds;
   l.bounds = b;
   l.fit = fogged ? revealedBounds(map) : b;
   const w = b.x1 - b.x0;

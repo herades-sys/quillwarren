@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { levelSiblings, PRESETS, sceneToSvg, type DelveMap, type Level } from '@delve/core';
+import { levelSiblings, PRESETS, revealedBounds, sceneToSvg, type DelveMap, type Level } from '@delve/core';
 import type { AppInfo } from './app.ts';
 import type { ChatConfig } from './chat/route.ts';
 import { isLoggedIn, type EditorAuth } from './login.ts';
@@ -234,10 +234,30 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
  * full screen, following every change live. For a TV at the table or a
  * Discord screen share. The script is /assets/screen.js.
  */
-function screenPage(info: AppInfo, id: string, rev: number, map: DelveMap): string {
+/**
+ * What a players' screen gets: the picture (built only from what the players
+ * have seen) and where to frame it. Never the map itself.
+ */
+export function screenPayload(map: DelveMap, rev: number) {
   const scene = sceneFor(map, { view: 'players', fog: '1' });
-  const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '#EFEAE2';
-  const initial = JSON.stringify({ id, rev, map }).replace(/</g, '\\u003c');
+  const fogged = Boolean(map.fog?.on);
+  const seen = fogged ? revealedBounds(map) : null;
+  const frame = fogged ? (seen ? { x0: seen.x0 - 2, y0: seen.y0 - 2, x1: seen.x1 + 2, y1: seen.y1 + 2 } : null) : scene.bounds;
+  return {
+    rev,
+    name: map.name,
+    background: scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '#EFEAE2',
+    frame,
+    hidden: fogged && !seen,
+    svg: sceneToSvg(scene, { ppg: 20 }),
+  };
+}
+
+function screenPage(info: AppInfo, id: string, rev: number, map: DelveMap): string {
+  const { svg, ...rest } = screenPayload(map, rev);
+  const bg = rest.background;
+  const initial = JSON.stringify({ id, ...rest }).replace(/</g, '\\u003c');
+  const scene = { svg };
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -259,8 +279,8 @@ function screenPage(info: AppInfo, id: string, rev: number, map: DelveMap): stri
 </style>
 </head>
 <body>
-<div id="stage"><div id="canvas">${sceneToSvg(scene, { ppg: 20 })}</div></div>
-<div id="note" hidden>The map is still hidden.</div>
+<div id="stage"><div id="canvas">${scene.svg}</div></div>
+<div id="note"${rest.hidden ? '' : ' hidden'}>The map is still hidden.</div>
 <button id="full" type="button" title="Full screen (F)">Full screen</button>
 <script id="delve-initial" type="application/json">${initial}</script>
 <script type="module" src="/assets/screen.js?v=${encodeURIComponent(info.version)}"></script>
@@ -277,6 +297,18 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
     } catch (e) {
       if (!(e instanceof NotFoundError)) throw e;
       return reply.code(404).type('text/plain').send('no such map');
+    }
+  });
+
+  // The players' screen fetches its picture here whenever the map changes.
+  app.get('/api/v1/maps/:id/screen', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const { rev, map } = store.get(id);
+      return reply.header('cache-control', 'no-store').send(screenPayload(map, rev));
+    } catch (e) {
+      if (!(e instanceof NotFoundError)) throw e;
+      return reply.code(404).send({ error: `no map with id "${id}"` });
     }
   });
 

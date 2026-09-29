@@ -1,15 +1,23 @@
 // The players' screen (/maps/:id/screen): the players' view with fog of war,
-// full screen, following every change live, for a TV at the table or a
-// Discord screen share. It frames what has been revealed and glides to new
-// reveals; when the GM (or Claude) points at something, it pans there.
-import { applyOps, buildScene, resolveStyle, revealedBounds, sceneToSvg, type Bounds, type DelveMap, type Op } from '@delve/core';
-import { artLoader } from './art.ts';
-import { easeInOut, lerpBounds, objectBounds, pad, unionBounds } from './logic.ts';
+// full screen, for a TV at the table or a Discord screen share. It never gets
+// the map itself: the server sends a picture built only from what the players
+// have seen, the live socket (?screen=1) only says that it changed and where
+// to look, and the view frames what has been revealed and glides to new reveals.
+import type { Bounds } from '@delve/core';
+import { easeInOut, lerpBounds } from './logic.ts';
+
+interface Payload {
+  rev: number;
+  name: string;
+  background: string;
+  frame: Bounds | null;
+  hidden: boolean;
+  svg: string;
+}
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const initial = JSON.parse($('delve-initial').textContent ?? '{}') as { id: string; rev: number; map: DelveMap };
+const initial = JSON.parse($('delve-initial').textContent ?? '{}') as Omit<Payload, 'svg'> & { id: string };
 const mapId = initial.id;
-let map = initial.map;
 let rev = initial.rev;
 const canvas = $('canvas');
 const note = $('note');
@@ -17,23 +25,14 @@ const note = $('note');
 let svg: SVGSVGElement | null = null;
 let vb: Bounds | null = null;
 let anim = 0;
+let lastFrame = '';
 
-const art = artLoader(() => render());
-
-/** What the players should be looking at: the revealed part, or the whole map without fog. */
-function frame(sceneBounds: Bounds): Bounds {
-  if (!map.fog?.on) return sceneBounds;
-  const r = revealedBounds(map);
-  return r ? pad(r, 2) : sceneBounds;
-}
-
-/** Keep the frame's aspect ratio sensible for a wide screen: never zoom in closer than 12 squares across. */
+/** Never zoom in closer than 12 squares across, so one small room doesn't fill a TV. */
 function roomy(b: Bounds): Bounds {
   const w = b.x1 - b.x0;
   const h = b.y1 - b.y0;
-  const min = 12;
-  const gx = Math.max(0, min - w) / 2;
-  const gy = Math.max(0, (min * 0.6 - h) / 2);
+  const gx = Math.max(0, 12 - w) / 2;
+  const gy = Math.max(0, 7.2 - h) / 2;
   return { x0: b.x0 - gx, y0: b.y0 - gy, x1: b.x1 + gx, y1: b.y1 + gy };
 }
 
@@ -55,59 +54,57 @@ function glide(to: Bounds, ms = 900): void {
   anim = requestAnimationFrame(step);
 }
 
-let lastFrame = '';
-function render(): void {
-  art.ensure(map);
-  const scene = buildScene(map, { view: 'players', fog: 'hide', assets: art.body });
-  document.body.style.background = resolveStyle(map).background;
-  canvas.innerHTML = sceneToSvg(scene, { ppg: 20 });
+/** Show a picture (the first one is already in the page) and frame it. */
+function show(p: Omit<Payload, 'svg'>, markup?: string): void {
+  if (markup !== undefined) canvas.innerHTML = markup;
   svg = canvas.querySelector('svg');
   if (!svg) return;
+  document.body.style.background = p.background;
   svg.removeAttribute('width');
   svg.removeAttribute('height');
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  note.hidden = !(map.fog?.on && !revealedBounds(map));
-  const target = roomy(frame(scene.bounds));
-  const key = JSON.stringify(target);
+  note.hidden = !p.hidden;
   if (vb) apply(vb);
-  if (key !== lastFrame) {
+  const target = p.frame ? roomy(p.frame) : null;
+  const key = JSON.stringify(target);
+  if (target && key !== lastFrame) {
     lastFrame = key;
     glide(target, vb ? 900 : 0);
   }
 }
 
-async function resync(): Promise<void> {
-  const res = await fetch(`/api/v1/maps/${encodeURIComponent(mapId)}`);
-  if (!res.ok) return;
-  const body = (await res.json()) as { rev: number; map: DelveMap };
-  map = body.map;
-  rev = body.rev;
+let fetching = false;
+let again = false;
+async function refresh(): Promise<void> {
+  if (fetching) {
+    again = true;
+    return;
+  }
+  fetching = true;
+  try {
+    const res = await fetch(`/api/v1/maps/${encodeURIComponent(mapId)}/screen`, { cache: 'no-store' });
+    if (res.ok) {
+      const p = (await res.json()) as Payload;
+      rev = p.rev;
+      show(p, p.svg);
+    }
+  } finally {
+    fetching = false;
+    if (again) {
+      again = false;
+      void refresh();
+    }
+  }
 }
 
 function connect(): void {
-  const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/maps/${encodeURIComponent(mapId)}/live`);
-  socket.onmessage = async (ev) => {
-    const msg = JSON.parse(String(ev.data)) as { type: string; rev?: number; map?: DelveMap; ops?: Op[]; ids?: string[] };
-    if (msg.type === 'hello' && msg.map && msg.rev !== rev) {
-      map = msg.map;
-      rev = msg.rev!;
-      render();
-    } else if (msg.type === 'ops' && msg.rev !== undefined && msg.rev > rev) {
-      try {
-        if (msg.rev !== rev + 1) throw new Error('missed a change');
-        map = applyOps(map, msg.ops ?? []).map;
-        rev = msg.rev;
-      } catch {
-        await resync();
-      }
-      render();
-    } else if (msg.type === 'focus' && msg.ids) {
-      // only pan to things the players can already see
-      const b = unionBounds(msg.ids.filter((id) => !map.fog?.on || map.fog.revealed?.includes(id)).map((id) => {
-        const o = map.objects.find((x) => x.id === id);
-        return o ? objectBounds(o, map) : null;
-      }));
-      if (b) glide(roomy(pad(b, 3)));
+  const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/maps/${encodeURIComponent(mapId)}/live?screen=1`);
+  socket.onmessage = (ev) => {
+    const msg = JSON.parse(String(ev.data)) as { type: string; rev?: number; bounds?: Bounds };
+    if ((msg.type === 'hello' || msg.type === 'changed') && msg.rev !== undefined && msg.rev !== rev) void refresh();
+    else if (msg.type === 'look' && msg.bounds) {
+      const b = msg.bounds;
+      glide(roomy({ x0: b.x0 - 3, y0: b.y0 - 3, x1: b.x1 + 3, y1: b.y1 + 3 }));
     } else if (msg.type === 'deleted') {
       note.textContent = 'This map was deleted.';
       note.hidden = false;
@@ -123,5 +120,5 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'f') toggleFull();
 });
 
-render();
+show(initial);
 connect();

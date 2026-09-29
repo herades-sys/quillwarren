@@ -1,6 +1,6 @@
 // Pure helpers for the 3D view (no DOM, no WebGL), so they can be unit-tested.
 // World axes: x = map x, z = map y (south is +z), y = up.
-import type { Bounds, Point } from '@delve/core';
+import { clipPolylines, type Bounds, type Point, type Polygon } from '@delve/core';
 
 /** Each storey's floor height: storeys sorted bottom-up by order, `spread` apart, the lowest at 0. */
 export function storeyHeights(storeys: readonly { id: string; order: number }[], spread: number): Map<string, number> {
@@ -44,38 +44,14 @@ export function startView(b: Bounds, top: number): { position: [number, number, 
   return { position: [cx + span * 0.8, top * 0.6 + span * 0.55, cz + span * 1.2], target: [cx, top / 2, cz] };
 }
 
-type Ring = readonly Point[];
-
-function inRing(ring: Ring, [x, y]: Point): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i]!;
-    const [xj, yj] = ring[j]!;
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
 /** Inside any of the polygons (and not in one of its holes). */
-export function insidePolygons(polys: readonly { outer: Ring; holes: readonly Ring[] }[], p: Point): boolean {
-  return polys.some((poly) => inRing(poly.outer, p) && !poly.holes.some((h) => inRing(h, p)));
-}
+export { insidePolygons } from '@delve/core';
 
-/** The parts of wall segments that lie inside the polygons, cut in steps of about `step` squares and joined back into runs. */
-export function clipSegments(segs: readonly (readonly [Point, Point])[], polys: readonly { outer: Ring; holes: readonly Ring[] }[], step = 0.5): [Point, Point][] {
-  const out: [Point, Point][] = [];
-  for (const [a, b] of segs) {
-    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
-    const at = (t: number): Point => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-    let start: number | null = null;
-    for (let i = 0; i <= n; i++) {
-      const keep = i < n && insidePolygons(polys, at((i + 0.5) / n));
-      if (keep && start === null) start = i;
-      if (!keep && start !== null) {
-        out.push([at(start / n), at(i / n)]);
-        start = null;
-      }
-    }
-  }
-  return out;
+/** The parts of wall segments that lie inside the polygons (what the players have seen). */
+export function clipSegments(segs: readonly (readonly [Point, Point])[], polys: readonly Polygon[], step = 0.5): [Point, Point][] {
+  return clipPolylines(
+    segs.map(([a, b]) => ({ points: [a, b], closed: false })),
+    polys,
+    step,
+  ).map((l) => [l.points[0]!, l.points[l.points.length - 1]!]);
 }

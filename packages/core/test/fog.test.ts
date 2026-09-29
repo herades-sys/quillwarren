@@ -44,13 +44,42 @@ describe('what the players can see', () => {
     expect(gm.layers.at(-1)?.name).toBe('room-numbers'); // numbers stay readable over the shade
     expect(fogShade(withFog({ on: false, revealed: ['r1'] }), 1)).toEqual([]);
 
-    const players = buildScene(map, { view: 'players', fog: 'hide' });
-    expect(players.contentClip).toBe('fog-visible');
-    const svg = sceneToSvg(players);
-    expect(svg).toMatch(/<g data-layer="background"[^]*<g clip-path="url\(#clip-fog-visible\)"><g data-layer="shading"/);
-    // fog off, or no fog option: the map is whole
-    expect(buildScene(withFog({ on: false }), { view: 'players', fog: 'hide' }).contentClip).toBeUndefined();
-    expect(buildScene(map, { view: 'players' }).contentClip).toBeUndefined();
+    // fog off, or no fog option: the players' picture is the whole map
+    const whole = (m: DelveMap, o: Parameters<typeof buildScene>[1]) => sceneToSvg(buildScene(m, o));
+    expect(whole(withFog({ on: false }), { view: 'players', fog: 'hide' })).toBe(whole(withFog({ on: false }), { view: 'players' }));
+  });
+
+  it('builds the players picture only from what they have seen', () => {
+    const map: DelveMap = {
+      ...withFog({ on: true, revealed: ['r1'] }),
+      objects: [
+        ...testMap().objects,
+        { id: 'i1', type: 'prop', asset: 'chest-closed', at: [10.5, 27.5] }, // in room 1
+        { id: 'i2', type: 'prop', asset: 'throne', at: [10, 3] }, // in the unrevealed boss chamber
+        { id: 'l1', type: 'label', text: 'Secret lair', at: [10, 5] },
+        { id: 't1', type: 'terrain', asset: 'lava', shape: { rect: [6, 2, 4, 4] } },
+      ],
+    };
+    const s = buildScene(map, { view: 'players', fog: 'hide' });
+    const layer = (n: string) => s.layers.find((l) => l.name === n);
+    const floor = layer('floor');
+    expect(floor?.kind === 'fill' && area(floor.polygons)).toBeCloseTo(36.6);
+    const props = layer('props');
+    expect(props?.kind === 'assets' && props.items.map((i) => i.id)).toEqual(['i1']);
+    expect(layer('labels')).toBeUndefined();
+    expect(s.layers.some((l) => l.name.startsWith('terrain:'))).toBe(false);
+    // walls: only the pieces around room 1 (x 7–13, y 25–31, with the 0.3 margin)
+    const walls = layer('walls');
+    const pts = walls?.kind === 'stroke' ? walls.lines.flatMap((l) => l.points) : [];
+    expect(pts.length).toBeGreaterThan(0);
+    expect(pts.every(([x, y]) => x > 6.6 && x < 13.4 && y > 24.6 && y < 31.4)).toBe(true);
+    // the picture is framed on what's seen, not the whole dungeon
+    const free: DelveMap = { ...map, grid: { type: 'square', unit: '5 ft' } }; // no fixed canvas size
+    expect(buildScene(free, { view: 'players', fog: 'hide' }).bounds.y0).toBeGreaterThan(buildScene(free, { view: 'players' }).bounds.y0);
+    // nothing revealed yet: an empty picture
+    const none = buildScene({ ...map, fog: { on: true } }, { view: 'players', fog: 'hide' });
+    const nf = none.layers.find((l) => l.name === 'floor');
+    expect(nf?.kind === 'fill' && nf.polygons).toEqual([]);
   });
 
   it('is in the map summary and survives undo', () => {
