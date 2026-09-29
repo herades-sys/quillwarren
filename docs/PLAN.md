@@ -168,7 +168,8 @@ Sizes are rough (S, M, L) and show relative effort only.
    - It streams replies with tool chips, has a model picker (Sonnet, Opus, Haiku), shows subscription usage, and keeps the conversation per map. Each message carries the map, the selection and the view.
    - See [API.md](API.md#chat-talking-to-claude-from-the-editor).
    - Props art comes from Claude Design using the prompts in [ASSETS.md](ASSETS.md).
-7. **Extras (later).** Props from our own icons, a dungeon generator, fog of war with a players' screen and reveal-by-API, multiple levels, nightly backup to the NAS, a public subdomain with login, a Dashy tile.
+7. **Props, terrain and storeys (L), built 2026-09-29.** 146 props and tiles from the Claude Design art (see [ASSETS.md](ASSETS.md)), placed from the editor, MCP and the chat. Storeys are linked maps with a picker. Maps can be deleted from the UI. See [API.md](API.md#props-and-terrain).
+8. **Extras (later).** A dungeon generator, fog of war with a players' screen and reveal-by-API, lights and walls for Universal VTT, nightly backup to the NAS, a public subdomain with login, a Dashy tile.
 
 ## Decisions
 

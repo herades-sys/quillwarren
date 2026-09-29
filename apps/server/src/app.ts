@@ -2,6 +2,7 @@ import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { FORMAT, FORMAT_VERSION } from '@delve/core';
 import { registerApi } from './api.ts';
+import { registerAssets } from './assets.ts';
 import { Sessions } from './auth.ts';
 import { registerChat, type ChatConfig } from './chat/route.ts';
 import { ChatTokens } from './chat/tokens.ts';
@@ -72,6 +73,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   const chatTokens = new ChatTokens();
   void app.register(async (scoped) => {
     registerApi(scoped, { service, token: opts.token, sessions: auth.sessions });
+    registerAssets(scoped);
     registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens });
     registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat });
     registerLogin(scoped, auth);

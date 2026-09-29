@@ -19,6 +19,7 @@ import {
 } from '@delve/core';
 import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 'json' };
 import { bearer, checkToken, readCookie, sameOrigin, SESSION_COOKIE, type Sessions } from './auth.ts';
+import { addLevel, levelsOf } from './levels.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
 import { render, RenderQueryError, type RenderQuery } from './render.ts';
 import type { MapService } from './service.ts';
@@ -178,6 +179,32 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
       const ids = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === 'string') : [];
       if (!ids.length) throw new ValidationError(['ids must be a non-empty list of object ids']);
       return { viewers: service.focus(id, ids, byOf(body.by, 'api')) };
+    } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  // Storeys: the maps in this map's group, top first; and adding one.
+  app.get('/api/v1/maps/:id/levels', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      return { levels: levelsOf(service, id) };
+    } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  app.post('/api/v1/maps/:id/levels', { preHandler: writer }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { name?: unknown; position?: unknown; currentName?: unknown; by?: unknown };
+    try {
+      const change = addLevel(service, id, {
+        name: body.name as string,
+        position: body.position === 'below' ? 'below' : 'above',
+        ...(typeof body.currentName === 'string' ? { currentName: body.currentName } : {}),
+        by: byOf(body.by, 'api'),
+      });
+      return reply.code(201).send({ id: change.mapId, rev: change.rev, map: change.map });
     } catch (e) {
       return fail(reply, e);
     }

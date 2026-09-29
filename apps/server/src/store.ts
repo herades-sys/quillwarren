@@ -3,7 +3,7 @@
 // linear undo/redo history per map.
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { applyOps, validateMap, type DelveMap, type Op } from '@delve/core';
+import { applyOps, validateMap, type DelveMap, type Level, type Op } from '@delve/core';
 
 export class NotFoundError extends Error {
   constructor(id: string) {
@@ -45,6 +45,8 @@ export interface MapSummary {
   objects: number;
   created: string;
   updated: string;
+  /** Set when the map is one storey of a multi-storey place. */
+  level?: Level;
 }
 
 type Row = Record<string, unknown>;
@@ -113,14 +115,18 @@ export class MapStore {
     const rows = this.db
       .prepare('SELECT id, name, rev, doc, created, updated FROM maps WHERE deleted IS NULL ORDER BY updated DESC')
       .all() as Row[];
-    return rows.map((r) => ({
-      id: String(r.id),
-      name: String(r.name),
-      rev: Number(r.rev),
-      objects: (JSON.parse(String(r.doc)) as DelveMap).objects.length,
-      created: String(r.created),
-      updated: String(r.updated),
-    }));
+    return rows.map((r) => {
+      const doc = JSON.parse(String(r.doc)) as DelveMap;
+      return {
+        id: String(r.id),
+        name: String(r.name),
+        rev: Number(r.rev),
+        objects: doc.objects.length,
+        created: String(r.created),
+        updated: String(r.updated),
+        ...(doc.level ? { level: doc.level } : {}),
+      };
+    });
   }
 
   get(id: string): { rev: number; map: DelveMap } {

@@ -1,9 +1,11 @@
 // buildScene: map + style -> an ordered list of drawing layers in grid squares.
 // sceneToSvg (svg.ts) writes it out; a Canvas backend can draw the same layers.
+import { assetInfo, categoryOf, propBounds, type AssetLayer } from '../assets/catalog.ts';
+import type { Palette } from '../assets/svg.ts';
 import { computeFloor, floorPaths, polygonsOf } from '../geometry/floor.ts';
 import { fromPath, shapeBounds, shapePath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
 import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
-import type { DelveMap, Door, Point, Room, Stairs } from '../schema.ts';
+import type { DelveMap, Door, Point, Prop, Room, Stairs, Terrain } from '../schema.ts';
 import { hatchStrokes, insidePaths, outsideBand } from './hatching.ts';
 import { hashInts, hashString, rng } from './rng.ts';
 import { resolveStyle, type Style } from './style.ts';
@@ -16,6 +18,21 @@ export interface RenderOptions {
   grid?: boolean;
   /** Extra squares around the drawing when the map has no grid.bounds. */
   margin?: number;
+  /** An asset's SVG body (see assets/svg.ts), or undefined while it isn't loaded: then a dashed outline stands in. */
+  assets?: (asset: string) => string | undefined;
+}
+
+/** One prop in an 'assets' layer: its body (in asset units, 100 per square) placed around `at`. */
+export interface AssetItem {
+  id: string;
+  asset: string;
+  body?: string;
+  at: Point;
+  rotation: number;
+  scale: number;
+  /** Footprint in squares before rotation and scale. */
+  w: number;
+  h: number;
 }
 
 interface LayerBase {
@@ -36,7 +53,10 @@ export type Layer =
       dash?: number[];
     })
   | (LayerBase & { kind: 'dots'; points: Point[]; radius: number; color: string })
-  | (LayerBase & { kind: 'text'; items: { text: string; at: Point; size: number }[]; color: string; font: string });
+  | (LayerBase & { kind: 'text'; items: { text: string; at: Point; size: number }[]; color: string; font: string })
+  | (LayerBase & { kind: 'assets'; items: AssetItem[]; palette: Palette })
+  /** Polygons filled with `tint`, then with a 2×2-square tile repeated from the origin. */
+  | (LayerBase & { kind: 'pattern'; polygons: Polygon[]; tile: string; body?: string; tint: string; palette: Palette });
 
 export interface Scene {
   bounds: Bounds;
@@ -98,6 +118,36 @@ function doorFrame(d: Door, inset: number, thickness: number): Ring {
   ];
 }
 
+const hex = (c: string): [number, number, number] => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(c);
+  const v = m ? parseInt(m[1]!, 16) : 0xcccccc;
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+};
+const toHex = (rgb: number[]): string => `#${rgb.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+
+/** A terrain tile's tint for this style: grayed for print, mixed toward the floor colour. */
+export function terrainTint(tint: string | undefined, style: Style): string {
+  let rgb = hex(tint ?? '#CCCCCC');
+  if (style.terrain.gray) {
+    const l = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    rgb = [l, l, l];
+  }
+  const floor = hex(style.floor.color);
+  const k = style.terrain.mix;
+  return toHex(rgb.map((v, i) => v * k + floor[i]! * (1 - k)));
+}
+
+function layerOfProp(p: Prop): AssetLayer {
+  return categoryOf(p.asset)?.layer ?? 'props';
+}
+
+function assetItems(props: Prop[], body: RenderOptions['assets']): AssetItem[] {
+  return props.map((p) => {
+    const info = assetInfo(p.asset);
+    return { id: p.id, asset: p.asset, body: body?.(p.asset), at: p.at, rotation: p.rotation ?? 0, scale: p.scale ?? 1, w: info?.w ?? 1, h: info?.h ?? 1 };
+  });
+}
+
 function stairLines(s: Stairs): Polyline[] {
   const b = shapeBounds(s.shape);
   const lines: Polyline[] = [];
@@ -121,17 +171,26 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const reach = Math.max(style.hatching?.width ?? 0, style.shading?.width ?? 0) + (style.hatching ? style.hatching.length : 0);
   const fb = floorBounds(floor);
   const margin = opts.margin ?? 1;
-  // The picture covers grid.bounds and the floor, plus room for hatching and a
-  // margin, snapped to whole squares so a VTT grid lines up with the image.
+  const props = map.objects.filter((o): o is Prop => o.type === 'prop' && (view === 'gm' || !categoryOf(o.asset)?.gmOnly));
+  const terrain = map.objects.filter((o): o is Terrain => o.type === 'terrain');
+  // The picture covers grid.bounds, the floor, terrain and props (a compass rose
+  // may sit outside the dungeon), plus room for hatching and a margin, snapped
+  // to whole squares so a VTT grid lines up with the image.
   const gb = map.grid.bounds;
-  const content: Bounds | null = gb
+  const parts: Bounds[] = [
+    ...(gb ? [{ x0: gb[0], y0: gb[1], x1: gb[0] + gb[2], y1: gb[1] + gb[3] }] : []),
+    ...(fb ? [fb] : []),
+    ...terrain.map((t) => shapeBounds(t.shape)),
+    ...props.map(propBounds),
+  ];
+  const content: Bounds | null = parts.length
     ? {
-        x0: Math.min(gb[0], fb?.x0 ?? Infinity),
-        y0: Math.min(gb[1], fb?.y0 ?? Infinity),
-        x1: Math.max(gb[0] + gb[2], fb?.x1 ?? -Infinity),
-        y1: Math.max(gb[1] + gb[3], fb?.y1 ?? -Infinity),
+        x0: Math.min(...parts.map((b) => b.x0)),
+        y0: Math.min(...parts.map((b) => b.y0)),
+        x1: Math.max(...parts.map((b) => b.x1)),
+        y1: Math.max(...parts.map((b) => b.y1)),
       }
-    : fb;
+    : null;
   const bounds: Bounds = content
     ? {
         x0: Math.floor(content.x0 - reach - margin),
@@ -186,6 +245,19 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
 
   layers.push({ name: 'floor', kind: 'fill', polygons: floor, color: style.floor.color });
 
+  // Terrain goes over the floor (and over open ground outside it), under the grid.
+  for (const t of terrain) {
+    layers.push({
+      name: `terrain:${t.id}`,
+      kind: 'pattern',
+      polygons: [{ outer: fromPath(shapePath(t.shape)), holes: [] }],
+      tile: t.asset,
+      body: opts.assets?.(t.asset),
+      tint: terrainTint(assetInfo(t.asset)?.tint, style),
+      palette: style.props,
+    });
+  }
+
   if ((opts.grid ?? true) && style.grid.style !== 'none' && fb) {
     if (style.grid.style === 'lines') {
       const lines: Polyline[] = [];
@@ -206,6 +278,10 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     clips[`stairs-${s.id}`] = [{ outer: fromPath(shapePath(s.shape)), holes: [] }];
     layers.push({ name: `stairs:${s.id}`, kind: 'stroke', lines: stairLines(s), color: style.stairs.color, width: style.stairs.width, cap: 'butt', join: 'miter', clip: `stairs-${s.id}` });
   }
+
+  // Decals (cracks, puddles, moss) lie on the floor under the walls.
+  const decals = props.filter((p) => layerOfProp(p) === 'decals');
+  if (decals.length) layers.push({ name: 'decals', kind: 'assets', items: assetItems(decals, opts.assets), palette: style.props });
 
   // Walls. The players' view keeps secret doors shut: no gap, and a wall line across the opening.
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
@@ -255,6 +331,13 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   if (marks.length) layers.push({ name: 'door-marks', kind: 'stroke', lines: marks, color: style.doors.stroke, width: style.doors.strokeWidth, cap: 'butt', join: 'miter' });
   if (secretLines.length) layers.push({ name: 'secret-doors', kind: 'stroke', lines: secretLines, color: style.walls.color, width: style.walls.width * 0.5, cap: 'butt', join: 'miter', dash: [0.15, 0.1] });
   if (secretMarks.length) layers.push({ name: 'secret-marks', kind: 'text', items: secretMarks, color: style.labels.color, font: style.labels.font });
+
+  // Props stand on top of walls and doors (wall-mounted ones overlap the wall line);
+  // GM symbols come last, and only in the GM view (filtered above).
+  for (const layer of ['props', 'symbols'] as const) {
+    const list = props.filter((p) => layerOfProp(p) === layer || (layer === 'props' && layerOfProp(p) === 'terrain'));
+    if (list.length) layers.push({ name: layer, kind: 'assets', items: assetItems(list, opts.assets), palette: style.props });
+  }
 
   // Free labels show in both views; room numbers are a GM key, drawn on top in a face with clear digits.
   const labels = map.objects.flatMap((o) => (o.type === 'label' ? [{ text: o.text, at: o.at, size: o.size ?? style.labels.size * 0.7 }] : []));

@@ -11,6 +11,8 @@ export interface ViewerCtx {
   handled: WeakSet<Event>;
   map(): DelveMap;
   rev(): number;
+  /** This map's storeys, top first (just this map when it has none). */
+  storeys(): { id: string; name: string; level?: { group: string; name: string; order: number } }[];
   toMap(clientX: number, clientY: number): Point | null;
   /** Squares per screen pixel at the current zoom. */
   squaresPerPx(): number;

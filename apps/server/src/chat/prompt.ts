@@ -1,11 +1,25 @@
 // What Claude knows in the chat panel: the system prompt (how Delve works, the
 // tools, good dungeon design) and the context block that starts every message
 // (the open map, the user's selection and view, and the map's exact objects).
-import { describeMap, DOOR_STYLES, PRESETS, shapeBounds, type Bounds, type DelveMap, type MapObject, type Shape } from '@delve/core';
+import { ASSETS, assetInfo, CATEGORIES, describeMap, DOOR_STYLES, PRESETS, shapeBounds, type Bounds, type DelveMap, type Level, type MapObject, type Shape } from '@delve/core';
 
 const presetList = Object.entries(PRESETS)
   .map(([k, s]) => `\`${k}\` (${s.name})`)
   .join(', ');
+
+/** The whole catalog, one line per category, compact enough to always include. */
+function catalogText(): string {
+  return CATEGORIES.map((c) => {
+    const items = ASSETS.filter((a) => a.category === c.id);
+    if (!items.length) return '';
+    const list = items
+      .map((a) => (a.kind === 'terrain' ? `${a.id}${a.difficult ? ' (difficult)' : ''}` : `${a.id} ${a.w}×${a.h}${a.blocks === 'sight' ? ' blocks sight' : ''}`))
+      .join(', ');
+    return `- ${c.name}${c.gmOnly ? ' (GM view only)' : ''}: ${list}`;
+  })
+    .filter(Boolean)
+    .join('\n');
+}
 
 export const CHAT_SYSTEM_PROMPT = `You are Claude, working inside Delve: the user's own self-hosted dungeon map editor for tabletop RPGs. The user is a game master who runs games on Roll20. They are writing to you from the chat panel next to the map. Every change you make with the tools shows up on their screen within a second, highlighted.
 
@@ -52,8 +66,13 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - **Cutouts:** holes in the floor inside rooms. A pillar is a 1 × 1 rect or a circle of radius 0.5. Also pits, chasms and collapsed areas.
 - **Stairs:** a shape plus direction, the way up (n, e, s or w), drawn as steps.
 - **Labels:** free text shown to GM and players alike, centred on at. size is the text height in squares, about 0.6 by default.
-- **Props** (furniture, statues, trees): their artwork is still being made, so they can't be placed yet. Use a label or the room's notes instead, and say so if asked.
-- **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, followed by a number (r1, d12). The tools pick the next free id.
+- **Props** (add_prop): furniture, containers, statues, trees, light sources, decals, GM symbols and map parts, from the catalog below.
+  - at is the centre of the footprint. A 1×1 prop in the square x 3–4, y 5–6 has at [3.5, 5.5]; a 2×1 prop covering x 3–5, y 5–6 has at [4, 5.5].
+  - At rotation 0 a prop faces south, with its back (or the wall it hangs on) to the north. rotation turns it clockwise: 90 faces west, 180 north, 270 east. Put wall-mounted props (sconce, shackles, fireplace, shelves, lever) against a wall with their back to it.
+  - Keep props inside rooms and off doorways, and leave walking room. "blocks sight" props (bookshelf, wardrobe, big statue, tree) will block line of sight on the VTT later.
+  - Decals (cracks, puddles, moss) lie on the floor. GM symbols (trap, treasure, danger…) only show in the GM view: use them to mark things for the GM.
+- **Terrain** (add_terrain): an area filled with a repeating tile: water, lava, grass, mud, rubble, carpet… It can cover a whole room (pass the room's shape) or open ground outside rooms. Difficult terrain is marked in the catalog.
+- **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, i props, t terrain, followed by a number (r1, d12). The tools pick the next free id.
 
 # Tools (every one takes map = the map id)
 - list_maps and create_map (name, style, template "empty" or "test-dungeon"): other maps. Only create a map when asked.
@@ -61,7 +80,9 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - add_room (one of rect, poly or circle; plus name, label, notes), connect (from, to, width, doors, door_style), add_door, add_cutout, add_stairs, add_label.
 - move (ids, dx, dy): corridors follow their rooms, and doors on a moved room's edges move with it.
 - resize (a new shape for a room, cutout or stairs), update (set or unset fields, e.g. {"notes": "..."} or {"style": "locked"}), delete (ids).
-- set_map: name, style preset, style overrides, seed. undo and redo.
+- list_assets (category, search), add_prop (asset, at, rotation, scale, notes), add_terrain (asset plus one of rect, poly or circle).
+- add_level (name, position above or below): adds a storey (see "Storeys").
+- set_map: name, style preset, style overrides, seed, level_name (rename this storey). undo and redo.
 - render: returns a picture of the map for you to look at (view gm or players; ppg is pixels per square, default 24, use 12–16 for big maps).
 - export: a download link for the user.
 - focus (ids): pans and highlights the user's view.
@@ -80,6 +101,8 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - cutout {"id","type":"cutout","shape"}
   - stairs {"id","type":"stairs","shape","direction"}
   - label {"id","type":"label","text","at":[x,y],"size"?}
+  - prop {"id","type":"prop","asset","at":[x,y],"rotation"?,"scale"?,"notes"?}
+  - terrain {"id","type":"terrain","asset","shape"}
 
   With apply_ops you choose the ids yourself, so keep them unique. The tools' error messages name the object and field that's wrong.
 
@@ -98,12 +121,22 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - svg for print.
   - ds opens in Dungeon Scrawl.
 
+# Storeys
+- A place with several storeys (a tower, a keep with a cellar, a ship's decks) is several maps in one group, one map per storey. Each has its own undo history and exports as its own Roll20 page. The editor has a storey picker for switching between them.
+- add_level adds a storey above or below and returns the new map's id. Then build on it by passing that id as map.
+- All storeys share one grid: draw each storey where it sits over or under the others, and put stairs (or a ladder, trapdoor or spiral stair prop) at the same x, y on both storeys they connect.
+- The context block lists the storeys of the open map, top first.
+
 # Good dungeon design (when you invent)
 - **Sizes:** a cell or closet is 2×2 to 3×3, a small room 4×4, a normal room 6×6 to 8×8, a hall 10×10 or more, a lair 12×10 or bigger. Main corridors are 2 wide and side passages 1.
 - **Entrance:** give every dungeon one, a door on the outer edge or stairs. Number rooms roughly in the order the players will reach them.
 - **Layout:** mix in a loop or two, a dead end, maybe a secret door, pillars (cutouts) in big halls, round rooms for towers and shrines, and polygon rooms for caves.
 - **Spacing:** keep 1–2 squares between separate rooms, and keep the map compact, because it's exported as one image.
-- **Theme:** name the rooms to fit the dungeon.`;
+- **Theme:** name the rooms to fit the dungeon.
+- **Furnishing:** give each room a purpose and a few props that tell it (a barracks has beds, a weapon rack and a chest), plus a decal or two for atmosphere. Don't fill every square.
+
+# Catalog: props and terrain you can place (id: name, footprint in squares)
+${catalogText()}`;
 
 // ---------- per-message context ----------
 
@@ -133,8 +166,12 @@ export function objectLine(o: MapObject): string {
       return `${o.id} stairs${name} ${shapeText(o.shape)}, up ${o.direction}${notes}`;
     case 'label':
       return `${o.id} label ${q(o.text)} at [${n(o.at[0])}, ${n(o.at[1])}]${o.size ? `, size ${n(o.size)}` : ''}${notes}`;
-    case 'prop':
-      return `${o.id} prop ${q(o.asset)} at [${n(o.at[0])}, ${n(o.at[1])}]${o.rotation ? `, rotated ${n(o.rotation)}°` : ''}${notes}`;
+    case 'prop': {
+      const info = assetInfo(o.asset);
+      return `${o.id} prop ${o.asset}${info ? ` (${info.name}, ${info.w}×${info.h})` : ' (unknown asset)'}${name} at [${n(o.at[0])}, ${n(o.at[1])}]${o.rotation ? `, rotation ${n(o.rotation)}` : ''}${o.scale ? `, scale ${n(o.scale)}` : ''}${notes}`;
+    }
+    case 'terrain':
+      return `${o.id} terrain ${o.asset}${name} ${shapeText(o.shape)}${notes}`;
   }
 }
 
@@ -143,12 +180,14 @@ export interface ChatContextInput {
   rev: number;
   selection?: string[];
   view?: Bounds;
+  /** The storeys of this map's group, top first (only when it has some). */
+  levels?: { id: string; name: string; level?: Level }[];
 }
 
 /** Bigger maps get the summary only; Claude can call get_map for the rest. */
 const MAX_OBJECT_TEXT = 12_000;
 
-export function chatContext({ map, rev, selection = [], view }: ChatContextInput): string {
+export function chatContext({ map, rev, selection = [], view, levels = [] }: ChatContextInput): string {
   const byId = new Map(map.objects.map((o) => [o.id, o]));
   const selected = selection.map((id) => byId.get(id)).filter((o): o is MapObject => Boolean(o));
   const lines = [
@@ -156,6 +195,13 @@ export function chatContext({ map, rev, selection = [], view }: ChatContextInput
     `Map: ${q(map.name)}, id ${map.id}, rev ${rev}, style ${map.style?.preset ?? 'classic-hatching'}, 1 square = ${map.grid.unit ?? '5 ft'}.`,
     selected.length ? `Selected in the editor:\n${selected.map((o) => `  ${objectLine(o)}`).join('\n')}` : 'Selected in the editor: nothing.',
   ];
+  if (map.level && levels.length > 1) {
+    lines.splice(
+      2,
+      0,
+      `This map is the storey ${q(map.level.name)}. Storeys, top first: ${levels.map((l) => `${q(l.level?.name ?? l.name)} (${l.id}${l.id === map.id ? ', this one' : ''})`).join(', ')}.`,
+    );
+  }
   if (view) {
     const b = view;
     lines.push(`Visible area: x ${n(b.x0)} to ${n(b.x1)}, y ${n(b.y0)} to ${n(b.y1)} (centre ${n((b.x0 + b.x1) / 2)}, ${n((b.y0 + b.y1) / 2)}).`);

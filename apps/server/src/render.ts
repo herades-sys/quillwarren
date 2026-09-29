@@ -1,5 +1,6 @@
 // Shared by the preview page and the map API: query -> scene -> SVG or PNG.
 import { buildScene, resolveStyle, sceneToSvg, type DelveMap, type Scene, type Style, type View } from '@delve/core';
+import { assets } from './assets.ts';
 import { svgToPng } from './png.ts';
 
 export const ROLL20_PPG = 70;
@@ -29,7 +30,7 @@ export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
   } catch (e) {
     throw new RenderQueryError((e as Error).message);
   }
-  return buildScene(m, { view: asView(q.view), grid: q.grid !== '0' }, style);
+  return buildScene(m, { view: asView(q.view), grid: q.grid !== '0', assets: assets.body }, style);
 }
 
 export function sizeInSquares(scene: Scene): { w: number; h: number } {

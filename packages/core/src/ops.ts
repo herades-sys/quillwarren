@@ -15,7 +15,7 @@ export type Op =
   | { op: 'batch'; ops: Op[] };
 
 /** Top-level map fields that update_map may change. */
-export const MAP_FIELDS = ['name', 'grid', 'style', 'seed'] as const;
+export const MAP_FIELDS = ['name', 'grid', 'style', 'seed', 'level'] as const;
 
 export const OpSchema: z.ZodType<Op> = z.lazy(() =>
   z.discriminatedUnion('op', [
@@ -84,6 +84,7 @@ function moved(o: MapObjectT, dx: number, dy: number): Record<string, unknown> |
     case 'room':
     case 'cutout':
     case 'stairs':
+    case 'terrain':
       return { shape: translateShape(o.shape, dx, dy) };
     case 'corridor':
       return o.path ? { path: o.path.map(shift) } : null; // auto-routed corridors follow their rooms

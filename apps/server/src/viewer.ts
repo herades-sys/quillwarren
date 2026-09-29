@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { PRESETS, sceneToSvg, type DelveMap } from '@delve/core';
+import { levelSiblings, PRESETS, sceneToSvg, type DelveMap, type Level } from '@delve/core';
 import type { AppInfo } from './app.ts';
 import type { ChatConfig } from './chat/route.ts';
 import { isLoggedIn, type EditorAuth } from './login.ts';
@@ -31,6 +31,8 @@ interface PageOpts {
   passwordSet: boolean;
   /** The chat panel's default model, when the chat bridge is set up (logged-in editors only). */
   chatModel: string | null;
+  /** This map's storeys, top first (empty unless it is one of several). */
+  levels: { id: string; name: string; level?: Level }[];
 }
 
 function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts): string {
@@ -38,7 +40,8 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   const scene = sceneFor(map, { view, style });
   const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '#EFEAE2';
   const chat = o.loggedIn && o.chatModel ? { enabled: true, model: o.chatModel } : undefined;
-  const initial = JSON.stringify({ id, rev, map, edit: { loggedIn: o.loggedIn, passwordSet: o.passwordSet }, ...(chat ? { chat } : {}) }).replace(/</g, '\\u003c');
+  const storeyOptions = o.levels.map((l) => `<option value="${esc(l.id)}"${l.id === id ? ' selected' : ''}>${esc(l.level?.name ?? l.name)}</option>`).join('');
+  const initial = JSON.stringify({ id, rev, map, levels: o.levels, edit: { loggedIn: o.loggedIn, passwordSet: o.passwordSet }, ...(chat ? { chat } : {}) }).replace(/</g, '\\u003c');
   const editControl = o.loggedIn
     ? `<button class="btn" id="edit-toggle" aria-pressed="false" title="Edit this map">Edit</button>`
     : `<a class="btn" href="/login?next=${encodeURIComponent(`/maps/${id}?edit=1`)}">Log in to edit</a>`;
@@ -63,6 +66,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(map.name)} · Delve</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
   @font-face { font-family: "IM FELL English"; src: url("/fonts/im-fell-english.ttf") format("truetype"); font-display: swap; }
   @font-face { font-family: "Marcellus SC"; src: url("/fonts/marcellus-sc.ttf") format("truetype"); font-display: swap; }
@@ -87,7 +91,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   .opts label, .field { display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
   .opts label { grid-template-columns: auto 1fr; align-items: center; gap: 8px; }
   .field > span { font-size: 12px; }
-  #panel input[type="text"], #panel input[type="number"], #panel select, #panel textarea { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; width: 100%; }
+  #panel input[type="text"], #panel input[type="number"], #panel input[type="search"], #panel select, #panel textarea { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; width: 100%; }
   #panel textarea { resize: vertical; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   .check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
@@ -148,7 +152,19 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   .ed .cross { stroke: #3B9BFF; stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
   .ed .dim { fill: #3B9BFF; font-family: system-ui, sans-serif; paint-order: stroke; stroke: #fff; stroke-width: 3px; vector-effect: non-scaling-stroke; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--bar); }
-  .brand { font: 400 1.35rem/1 "IM FELL English", Georgia, serif; color: var(--ink); text-decoration: none; }
+  .brand { font: 400 1.35rem/1 "IM FELL English", Georgia, serif; color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; gap: 7px; }
+  .brand img { display: block; border-radius: 4px; }
+  #storey-select[hidden] { display: none; }
+  .picker { display: grid; gap: 8px; }
+  .picker .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; max-height: 46vh; overflow-y: auto; padding: 2px; }
+  .picker-grid button { display: grid; justify-items: center; align-content: start; gap: 3px; padding: 5px 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: #F0ECE0; color: #1B1F24; font: 11px/1.2 system-ui, sans-serif; text-align: center; cursor: pointer; }
+  .picker-grid button[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .picker-grid img { width: 56px; height: 56px; object-fit: contain; }
+  .picker-grid .swatch { width: 56px; height: 56px; border-radius: 6px; background-size: 56px 56px; }
+  .rotate { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  .ed .ghost-prop { opacity: .75; }
+  .ed .guide { fill: rgba(59, 155, 255, .05); stroke: #3B9BFF; stroke-opacity: .6; stroke-width: 1.5px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
   .title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
   #map-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
   #map-rev, .muted { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -178,8 +194,9 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
 </head>
 <body>
 <header>
-  <a class="brand" href="/">Delve</a>
+  <a class="brand" href="/"><img src="/assets/brand/mark.svg" alt="" width="22" height="22">Delve</a>
   <div class="title"><span id="map-name">${esc(map.name)}</span><span id="map-rev">rev ${rev}</span></div>
+  <select id="storey-select" aria-label="Storey" title="Storeys of this place"${o.levels.length > 1 ? '' : ' hidden'}>${storeyOptions}</select>
   <span class="conn"><span id="conn-dot" data-state="connecting"></span><span id="conn-text">Connecting…</span></span>
   <span class="spacer"></span>
   <div class="seg" role="group" aria-label="View">
@@ -226,6 +243,7 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
         loggedIn: isLoggedIn(auth, req),
         passwordSet: Boolean(auth.passwordHash) || auth.sessions.open,
         chatModel: chat ? (chat.model ?? 'sonnet') : null,
+        levels: levelSiblings(store.list(), id).reverse(),
       };
       return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(page(info, id, rev, map, opts));
     } catch (e) {

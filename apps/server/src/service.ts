@@ -38,8 +38,11 @@ export class MapService {
   }
 
   delete(id: string): void {
+    const group = this.store.get(id).map.level?.group;
     this.store.delete(id);
     this.hub.broadcast(id, { type: 'deleted' });
+    // the other storeys' pickers drop this one
+    if (group) for (const m of this.store.list()) if (m.level?.group === group) this.hub.broadcast(m.id, { type: 'levels' });
   }
 
   /** Ask every open viewer to pan to these objects. Returns how many are watching. */

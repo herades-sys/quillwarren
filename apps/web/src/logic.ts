@@ -1,5 +1,5 @@
 // Pure viewer logic (no DOM), so it can be unit-tested.
-import { corridorBounds, corridorPath, doorSegment, roomsById, shapeBounds, type Bounds, type DelveMap, type MapObject, type Op } from '@delve/core';
+import { corridorBounds, corridorPath, doorSegment, propBounds, roomsById, shapeBounds, type Bounds, type DelveMap, type MapObject, type Op } from '@delve/core';
 
 /** Ids of objects an op batch added, changed or moved (deleted ones are gone, nothing to show). */
 export function changedIds(ops: readonly Op[]): string[] {
@@ -22,6 +22,7 @@ export function objectBounds(o: MapObject, map: DelveMap): Bounds | null {
     case 'room':
     case 'cutout':
     case 'stairs':
+    case 'terrain':
       return shapeBounds(o.shape);
     case 'corridor': {
       const path = corridorPath(o, roomsById(map));
@@ -38,7 +39,7 @@ export function objectBounds(o: MapObject, map: DelveMap): Bounds | null {
       return { x0: o.at[0] - hw, y0: o.at[1] - size * 0.6, x1: o.at[0] + hw, y1: o.at[1] + size * 0.6 };
     }
     case 'prop':
-      return { x0: o.at[0] - 0.6, y0: o.at[1] - 0.6, x1: o.at[0] + 0.6, y1: o.at[1] + 0.6 };
+      return propBounds(o);
   }
 }
 

@@ -1,7 +1,7 @@
 // Live map viewer, and host for the editor. Renders with @delve/core in the
 // browser, follows every change over the WebSocket, and pans to whatever
 // Claude focuses on. Viewing never needs a login; editing does.
-import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
+import { applyOps, buildScene, parseAssetSvg, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
 import { initChat } from './chat.ts';
 import { SVG_NS } from './ctx.ts';
 import { initEditor } from './editor.ts';
@@ -11,6 +11,8 @@ interface Initial {
   id: string;
   rev: number;
   map: DelveMap;
+  /** This map's storeys, top first. */
+  levels: Storey[];
   edit: { loggedIn: boolean; passwordSet: boolean };
   /** Only for logged-in editors on a server with the chat bridge set up. */
   chat?: { enabled: boolean; model: string };
@@ -20,9 +22,16 @@ type Incoming =
   | { type: 'ops'; rev: number; by: string; kind: string; ops: Op[] }
   | { type: 'focus'; ids: string[]; by: string }
   | { type: 'deleted' }
+  | { type: 'levels' }
   | { type: 'ack'; rev: number; ref?: number }
   | { type: 'error'; error: string; ref?: number }
   | { type: 'pong' };
+
+interface Storey {
+  id: string;
+  name: string;
+  level?: { group: string; name: string; order: number };
+}
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -60,11 +69,39 @@ const renderHooks: (() => void)[] = [];
 const viewHooks: (() => void)[] = [];
 const handled = new WeakSet<Event>();
 
+// ---------- prop and terrain art, loaded as the map needs it ----------
+
+const bodies = new Map<string, string | null>(); // null: failed, don't ask again
+function loadAssets(): void {
+  const need = new Set<string>();
+  for (const o of map.objects) if ((o.type === 'prop' || o.type === 'terrain') && !bodies.has(o.asset)) need.add(o.asset);
+  for (const id of need) {
+    bodies.set(id, null);
+    void fetch(`/assets/props/${encodeURIComponent(id)}.svg`)
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((svg) => {
+        bodies.set(id, parseAssetSvg(svg).body);
+        renderSoon();
+      })
+      .catch(() => {});
+  }
+}
+let renderQueued = false;
+function renderSoon(): void {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    render();
+  });
+}
+
 // ---------- drawing ----------
 
 function render(): void {
+  loadAssets();
   const m = styleOverride ? { ...map, style: { ...map.style, preset: styleOverride } } : map;
-  const scene = buildScene(m, { view });
+  const scene = buildScene(m, { view, assets: (id) => bodies.get(id) ?? undefined });
   stage.style.background = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '';
   canvas.innerHTML = sceneToSvg(scene, { ppg: 20 });
   svg = canvas.querySelector('svg');
@@ -255,6 +292,30 @@ ui.style.addEventListener('change', () => {
   render();
 });
 
+// ---------- storeys ----------
+
+let storeys: Storey[] = initial.levels ?? [];
+const storeySelect = document.getElementById('storey-select') as HTMLSelectElement | null;
+function showStoreys(): void {
+  if (!storeySelect) return;
+  storeySelect.replaceChildren(
+    ...storeys.map((s) => Object.assign(document.createElement('option'), { value: s.id, textContent: s.level?.name ?? s.name, selected: s.id === mapId })),
+  );
+  storeySelect.hidden = storeys.length < 2;
+}
+async function refreshStoreys(): Promise<void> {
+  const res = await fetch(`/api/v1/maps/${encodeURIComponent(mapId)}/levels`);
+  if (!res.ok) return;
+  storeys = ((await res.json()) as { levels: Storey[] }).levels;
+  showStoreys();
+}
+storeySelect?.addEventListener('change', () => {
+  // same view, style and edit mode on the other storey
+  const url = new URL(location.href);
+  url.pathname = `/maps/${encodeURIComponent(storeySelect.value)}`;
+  location.href = url.toString();
+});
+
 // ---------- live connection ----------
 
 async function resync(): Promise<void> {
@@ -300,6 +361,7 @@ function connect(): void {
           await resync();
         }
         render();
+        if (JSON.stringify(msg.ops).includes('"update_map"')) void refreshStoreys(); // a storey may have been renamed
         highlight(changedIds(msg.ops), 'change', 1600);
         const n = countOps(msg.ops);
         const what = msg.kind === 'ops' ? `${n} change${n === 1 ? '' : 's'}` : msg.kind;
@@ -326,6 +388,9 @@ function connect(): void {
           pending.get(msg.ref)!.fail(new Error(msg.error));
           pending.delete(msg.ref);
         } else toast(msg.error);
+        break;
+      case 'levels':
+        void refreshStoreys();
         break;
       case 'deleted':
         gone = true;
@@ -380,6 +445,7 @@ if (initial.edit.loggedIn) {
     handled,
     map: () => map,
     rev: () => rev,
+    storeys: () => storeys,
     toMap,
     squaresPerPx,
     send,

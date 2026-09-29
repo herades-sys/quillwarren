@@ -52,27 +52,45 @@ function distToSegment(p: Point, a: Point, b: Point): number {
  * cutouts, corridors, then rooms (the smallest room wins when rooms overlap).
  * tol is the pick radius in squares (a few pixels at the current zoom).
  */
-export function hitTest(map: DelveMap, p: Point, tol: number): string | null {
+/**
+ * Everything under p, topmost first: doors, then labels and props (last drawn first),
+ * stairs and cutouts, corridors, then rooms and terrain areas, smallest first
+ * (terrain before a room of the same size, since it's drawn over it).
+ */
+export function hitAll(map: DelveMap, p: Point, tol: number): string[] {
   const of = <T extends MapObject['type']>(t: T) => map.objects.filter((o): o is Extract<MapObject, { type: T }> => o.type === t);
+  const out: string[] = [];
   for (const d of of('door')) {
     const [a, b] = doorSegment(d);
-    if (distToSegment(p, a, b) <= Math.max(tol, 0.3)) return d.id;
+    if (distToSegment(p, a, b) <= Math.max(tol, 0.3)) out.push(d.id);
   }
-  for (const l of [...of('label'), ...of('prop')]) {
+  for (const l of map.objects.filter((o) => o.type === 'label' || o.type === 'prop').reverse()) {
     const b = objectBounds(l, map);
-    if (b && p[0] >= b.x0 - tol && p[0] <= b.x1 + tol && p[1] >= b.y0 - tol && p[1] <= b.y1 + tol) return l.id;
+    if (b && p[0] >= b.x0 - tol && p[0] <= b.x1 + tol && p[1] >= b.y0 - tol && p[1] <= b.y1 + tol) out.push(l.id);
   }
-  for (const s of [...of('stairs'), ...of('cutout')]) if (pointInShape(s.shape, p)) return s.id;
+  for (const s of [...of('stairs'), ...of('cutout')]) if (pointInShape(s.shape, p)) out.push(s.id);
   const rooms = roomsById(map);
   for (const c of of('corridor')) {
     const path = corridorPath(c, rooms);
     if (!path) continue;
     const outline = corridorOutline(path, c.width).map((ring) => ring.map((q) => [q.x, q.y] as Point));
-    if (outline.some((ring) => pointInRing(p, ring))) return c.id;
+    if (outline.some((ring) => pointInRing(p, ring))) out.push(c.id);
   }
-  const hits = of('room').filter((r) => pointInShape(r.shape, p));
-  hits.sort((a, b) => shapeArea(a.shape) - shapeArea(b.shape));
-  return hits[0]?.id ?? null;
+  const areas = [...of('terrain'), ...of('room')].filter((o) => pointInShape(o.shape, p));
+  areas.sort((a, b) => shapeArea(a.shape) - shapeArea(b.shape) || (a.type === 'terrain' ? -1 : 0) - (b.type === 'terrain' ? -1 : 0));
+  out.push(...areas.map((o) => o.id));
+  return out;
+}
+
+export function hitTest(map: DelveMap, p: Point, tol: number): string | null {
+  return hitAll(map, p, tol)[0] ?? null;
+}
+
+/** Clicking again on the selected object picks the next one under the pointer (a room under its terrain, a chest under a rug). */
+export function nextHit(hits: readonly string[], current: string | undefined): string | null {
+  if (!hits.length) return null;
+  const i = current ? hits.indexOf(current) : -1;
+  return hits[(i + 1) % hits.length]!;
 }
 
 export type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';

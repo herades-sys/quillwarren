@@ -7,6 +7,8 @@ export type LiveMessage =
   | { type: 'ops'; rev: number; by: string; kind: string; ops: unknown[] }
   | { type: 'focus'; ids: string[]; by: string }
   | { type: 'deleted' }
+  /** A storey was added to (or removed from) this map's group: fetch /levels again. */
+  | { type: 'levels' }
   | { type: 'ack'; rev: number; ref?: unknown }
   | { type: 'error'; error: string; problems?: string[]; rev?: number; ref?: unknown }
   | { type: 'pong' };

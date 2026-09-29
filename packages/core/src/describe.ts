@@ -3,7 +3,8 @@ import { corridorBounds, corridorPath, pathLength, roomsById } from './geometry/
 import { computeFloor } from './geometry/floor.ts';
 import { containsPoint, shapeArea, shapeBounds } from './geometry/shapes.ts';
 import { boundarySegments, collinearOverlap, doorSegment } from './geometry/walls.ts';
-import type { Corridor, Cutout, DelveMap, Door, Point, Room } from './schema.ts';
+import { assetInfo } from './assets/catalog.ts';
+import type { Corridor, Cutout, DelveMap, Door, Point, Prop, Room, Terrain } from './schema.ts';
 
 const fmt = (n: number): string => String(Math.round(n * 100) / 100);
 
@@ -21,7 +22,9 @@ export function describeMap(map: DelveMap): string {
   const corridors = map.objects.filter((o): o is Corridor => o.type === 'corridor');
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
   const cutouts = map.objects.filter((o): o is Cutout => o.type === 'cutout');
-  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout'].includes(o.type));
+  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain'].includes(o.type));
+  const props = map.objects.filter((o): o is Prop => o.type === 'prop');
+  const terrain = map.objects.filter((o): o is Terrain => o.type === 'terrain');
   const byId = roomsById(map);
 
   const lines: string[] = [];
@@ -93,6 +96,34 @@ export function describeMap(map: DelveMap): string {
       groups.set(key, [...(groups.get(key) ?? []), `${c.id}${c.name ? ` ${c.name.toLowerCase()}` : ''}`]);
     }
     lines.push(`Cutouts: ${[...groups].map(([k, ids]) => `${ids.join(', ')} ${k}`).join('; ')}`);
+  }
+  const roomAt = (p: Point): string => {
+    const r = rooms.find((room) => containsPoint(shapeBounds(room.shape), p));
+    return r ? `in ${roomName(r)}` : 'outside rooms';
+  };
+  if (props.length) {
+    const groups = new Map<string, Map<string, string[]>>();
+    for (const p of props) {
+      const where = roomAt(p.at);
+      const byAsset = groups.get(where) ?? new Map<string, string[]>();
+      byAsset.set(p.asset, [...(byAsset.get(p.asset) ?? []), p.id]);
+      groups.set(where, byAsset);
+    }
+    lines.push('Props:');
+    for (const [where, byAsset] of groups) {
+      lines.push(`  ${where}: ${[...byAsset].map(([asset, ids]) => `${assetInfo(asset)?.name ?? asset} (${ids.join(', ')})`).join(', ')}`);
+    }
+  }
+  if (terrain.length) {
+    lines.push(
+      `Terrain: ${terrain
+        .map((t) => {
+          const b = shapeBounds(t.shape);
+          const info = assetInfo(t.asset);
+          return `${t.id} ${info?.name ?? t.asset}${info?.difficult ? ' (difficult)' : ''} ${fmt(b.x1 - b.x0)}×${fmt(b.y1 - b.y0)} ${roomAt([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2])}`;
+        })
+        .join('; ')}`,
+    );
   }
   if (others.length) {
     const counts = new Map<string, number>();

@@ -33,10 +33,28 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/maps` | | `{ maps: [{ id, name, rev, objects, created, updated }] }`, newest first |
+| GET | `/maps` | | `{ maps: [{ id, name, rev, objects, created, updated, level? }] }`, newest first |
 | POST | `/maps` | `{ name?, style?, template?: "empty" \| "test-dungeon", by? }`, or `{ map: <full delve.map>, by? }` | `201 { id, rev: 1, map }` |
 | GET | `/maps/:id` | | `{ id, rev, map }` |
-| DELETE | `/maps/:id` | | `204`. A soft delete: the row stays in the database file, and the id can't be reused |
+| DELETE | `/maps/:id` | | `204`. A soft delete: the row stays in the database file, and the id can't be reused. The start page and the editor's map panel have Delete buttons |
+| GET | `/maps/:id/levels` | | `{ levels: [{ id, name, level }] }`: this map's storeys, top first (just the map itself when it has none) |
+| POST | `/maps/:id/levels` | `{ name, position?: "above" \| "below", currentName?, by? }` | `201 { id, rev, map }`: a new empty storey in the same group. The first time, this map joins the group as `currentName` (default "Ground floor") |
+
+**Storeys:** a place with several storeys is several maps that share `level: { group, name, order }` (higher `order` is further up). Each storey has its own undo history and exports as its own Roll20 page, and all of them share one grid, so stairs line up. The editor shows a storey picker at the top and the floor of the storey below as a dashed outline. Open viewers get `{ type: "levels" }` when a storey is added or deleted.
+
+## Props and terrain
+
+| Path | Returns |
+|---|---|
+| `GET /api/v1/assets` | `{ categories, assets: [{ id, name, category, kind: prop \| terrain, w, h, tags, blocks, tint?, difficult?, available }] }` |
+| `GET /assets/props/<id>.svg` | The cleaned SVG in its original inks (thumbnails; the viewer loads art from here) |
+| `GET /assets/icons/<name>.svg`, `/assets/brand/<name>.svg`, `/favicon.svg` | Editor icons and the Delve logo |
+
+- **Props** are `{ type: "prop", asset, at, rotation?, scale? }`. `at` is the centre of the footprint. At rotation 0 a prop faces south, and rotation turns it clockwise in degrees.
+- **Terrain** is `{ type: "terrain", asset, shape }`, drawn over the floor and under the grid, as a tint plus a repeating 2×2-square tile.
+- **Drawing order:** decals lie under the walls, props sit on top of walls and doors, and GM symbols come last. GM symbols appear in the GM view only.
+- **Recolouring:** every style recolours the three asset inks (`props` in the style preset).
+- **Where the art comes from:** `delve-props-design-system/assets`. `npm run assets` rebuilds `packages/core/src/assets/catalog.json` and the full `manifest.json` from the batch generators' metadata, and reports files that are listed but missing. Every SVG goes through a whitelist (`parseAssetSvg`) before it reaches a page or a PNG.
 
 ## Changes
 
@@ -49,7 +67,7 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 | GET | `/maps/:id/history?limit=50` | | `{ history: [{ rev, at, by, kind, ops, state }] }`, where `kind` is create, ops, undo or redo |
 
 - **`by`** says who made a change (`claude`, `editor`, a script's name). It's shown in history and live messages. The default is `api`.
-- **Ops:** `add`, `update` (`set`/`unset`), `move` (`ids`, `dx`, `dy`), `delete`, `batch`, plus **`update_map`** (`set`/`unset` of `name`, `grid`, `style`, `seed`).
+- **Ops:** `add`, `update` (`set`/`unset`), `move` (`ids`, `dx`, `dy`), `delete`, `batch`, plus **`update_map`** (`set`/`unset` of `name`, `grid`, `style`, `seed`, `level`).
 - **`baseRev`:** send it when you've computed changes from a copy you read earlier. On a mismatch you get `409` with the current `rev`: fetch again and retry.
 
 ## Output
@@ -89,7 +107,9 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `add_room` (`rect` \| `poly` \| `circle`, `name?`, `label?`, `notes?`) | The room number defaults to the next free one |
 | `connect` (`from`, `to`, `width?`=2, `doors?` none/from/to/both, `door_style?`) | Auto-routed corridor that follows its rooms, with doors across its mouths |
 | `add_cutout`, `add_door`, `add_stairs`, `add_label` | Details |
-| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed) | Changes |
+| `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
+| `add_level` (`name`, `position?` above/below, `current_name?`) | Adds a storey (a new map in the same group) |
+| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, level_name) | Changes |
 | `undo`, `redo` | History |
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
 | `export` (`format?` png/svg/ds, `view?`=players, `ppg?`=70) | A download link for the user |

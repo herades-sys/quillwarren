@@ -28,6 +28,10 @@ export interface Style {
   stairs: { color: string; width: number };
   /** font: free labels; numberFont: room numbers (needs clear lining figures). */
   labels: { font: string; numberFont: string; size: number; color: string };
+  /** Props and terrain tiles: the three asset inks become these colours. */
+  props: { ink: string; paper: string; shade: string };
+  /** Terrain tint: 1 = the tile's own tint, lower mixes it toward the floor colour; gray drops the hue (print). */
+  terrain: { mix: number; gray: boolean };
 }
 
 const FONT = 'IM FELL English';
@@ -56,6 +60,8 @@ export const PRESETS: Record<string, Style> = {
     doors: { fill: '#F0ECE0', stroke: '#111111', strokeWidth: 0.05 },
     stairs: { color: '#111111', width: 0.04 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#111111' },
+    props: { ink: '#1A1A1A', paper: '#FBF8F1', shade: '#B7AD9B' },
+    terrain: { mix: 1, gray: false },
   },
   clean: {
     name: 'Clean',
@@ -70,6 +76,8 @@ export const PRESETS: Record<string, Style> = {
     doors: { fill: '#FFFFFF', stroke: '#22252A', strokeWidth: 0.045 },
     stairs: { color: '#22252A', width: 0.035 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.8, color: '#22252A' },
+    props: { ink: '#22252A', paper: '#FFFFFF', shade: '#C3C9D1' },
+    terrain: { mix: 0.8, gray: false },
   },
   'old-school-blue': {
     name: 'Old-school blue',
@@ -84,6 +92,8 @@ export const PRESETS: Record<string, Style> = {
     doors: { fill: '#FFFFFF', stroke: '#0F2438', strokeWidth: 0.05 },
     stairs: { color: '#0F2438', width: 0.04 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#0F2438' },
+    props: { ink: '#0F2438', paper: '#FFFFFF', shade: '#9CBBDA' },
+    terrain: { mix: 0.55, gray: false },
   },
   print: {
     name: 'Black and white print',
@@ -106,6 +116,8 @@ export const PRESETS: Record<string, Style> = {
     doors: { fill: '#FFFFFF', stroke: '#000000', strokeWidth: 0.05 },
     stairs: { color: '#000000', width: 0.035 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#000000' },
+    props: { ink: '#000000', paper: '#FFFFFF', shade: '#BDBDBD' },
+    terrain: { mix: 0.45, gray: true },
   },
 };
 

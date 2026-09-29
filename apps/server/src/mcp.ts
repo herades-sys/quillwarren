@@ -6,6 +6,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
+  ASSETS,
+  assetInfo,
+  CATEGORIES,
   connectOps,
   describeMap,
   DOOR_STYLES,
@@ -13,9 +16,11 @@ import {
   nextLabel,
   parseOps,
   PRESETS,
+  propBounds,
   shapeBounds,
   ValidationError,
   withAttachedDoors,
+  type AssetInfo,
   type MapObject,
   type Op,
   type Point,
@@ -25,6 +30,7 @@ import {
 import { errorResponse, newMap, tokenGuard } from './api.ts';
 import { bearer } from './auth.ts';
 import type { ChatTokens } from './chat/tokens.ts';
+import { addLevel, levelsOf } from './levels.ts';
 import { render } from './render.ts';
 import type { MapService } from './service.ts';
 
@@ -34,7 +40,9 @@ const INSTRUCTIONS = `Delve is a dungeon map editor for tabletop games. You buil
 Coordinates are grid squares (1 square = 5 ft unless the map says otherwise): x grows to the right, y grows downward, the origin is top-left, and positions use whole or half squares.
 Typical flow: create_map, then add_room (rect [x, y, width, height]) for each room, connect rooms (auto-routed corridors, optional doors at the ends), add_cutout for pillars or pits, add_door / add_stairs / add_label for details.
 Each tool call is one undoable step. Check your work with render (returns a picture) or describe_map (text). Use focus to point the user's viewer at what you just did.
-Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.`;
+Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.
+Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
+A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.`;
 
 const presetNames = Object.keys(PRESETS) as [string, ...string[]];
 
@@ -76,6 +84,13 @@ function oneShape(a: { rect?: [number, number, number, number]; poly?: Point[]; 
   return given[0]!;
 }
 
+/** One catalog line for Claude: id, name, footprint, what it blocks. */
+export function assetLine(a: AssetInfo): string {
+  if (a.kind === 'terrain') return `${a.id} — ${a.name} (terrain${a.difficult ? ', difficult' : ''})`;
+  const blocks = a.blocks === 'none' ? 'walk over' : a.blocks === 'movement' ? 'blocks movement' : 'blocks sight';
+  return `${a.id} — ${a.name}, ${a.w}×${a.h}, ${blocks}, ${a.category}`;
+}
+
 function where(shape: Shape): string {
   const b = shapeBounds(shape);
   return `${b.x1 - b.x0}×${b.y1 - b.y0} squares at ${b.x0},${b.y0}`;
@@ -98,7 +113,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       guarded(() => {
         const maps = store.list();
         if (!maps.length) return text('No maps yet. Use create_map.');
-        return text(maps.map((m) => `${m.id} · "${m.name}" · rev ${m.rev} · ${m.objects} objects · updated ${m.updated} · ${viewer(m.id)}`).join('\n'));
+        const storey = (m: (typeof maps)[number]) => (m.level ? ` · storey "${m.level.name}" (order ${m.level.order}) of group ${m.level.group}` : '');
+        return text(maps.map((m) => `${m.id} · "${m.name}"${storey(m)} · rev ${m.rev} · ${m.objects} objects · updated ${m.updated} · ${viewer(m.id)}`).join('\n'));
       }),
   );
 
@@ -282,6 +298,106 @@ export function buildMcpServer(service: MapService, base: string, version: strin
   );
 
   server.registerTool(
+    'list_assets',
+    {
+      title: 'List props and terrain',
+      description: 'The props (furniture, statues, trees, GM symbols…) and terrain tiles you can place, with ids, footprints and what they block.',
+      inputSchema: {
+        category: z.string().optional().describe(`One of ${CATEGORIES.map((c) => c.id).join(', ')}`),
+        search: z.string().optional().describe('Words to match in names and tags, e.g. "bed" or "water"'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (a) =>
+      guarded(() => {
+        const words = (a.search ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+        const hits = ASSETS.filter(
+          (x) => (!a.category || x.category === a.category) && words.every((w) => x.id.includes(w) || x.name.toLowerCase().includes(w) || x.tags.some((t) => t.includes(w))),
+        );
+        if (!hits.length) return text('Nothing matches. Try another word, or no filter at all.');
+        return text(hits.map(assetLine).join('\n'));
+      }),
+  );
+
+  server.registerTool(
+    'add_prop',
+    {
+      title: 'Add prop',
+      description:
+        'Place a prop (see list_assets). at is the centre of its footprint: a 1×1 prop in the square at x 3–4, y 5–6 has at [3.5, 5.5]; a 2×1 prop covering x 3–5 has at [4, 5.5]. ' +
+        'At rotation 0 a prop faces south (its back or wall side is north); rotation turns it clockwise in degrees (90, 180, 270).',
+      inputSchema: {
+        map: mapId,
+        asset: z.string().describe('Asset id, e.g. "chest-closed"'),
+        at: point.describe('Centre of the footprint [x, y] in squares'),
+        rotation: z.number().optional().describe('Degrees clockwise: 0 (faces south), 90 (faces west), 180 (north), 270 (east)'),
+        scale: z.number().positive().max(4).optional(),
+        name: z.string().max(200).optional(),
+        notes: z.string().max(10_000).optional().describe('GM notes, e.g. what is inside a chest'),
+        id: z.string().optional().describe('Defaults to the next i<n>'),
+      },
+    },
+    (a) =>
+      guarded(() => {
+        const info = assetInfo(a.asset);
+        if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets; terrain goes in add_terrain)`]);
+        const map = store.get(a.map).map;
+        const prop: MapObject = {
+          id: a.id ?? nextId(map, 'i'),
+          type: 'prop',
+          asset: a.asset,
+          at: a.at,
+          ...(a.rotation ? { rotation: a.rotation } : {}),
+          ...(a.scale && a.scale !== 1 ? { scale: a.scale } : {}),
+          ...(a.name ? { name: a.name } : {}),
+          ...(a.notes ? { notes: a.notes } : {}),
+        };
+        const b = propBounds(prop);
+        return addObject(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.`);
+      }),
+  );
+
+  server.registerTool(
+    'add_terrain',
+    {
+      title: 'Add terrain',
+      description: 'Fill an area with a terrain tile (water, grass, lava, rubble… see list_assets category terrain). Give exactly one shape; it may cover a whole room or open ground outside rooms.',
+      inputSchema: { map: mapId, asset: z.string().describe('Terrain id, e.g. "water-shallow"'), ...shapeArgs, name: z.string().max(200).optional(), id: z.string().optional() },
+    },
+    (a) =>
+      guarded(() => {
+        const info = assetInfo(a.asset);
+        if (!info || info.kind !== 'terrain') throw new ValidationError([`asset: "${a.asset}" is not a terrain tile (see list_assets with category "terrain")`]);
+        const map = store.get(a.map).map;
+        const shape = oneShape(a);
+        const id = a.id ?? nextId(map, 't');
+        return addObject(a.map, { id, type: 'terrain', shape, asset: a.asset, ...(a.name ? { name: a.name } : {}) }, `Added ${info.name} terrain ${id}: ${where(shape)}.`);
+      }),
+  );
+
+  server.registerTool(
+    'add_level',
+    {
+      title: 'Add storey',
+      description:
+        'Add a storey to a multi-storey place: a new empty map in the same group, above or below. The first time, this map becomes a storey too (current_name, default "Ground floor"). ' +
+        'Draw the new storey on the same grid, so stairs sit at the same x, y on both floors. Returns the new map id.',
+      inputSchema: {
+        map: mapId,
+        name: z.string().min(1).max(60).describe('e.g. "Cellar", "Upper floor", "Tower top"'),
+        position: z.enum(['above', 'below']).optional().describe('default above'),
+        current_name: z.string().min(1).max(60).optional().describe('Storey name for this map, if it is not part of a group yet'),
+      },
+    },
+    (a) =>
+      guarded(() => {
+        const c = addLevel(service, a.map, { name: a.name, position: a.position, currentName: a.current_name, by: BY });
+        const all = levelsOf(service, c.mapId).map((l) => `${l.level?.name ?? l.name} (${l.id})`);
+        return text(`Added storey "${a.name}" as map ${c.mapId}: ${viewer(c.mapId)}. Storeys, top first: ${all.join(', ')}.`);
+      }),
+  );
+
+  server.registerTool(
     'move',
     {
       title: 'Move objects',
@@ -300,7 +416,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'resize',
     {
       title: 'Resize or reshape',
-      description: 'Give a room, cutout or stairs a new shape (exactly one of rect, poly, circle).',
+      description: 'Give a room, cutout, stairs or terrain area a new shape (exactly one of rect, poly, circle).',
       inputSchema: { map: mapId, id: z.string(), ...shapeArgs },
     },
     (a) =>
@@ -342,6 +458,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         style: z.enum(presetNames).optional(),
         overrides: z.record(z.string(), z.unknown()).nullable().optional(),
         seed: z.number().int().optional().describe('Changes the hatching and wall wobble'),
+        level_name: z.string().min(1).max(60).optional().describe('Rename this storey (only for maps that are storeys, see add_level)'),
       },
     },
     (a) =>
@@ -350,12 +467,16 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const set: Record<string, unknown> = {};
         if (a.name) set.name = a.name;
         if (a.seed !== undefined) set.seed = a.seed;
+        if (a.level_name) {
+          if (!map.level) throw new ValidationError(['level_name: this map is not a storey; use add_level to make one']);
+          set.level = { ...map.level, name: a.level_name };
+        }
         if (a.style !== undefined || a.overrides !== undefined) {
           const cur = map.style ?? { preset: 'classic-hatching' };
           const overrides = a.overrides === undefined ? cur.overrides : (a.overrides ?? undefined);
           set.style = { preset: a.style ?? cur.preset, ...(overrides ? { overrides } : {}) };
         }
-        if (!Object.keys(set).length) throw new ValidationError(['nothing to change: give name, style, overrides or seed']);
+        if (!Object.keys(set).length) throw new ValidationError(['nothing to change: give name, style, overrides, seed or level_name']);
         return change(a.map, [{ op: 'update_map', set }], `Updated map settings (${Object.keys(set).join(', ')}).`);
       }),
   );

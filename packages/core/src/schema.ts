@@ -82,9 +82,24 @@ export const Prop = z.strictObject({
   scale: positive.optional(),
 });
 
-export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop'] as const;
+/** An area filled with a repeating terrain tile (water, grass, lava…), drawn over the floor and under props. */
+export const Terrain = z.strictObject({
+  type: z.literal('terrain'),
+  ...common,
+  shape: Shape,
+  asset: z.string().min(1).max(100),
+});
 
-export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop]);
+export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain'] as const;
+
+export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain]);
+
+/** A storey of a multi-storey place: maps with the same group are the storeys of one building, shown in `order`. */
+export const Level = z.strictObject({
+  group: Id,
+  name: z.string().min(1).max(60),
+  order: z.number().int(),
+});
 
 export const MapDoc = z.strictObject({
   format: z.literal(FORMAT),
@@ -103,6 +118,7 @@ export const MapDoc = z.strictObject({
     })
     .optional(),
   seed: z.number().int().optional(),
+  level: Level.optional(),
   objects: z.array(MapObject),
 });
 
@@ -115,6 +131,8 @@ export type Door = z.infer<typeof Door>;
 export type Stairs = z.infer<typeof Stairs>;
 export type Label = z.infer<typeof Label>;
 export type Prop = z.infer<typeof Prop>;
+export type Terrain = z.infer<typeof Terrain>;
+export type Level = z.infer<typeof Level>;
 export type MapObject = z.infer<typeof MapObject>;
 export type ObjectType = MapObject['type'];
 export type DelveMap = z.infer<typeof MapDoc>;

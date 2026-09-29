@@ -33,7 +33,22 @@ export {
   type Segment,
   type Polyline,
 } from './geometry/walls.ts';
-export { buildScene, type Scene, type Layer, type RenderOptions, type View } from './render/scene.ts';
+export { buildScene, terrainTint, type Scene, type Layer, type RenderOptions, type View, type AssetItem } from './render/scene.ts';
+export {
+  ASSETS,
+  CATEGORIES,
+  assetInfo,
+  categoryOf,
+  propBounds,
+  propCentre,
+  type AssetInfo,
+  type AssetKind,
+  type AssetLayer,
+  type Blocks,
+  type Category,
+} from './assets/catalog.ts';
+export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset } from './assets/svg.ts';
+export { levelSiblings, type LevelEntry } from './levels.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { DelveMap } from '@delve/core';
 import { describe, expect, it } from 'vitest';
-import { closesPolygon, deletionSet, doorFromDrag, handleAt, hitTest, pointInShape, rectFromDrag, resizeBounds, snap, snapPoint } from '../src/edit-logic.ts';
+import { closesPolygon, deletionSet, doorFromDrag, handleAt, hitAll, hitTest, nextHit, pointInShape, rectFromDrag, resizeBounds, snap, snapPoint } from '../src/edit-logic.ts';
 
 const map = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../fixtures/test-map-4p.delve.json'), 'utf8')) as DelveMap;
 
@@ -54,5 +54,30 @@ describe('editing logic', () => {
     expect(deletionSet(map, ['r3']).sort()).toEqual(['c2', 'r3']);
     expect(deletionSet(map, ['r2']).sort()).toEqual(['c1', 'c2', 'c3', 'c4', 'r2']);
     expect(deletionSet(map, ['d1'])).toEqual(['d1']);
+  });
+});
+
+describe('picking with props and terrain', () => {
+  const furnished: DelveMap = {
+    ...map,
+    objects: [
+      ...map.objects,
+      { id: 't1', type: 'terrain', asset: 'water-shallow', shape: { rect: [7, 25, 6, 6] } },
+      { id: 'i1', type: 'prop', asset: 'chest-closed', at: [10.5, 27.5] },
+      { id: 'i2', type: 'prop', asset: 'bench', at: [9, 29.5], rotation: 90 },
+    ],
+  };
+
+  it('lists everything under the pointer, props first, terrain over its room', () => {
+    expect(hitAll(furnished, [10.5, 27.5], 0)).toEqual(['i1', 't1', 'r1']);
+    expect(hitTest(furnished, [8.6, 30.2], 0)).toBe('i2'); // the turned bench covers x 8.5–9.5, y 28.5–30.5
+    expect(hitAll(furnished, [12.5, 25.5], 0)).toEqual(['t1', 'r1']);
+  });
+
+  it('moves on to the next hit when the selected one is clicked again', () => {
+    expect(nextHit(['i1', 't1', 'r1'], 'i1')).toBe('t1');
+    expect(nextHit(['i1', 't1', 'r1'], 'r1')).toBe('i1');
+    expect(nextHit(['t1'], undefined)).toBe('t1');
+    expect(nextHit([], 'x')).toBeNull();
   });
 });

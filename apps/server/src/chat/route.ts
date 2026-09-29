@@ -9,6 +9,7 @@ import { ValidationError, type Bounds } from '@delve/core';
 import { errorResponse, writeGuard } from '../api.ts';
 import type { Sessions } from '../auth.ts';
 import type { MapService } from '../service.ts';
+import { levelsOf } from '../levels.ts';
 import { CHAT_SYSTEM_PROMPT, chatPrompt } from './prompt.ts';
 import type { ChatTokens } from './tokens.ts';
 
@@ -111,7 +112,7 @@ export function registerChat(app: FastifyInstance, { service, token, sessions, t
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          prompt: chatPrompt({ map: current.map, rev: current.rev, selection: r.selection, view: r.view }, r.message),
+          prompt: chatPrompt({ map: current.map, rev: current.rev, selection: r.selection, view: r.view, levels: levelsOf(service, id) }, r.message),
           system: CHAT_SYSTEM_PROMPT,
           ...(r.session ? { resume: r.session } : {}),
           model: r.model ?? config.model ?? 'sonnet',
