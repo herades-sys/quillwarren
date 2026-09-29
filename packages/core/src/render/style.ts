@@ -32,6 +32,8 @@ export interface Style {
   props: { ink: string; paper: string; shade: string };
   /** Terrain tint: 1 = the tile's own tint, lower mixes it toward the floor colour; gray drops the hue (print). */
   terrain: { mix: number; gray: boolean };
+  /** Fog of war: its colour, and how strongly the GM view dims fogged areas (0..1). */
+  fog: { color: string; dim: number };
 }
 
 const FONT = 'IM FELL English';
@@ -62,6 +64,7 @@ export const PRESETS: Record<string, Style> = {
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#111111' },
     props: { ink: '#1A1A1A', paper: '#FBF8F1', shade: '#B7AD9B' },
     terrain: { mix: 1, gray: false },
+    fog: { color: '#24211D', dim: 0.5 },
   },
   clean: {
     name: 'Clean',
@@ -78,6 +81,7 @@ export const PRESETS: Record<string, Style> = {
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.8, color: '#22252A' },
     props: { ink: '#22252A', paper: '#FFFFFF', shade: '#C3C9D1' },
     terrain: { mix: 0.8, gray: false },
+    fog: { color: '#2A2F36', dim: 0.45 },
   },
   'old-school-blue': {
     name: 'Old-school blue',
@@ -94,6 +98,7 @@ export const PRESETS: Record<string, Style> = {
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#0F2438' },
     props: { ink: '#0F2438', paper: '#FFFFFF', shade: '#9CBBDA' },
     terrain: { mix: 0.55, gray: false },
+    fog: { color: '#0B1B2B', dim: 0.5 },
   },
   print: {
     name: 'Black and white print',
@@ -118,6 +123,7 @@ export const PRESETS: Record<string, Style> = {
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#000000' },
     props: { ink: '#000000', paper: '#FFFFFF', shade: '#BDBDBD' },
     terrain: { mix: 0.45, gray: true },
+    fog: { color: '#FFFFFF', dim: 0.7 },
   },
 };
 

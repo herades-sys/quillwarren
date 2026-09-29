@@ -1,6 +1,7 @@
 // buildScene: map + style -> an ordered list of drawing layers in grid squares.
 // sceneToSvg (svg.ts) writes it out; a Canvas backend can draw the same layers.
 import { assetInfo, categoryOf, propBounds, type AssetLayer } from '../assets/catalog.ts';
+import { fogShade, visiblePolygons } from '../fog.ts';
 import type { Palette } from '../assets/svg.ts';
 import { computeFloor, floorPaths, polygonsOf } from '../geometry/floor.ts';
 import { fromPath, shapeBounds, shapePath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
@@ -22,6 +23,12 @@ export interface RenderOptions {
   assets?: (asset: string) => string | undefined;
   /** false: leave the background out (transparent), e.g. for the 3D view's floor textures. */
   background?: boolean;
+  /**
+   * Fog of war (when the map has it on): 'hide' covers what the players haven't
+   * seen (players' screen), 'dim' shades it (the GM's view). Off by default, so
+   * exports stay whole.
+   */
+  fog?: 'hide' | 'dim';
 }
 
 /** One prop in an 'assets' layer: its body (in asset units, 100 per square) placed around `at`. */
@@ -64,6 +71,8 @@ export interface Scene {
   bounds: Bounds;
   clips: Record<string, Polygon[]>;
   layers: Layer[];
+  /** A clip for everything but the background (fog of war in the players' view). */
+  contentClip?: string;
 }
 
 const open = (points: Point[]): Polyline => ({ points, closed: false });
@@ -345,6 +354,16 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   // Free labels show in both views; room numbers are a GM key, drawn on top in a face with clear digits.
   const labels = map.objects.flatMap((o) => (o.type === 'label' ? [{ text: o.text, at: o.at, size: o.size ?? style.labels.size * 0.7 }] : []));
   if (labels.length) layers.push({ name: 'labels', kind: 'text', items: labels, color: style.labels.color, font: style.labels.font });
+  // Fog of war. The GM view shades what the players haven't seen (room numbers stay
+  // readable on top); the players' view draws nothing there at all, only the background.
+  let contentClip: string | undefined;
+  if (opts.fog === 'dim' && map.fog?.on) {
+    const shade = fogShade(map, reach);
+    if (shade.length) layers.push({ name: 'fog', kind: 'fill', polygons: shade, color: style.fog.color, opacity: style.fog.dim });
+  } else if (opts.fog === 'hide' && map.fog?.on) {
+    clips['fog-visible'] = visiblePolygons(map);
+    contentClip = 'fog-visible';
+  }
   if (view === 'gm') {
     const numbers: { text: string; at: Point; size: number }[] = [];
     for (const r of map.objects.filter((o): o is Room => o.type === 'room')) {
@@ -355,5 +374,5 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     if (numbers.length) layers.push({ name: 'room-numbers', kind: 'text', items: numbers, color: style.labels.color, font: style.labels.numberFont });
   }
 
-  return { bounds, clips, layers };
+  return { bounds, clips, layers, ...(contentClip ? { contentClip } : {}) };
 }

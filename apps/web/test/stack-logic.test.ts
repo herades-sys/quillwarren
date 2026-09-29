@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { intersect, startView, storeyHeights, texturePpg, unionOf, wallBox } from '../src/stack-logic.ts';
+import { clipSegments, insidePolygons, intersect, startView, storeyHeights, texturePpg, unionOf, wallBox } from '../src/stack-logic.ts';
 
 describe('3D view logic', () => {
   it('stacks storeys bottom-up by order, whatever the numbers are', () => {
@@ -29,5 +29,19 @@ describe('3D view logic', () => {
     const v = startView(u!, 14);
     expect(v.target).toEqual([4, 7, 10]);
     expect(v.position[1]).toBeGreaterThan(14);
+  });
+});
+
+describe('fog in 3D', () => {
+  const square = { outer: [[0, 0], [4, 0], [4, 4], [0, 4]] as [number, number][], holes: [[[1, 1], [2, 1], [2, 2], [1, 2]]] as [number, number][][] };
+  it('knows inside from outside and holes', () => {
+    expect(insidePolygons([square], [3, 3])).toBe(true);
+    expect(insidePolygons([square], [1.5, 1.5])).toBe(false);
+    expect(insidePolygons([square], [5, 1])).toBe(false);
+  });
+
+  it('keeps only the parts of walls inside what the players have seen', () => {
+    expect(clipSegments([[[-2, 3], [6, 3]]], [square])).toEqual([[[0, 3], [4, 3]]]);
+    expect(clipSegments([[[10, 0], [12, 0]]], [square])).toEqual([]);
   });
 });

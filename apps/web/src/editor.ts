@@ -14,10 +14,12 @@ import {
   PRESETS,
   propBounds,
   propCentre,
+  updateFog,
   withAttachedDoors,
   type AssetInfo,
   type Bounds,
   type DelveMap,
+  type FogChange,
   type MapObject,
   type Op,
   type Point,
@@ -43,7 +45,7 @@ import {
 } from './edit-logic.ts';
 import { objectBounds, pad } from './logic.ts';
 
-type Tool = 'select' | 'room' | 'poly' | 'corridor' | 'door' | 'cutout' | 'stairs' | 'label' | 'prop' | 'terrain';
+type Tool = 'select' | 'room' | 'poly' | 'corridor' | 'door' | 'cutout' | 'stairs' | 'label' | 'prop' | 'terrain' | 'reveal';
 
 const PROPS = ASSETS.filter((a) => a.kind === 'prop');
 const TILES = ASSETS.filter((a) => a.kind === 'terrain');
@@ -63,6 +65,7 @@ const TOOLS: { id: Tool; name: string; key: string; hint: string }[] = [
   { id: 'label', name: 'Label', key: 'L', hint: 'Click to place text, then type it in the panel.' },
   { id: 'prop', name: 'Prop', key: 'A', hint: 'Pick a prop below, then click the map to place it (again and again). Q and E turn it.' },
   { id: 'terrain', name: 'Terrain', key: 'T', hint: 'Pick a tile below, then drag an area: water, grass, rubble…' },
+  { id: 'reveal', name: 'Reveal', key: 'G', hint: 'Fog of war: click a room or corridor to show or hide it for the players. Drag to reveal an area, Shift-drag to cover one.' },
 ];
 
 interface Drag {
@@ -76,6 +79,9 @@ interface Drag {
   bounds?: Bounds;
   /** The click landed on the object that was already selected: a plain click moves on to the next one under it. */
   cycle?: boolean;
+  /** Reveal tool: the unsnapped point (for clicking a room) and whether Shift was held (cover instead). */
+  raw?: Point;
+  cover?: boolean;
 }
 
 type Attrs = Record<string, string | number | boolean | undefined | ((e: Event) => void)>;
@@ -250,6 +256,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
         ctx.handled.add(e);
         placeProp(p, step(e));
         break;
+      case 'reveal':
+        start('create', { raw: p, cover: e.shiftKey });
+        break;
       case 'door':
         start('door');
         break;
@@ -327,6 +336,19 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
         break;
       }
       case 'create': {
+        if (tool === 'reveal') {
+          const area = rectFromDrag(d.start, d.cur, s);
+          if (d.moved && area) {
+            fogChange(d.cover ? { coverArea: { rect: area } } : { revealArea: { rect: area } });
+          } else {
+            // a click: show or hide the room or corridor under the pointer
+            const hit = hitAll(m, d.raw ?? d.start, tol())
+              .map(byId)
+              .find((o) => o?.type === 'room' || o?.type === 'corridor');
+            if (hit) fogChange(m.fog?.on && m.fog.revealed?.includes(hit.id) ? { cover: [hit.id] } : { reveal: [hit.id] });
+          }
+          break;
+        }
         const rect = rectFromDrag(d.start, d.cur, s);
         if (!rect) break;
         const shape: Shape = { rect };
@@ -373,6 +395,32 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
     focusField = 'text';
     setTool('select'); // one label per click of the tool; the text field takes over
     void apply([{ op: 'add', object: { id, type: 'label', text: 'Label', at } }], [id]);
+  }
+
+  function fogChange(c: FogChange): void {
+    try {
+      void apply([{ op: 'update_map', set: { fog: updateFog(map(), c) } }]);
+    } catch (e) {
+      ctx.toast((e as Error).message);
+    }
+  }
+
+  /** Fog of war switch, reveal/cover everything, and the players' screen link. */
+  function fogControls(): HTMLElement[] {
+    const fog = map().fog;
+    const on = h('input', { type: 'checkbox', checked: Boolean(fog?.on), onchange: (e: Event) => fogChange({ on: (e.target as HTMLInputElement).checked }) });
+    const n = fog?.revealed?.length ?? 0;
+    return [
+      h('label', { class: 'check' }, on, ' Fog of war: players only see what you reveal'),
+      h('p', { class: 'hint' }, fog?.on ? `${n} room${n === 1 ? '' : 's'} and corridor${n === 1 ? '' : 's'} revealed. The GM view shows the rest dimmed.` : 'Off: players see the whole map.'),
+      h(
+        'div',
+        { class: 'row' },
+        h('button', { type: 'button', onclick: () => fogChange({ revealAll: true }) }, 'Reveal all'),
+        h('button', { type: 'button', onclick: () => fogChange({ reset: true, on: true }) }, 'Hide all'),
+      ),
+      h('a', { class: 'btn', href: `/maps/${encodeURIComponent(ctx.mapId)}/screen`, target: '_blank', rel: 'noopener' }, 'Open the players’ screen ↗'),
+    ];
   }
 
   /** Where the prop tool would put the chosen prop for pointer p: its footprint snapped to the grid around p. */
@@ -607,6 +655,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
     }
     if (tool === 'prop') opts.push(propPicker());
     if (tool === 'terrain') opts.push(tilePicker());
+    if (tool === 'reveal') opts.push(...fogControls());
     toolbox.replaceChildren(
       h(
         'div',
@@ -832,6 +881,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
         : [h('p', { class: 'hint' }, 'A tower, a keep with a cellar: add storeys, and switch between them at the top.')]),
       ...(guide ? [h('p', { class: 'hint' }, `The dashed outline is the floor of “${guide.name}”, so the storeys line up.`)] : []),
       h('div', { class: 'row' }, h('button', { type: 'button', onclick: () => void addStorey('above') }, 'Add above'), h('button', { type: 'button', onclick: () => void addStorey('below') }, 'Add below')),
+      h('h3', {}, 'Fog of war'),
+      ...fogControls(),
+      h('p', { class: 'hint' }, 'Reveal rooms with the Reveal tool (G), or ask Claude.'),
       h('p', { class: 'hint' }, 'Select something on the map to edit it.'),
       h('button', { type: 'button', class: 'danger', onclick: () => void deleteMap() }, m.level ? 'Delete this storey' : 'Delete map'),
     ];
@@ -865,6 +917,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
   // ---------- wiring ----------
 
   ctx.onRender(() => {
+    if (tool === 'reveal') renderTools(); // keep the fog switch and count current
     if (wantSelect && ctx.rev() >= wantSelect.rev) {
       selection = wantSelect.ids;
       wantSelect = null;

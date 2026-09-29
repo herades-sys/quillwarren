@@ -1,7 +1,8 @@
 // Live map viewer, and host for the editor. Renders with @delve/core in the
 // browser, follows every change over the WebSocket, and pans to whatever
 // Claude focuses on. Viewing never needs a login; editing does.
-import { applyOps, buildScene, parseAssetSvg, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
+import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
+import { artLoader } from './art.ts';
 import { initChat } from './chat.ts';
 import { SVG_NS } from './ctx.ts';
 import { initEditor } from './editor.ts';
@@ -71,21 +72,7 @@ const handled = new WeakSet<Event>();
 
 // ---------- prop and terrain art, loaded as the map needs it ----------
 
-const bodies = new Map<string, string | null>(); // null: failed, don't ask again
-function loadAssets(): void {
-  const need = new Set<string>();
-  for (const o of map.objects) if ((o.type === 'prop' || o.type === 'terrain') && !bodies.has(o.asset)) need.add(o.asset);
-  for (const id of need) {
-    bodies.set(id, null);
-    void fetch(`/assets/props/${encodeURIComponent(id)}.svg`)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
-      .then((svg) => {
-        bodies.set(id, parseAssetSvg(svg).body);
-        renderSoon();
-      })
-      .catch(() => {});
-  }
-}
+const art = artLoader(() => renderSoon());
 let renderQueued = false;
 function renderSoon(): void {
   if (renderQueued) return;
@@ -99,9 +86,10 @@ function renderSoon(): void {
 // ---------- drawing ----------
 
 function render(): void {
-  loadAssets();
+  art.ensure(map);
   const m = styleOverride ? { ...map, style: { ...map.style, preset: styleOverride } } : map;
-  const scene = buildScene(m, { view, assets: (id) => bodies.get(id) ?? undefined });
+  // fog of war: the GM sees unrevealed parts shaded, the players' view doesn't draw them
+  const scene = buildScene(m, { view, assets: art.body, fog: view === 'players' ? 'hide' : 'dim' });
   stage.style.background = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '';
   canvas.innerHTML = sceneToSvg(scene, { ppg: 20 });
   svg = canvas.querySelector('svg');

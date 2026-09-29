@@ -42,6 +42,17 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 
 **Storeys:** a place with several storeys is several maps that share `level: { group, name, order }` (higher `order` is further up). Each storey has its own undo history and exports as its own Roll20 page, and all of them share one grid, so stairs line up. The editor shows a storey picker at the top and the floor of the storey below as a dashed outline. Open viewers get `{ type: "levels" }` when a storey is added or deleted.
 
+## Fog of war
+
+- **Where it's kept:** `map.fog = { on, revealed?: ids, show?: shapes, hide?: shapes }`, changed with `update_map`, so it is live and undoable.
+- **Players' view** (2D, `/maps/:id/screen`, 3D): with fog on, only revealed rooms and corridors (plus `show` areas, minus `hide` areas) are drawn, with 0.3 squares of margin for walls and doors. Everything else simply isn't there, only the background.
+- **GM view:** the rest is shaded (`style.fog`).
+- **Exports stay whole** unless you add `fog=1` to `render.png` / `render.svg`.
+- **Players' screen** (`/maps/:id/screen`): full screen with no controls, following changes live. It frames what's revealed, glides to new reveals, and pans when the GM focuses on revealed things. F toggles full screen.
+- **Editor:** the Reveal tool (G) shows or hides a room or corridor with a click, reveals an area with a drag and covers one with Shift-drag. The map panel has the fog switch, Reveal all, Hide all and the players' screen link.
+- **Corridors:** revealing two rooms also reveals a corridor between them.
+- **MCP:** `fog` (`on`, `reveal`, `cover`, `reveal_area`, `cover_area`, `reveal_all`, `reset`). Core: `updateFog`, `visiblePolygons`, `visibleFloor`, `fogShade`, `revealedBounds`.
+
 ## 3D view: `/maps/:id/3d`
 
 All storeys of a place stacked like a cutaway model: the **3D** button on the map page.

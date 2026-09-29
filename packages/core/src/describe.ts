@@ -4,6 +4,7 @@ import { computeFloor } from './geometry/floor.ts';
 import { containsPoint, shapeArea, shapeBounds } from './geometry/shapes.ts';
 import { boundarySegments, collinearOverlap, doorSegment } from './geometry/walls.ts';
 import { assetInfo } from './assets/catalog.ts';
+import { fogSummary } from './fog.ts';
 import type { Corridor, Cutout, DelveMap, Door, Point, Prop, Room, Terrain } from './schema.ts';
 
 const fmt = (n: number): string => String(Math.round(n * 100) / 100);
@@ -130,5 +131,7 @@ export function describeMap(map: DelveMap): string {
     for (const o of others) counts.set(o.type, (counts.get(o.type) ?? 0) + 1);
     lines.push(`Also: ${[...counts].map(([t, n]) => `${n} ${t}`).join(', ')}`);
   }
+  const fog = fogSummary(map);
+  if (fog) lines.push(fog);
   return lines.join('\n');
 }

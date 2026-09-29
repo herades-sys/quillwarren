@@ -37,7 +37,7 @@ interface PageOpts {
 
 function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts): string {
   const { view, style } = o;
-  const scene = sceneFor(map, { view, style });
+  const scene = sceneFor(map, { view, style, fog: '1' });
   const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '#EFEAE2';
   const chat = o.loggedIn && o.chatModel ? { enabled: true, model: o.chatModel } : undefined;
   const storeyOptions = o.levels.map((l) => `<option value="${esc(l.id)}"${l.id === id ? ' selected' : ''}>${esc(l.level?.name ?? l.name)}</option>`).join('');
@@ -229,7 +229,57 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
 </html>`;
 }
 
+/**
+ * The players' screen (/maps/:id/screen): the players' view with fog of war,
+ * full screen, following every change live. For a TV at the table or a
+ * Discord screen share. The script is /assets/screen.js.
+ */
+function screenPage(info: AppInfo, id: string, rev: number, map: DelveMap): string {
+  const scene = sceneFor(map, { view: 'players', fog: '1' });
+  const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '#EFEAE2';
+  const initial = JSON.stringify({ id, rev, map }).replace(/</g, '\\u003c');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(map.name)} · Players' screen</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  @font-face { font-family: "IM FELL English"; src: url("/fonts/im-fell-english.ttf") format("truetype"); font-display: swap; }
+  @font-face { font-family: "Marcellus SC"; src: url("/fonts/marcellus-sc.ttf") format("truetype"); font-display: swap; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { background: ${bg}; font: 15px/1.4 system-ui, sans-serif; }
+  #stage, #canvas { position: absolute; inset: 0; }
+  #canvas svg { width: 100%; height: 100%; display: block; }
+  #full { position: absolute; right: 14px; bottom: 14px; padding: 7px 12px; border: 0; border-radius: 8px; background: rgba(25, 30, 36, .7); color: #fff; font: inherit; cursor: pointer; opacity: 0; transition: opacity .3s; }
+  body:hover #full, #full:focus-visible { opacity: 1; }
+  #note { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); color: #5B5348; font: 1.6rem "IM FELL English", Georgia, serif; text-align: center; pointer-events: none; }
+  #note[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="canvas">${sceneToSvg(scene, { ppg: 20 })}</div></div>
+<div id="note" hidden>The map is still hidden.</div>
+<button id="full" type="button" title="Full screen (F)">Full screen</button>
+<script id="delve-initial" type="application/json">${initial}</script>
+<script type="module" src="/assets/screen.js?v=${encodeURIComponent(info.version)}"></script>
+</body>
+</html>`;
+}
+
 export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, chat?: ChatConfig): void {
+  app.get('/maps/:id/screen', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const { rev, map } = store.get(id);
+      return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(screenPage(info, id, rev, map));
+    } catch (e) {
+      if (!(e instanceof NotFoundError)) throw e;
+      return reply.code(404).type('text/plain').send('no such map');
+    }
+  });
+
   const scripts = new Map<string, string>();
 
   app.get('/maps/:id', async (req, reply) => {
@@ -257,7 +307,7 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
   });
 
   // viewer.js: the viewer and editor; stack.js: the 3D view (with three.js, so only that page loads it).
-  for (const name of ['viewer.js', 'stack.js']) {
+  for (const name of ['viewer.js', 'stack.js', 'screen.js']) {
     app.get(`/assets/${name}`, async (_req, reply) => {
       let script = scripts.get(name);
       if (script === undefined) {

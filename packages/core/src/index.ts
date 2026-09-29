@@ -48,6 +48,7 @@ export {
   type Category,
 } from './assets/catalog.ts';
 export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset } from './assets/svg.ts';
+export { visiblePaths, visiblePolygons, visibleFloor, fogShade, revealedBounds, updateFog, fogSummary, type FogChange } from './fog.ts';
 export { levelSiblings, connectorsOf, stairLinks, type LevelEntry, type Connector, type ConnectorKind, type StairPlan, type StoreyInput } from './levels.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';

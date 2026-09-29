@@ -1,7 +1,7 @@
 // What Claude knows in the chat panel: the system prompt (how Delve works, the
 // tools, good dungeon design) and the context block that starts every message
 // (the open map, the user's selection and view, and the map's exact objects).
-import { ASSETS, assetInfo, CATEGORIES, describeMap, DOOR_STYLES, PRESETS, shapeBounds, type Bounds, type DelveMap, type Level, type MapObject, type Shape } from '@delve/core';
+import { ASSETS, assetInfo, CATEGORIES, describeMap, DOOR_STYLES, fogSummary, PRESETS, shapeBounds, type Bounds, type DelveMap, type Level, type MapObject, type Shape } from '@delve/core';
 
 const presetList = Object.entries(PRESETS)
   .map(([k, s]) => `\`${k}\` (${s.name})`)
@@ -82,6 +82,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - resize (a new shape for a room, cutout or stairs), update (set or unset fields, e.g. {"notes": "..."} or {"style": "locked"}), delete (ids).
 - list_assets (category, search), add_prop (asset, at, rotation, scale, notes), add_terrain (asset plus one of rect, poly or circle).
 - add_level (name, position above or below): adds a storey (see "Storeys").
+- fog (on, reveal, cover, reveal_area, cover_area, reveal_all, reset): fog of war (see "Fog of war").
 - set_map: name, style preset, style overrides, seed, level_name (rename this storey). undo and redo.
 - render: returns a picture of the map for you to look at (view gm or players; ppg is pixels per square, default 24, use 12–16 for big maps).
 - export: a download link for the user.
@@ -126,6 +127,12 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - add_level adds a storey above or below and returns the new map's id. Then build on it by passing that id as map.
 - All storeys share one grid: draw each storey where it sits over or under the others, and put stairs (or a ladder, trapdoor or spiral stair prop) at the same x, y on both storeys they connect.
 - The context block lists the storeys of the open map, top first.
+
+# Fog of war
+- The fog tool hides what the players haven't found yet. With fog on, the players' view (2D, the players' screen at /maps/<id>/screen, and 3D) draws only the revealed rooms, corridors and areas, and everything else simply isn't there. The GM view shows the unrevealed parts dimmed.
+- As the party explores, reveal rooms and corridors by id ("they open the door to the barracks" → reveal ["r4"]). A corridor between two revealed rooms is revealed with them; reveal other corridors by id as the party walks them. Use reveal_area for part of a big cave or an outdoor area, cover or cover_area to hide things again, reveal_all at the end, and reset to start over. Revealing turns fog on.
+- Don't reveal what the players haven't reached, and don't describe unrevealed rooms to the players unless the GM asks.
+- The context block says what is revealed.
 
 # Good dungeon design (when you invent)
 - **Sizes:** a cell or closet is 2×2 to 3×3, a small room 4×4, a normal room 6×6 to 8×8, a hall 10×10 or more, a lair 12×10 or bigger. Main corridors are 2 wide and side passages 1.
@@ -202,6 +209,8 @@ export function chatContext({ map, rev, selection = [], view, levels = [] }: Cha
       `This map is the storey ${q(map.level.name)}. Storeys, top first: ${levels.map((l) => `${q(l.level?.name ?? l.name)} (${l.id}${l.id === map.id ? ', this one' : ''})`).join(', ')}.`,
     );
   }
+  const fog = fogSummary(map);
+  if (fog) lines.push(fog);
   if (view) {
     const b = view;
     lines.push(`Visible area: x ${n(b.x0)} to ${n(b.x1)}, y ${n(b.y0)} to ${n(b.y1)} (centre ${n((b.x0 + b.x1) / 2)}, ${n((b.y0 + b.y1) / 2)}).`);

@@ -94,6 +94,17 @@ export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'la
 
 export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain]);
 
+/**
+ * Fog of war for the players' screen. With it on, players see only the revealed
+ * rooms and corridors plus `show` areas, minus `hide` areas (applied last).
+ */
+export const Fog = z.strictObject({
+  on: z.boolean(),
+  revealed: z.array(Id).max(2000).optional(),
+  show: z.array(Shape).max(500).optional(),
+  hide: z.array(Shape).max(500).optional(),
+});
+
 /** A storey of a multi-storey place: maps with the same group are the storeys of one building, shown in `order`. */
 export const Level = z.strictObject({
   group: Id,
@@ -119,6 +130,7 @@ export const MapDoc = z.strictObject({
     .optional(),
   seed: z.number().int().optional(),
   level: Level.optional(),
+  fog: Fog.optional(),
   objects: z.array(MapObject),
 });
 
@@ -133,6 +145,7 @@ export type Label = z.infer<typeof Label>;
 export type Prop = z.infer<typeof Prop>;
 export type Terrain = z.infer<typeof Terrain>;
 export type Level = z.infer<typeof Level>;
+export type Fog = z.infer<typeof Fog>;
 export type MapObject = z.infer<typeof MapObject>;
 export type ObjectType = MapObject['type'];
 export type DelveMap = z.infer<typeof MapDoc>;

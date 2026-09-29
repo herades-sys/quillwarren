@@ -12,6 +12,8 @@ export interface RenderQuery {
   style?: string;
   /** "0": transparent background (the 3D view's floor textures). */
   background?: string;
+  /** "1": apply fog of war (players' view: only what's revealed; GM view: the rest shaded). */
+  fog?: string;
 }
 
 export class RenderQueryError extends Error {}
@@ -32,7 +34,9 @@ export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
   } catch (e) {
     throw new RenderQueryError((e as Error).message);
   }
-  return buildScene(m, { view: asView(q.view), grid: q.grid !== '0', background: q.background !== '0', assets: assets.body }, style);
+  const view = asView(q.view);
+  const fog = q.fog === '1' ? (view === 'players' ? 'hide' : 'dim') : undefined;
+  return buildScene(m, { view, grid: q.grid !== '0', background: q.background !== '0', assets: assets.body, ...(fog ? { fog } : {}) }, style);
 }
 
 export function sizeInSquares(scene: Scene): { w: number; h: number } {

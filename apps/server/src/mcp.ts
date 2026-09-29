@@ -12,12 +12,14 @@ import {
   connectOps,
   describeMap,
   DOOR_STYLES,
+  fogSummary,
   nextId,
   nextLabel,
   parseOps,
   PRESETS,
   propBounds,
   shapeBounds,
+  updateFog,
   ValidationError,
   withAttachedDoors,
   type AssetInfo,
@@ -42,7 +44,8 @@ Typical flow: create_map, then add_room (rect [x, y, width, height]) for each ro
 Each tool call is one undoable step. Check your work with render (returns a picture) or describe_map (text). Use focus to point the user's viewer at what you just did.
 Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.
 Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
-A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.`;
+A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.
+Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.`;
 
 const presetNames = Object.keys(PRESETS) as [string, ...string[]];
 
@@ -372,6 +375,41 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const shape = oneShape(a);
         const id = a.id ?? nextId(map, 't');
         return addObject(a.map, { id, type: 'terrain', shape, asset: a.asset, ...(a.name ? { name: a.name } : {}) }, `Added ${info.name} terrain ${id}: ${where(shape)}.`);
+      }),
+  );
+
+  server.registerTool(
+    'fog',
+    {
+      title: 'Fog of war',
+      description:
+        "Fog of war for the players' view: with it on, players see only the revealed rooms and corridors (everything else isn't drawn for them). " +
+        'Reveal rooms or corridors by id as the party explores, or an area (e.g. part of a cave), cover things again, reveal everything, or reset. Revealing turns fog on.',
+      inputSchema: {
+        map: mapId,
+        on: z.boolean().optional().describe('Turn fog on or off (off: players see the whole map)'),
+        reveal: z.array(z.string()).optional().describe('Room or corridor ids the players can now see, e.g. ["r3", "c2"]'),
+        cover: z.array(z.string()).optional().describe('Ids to hide again'),
+        reveal_area: shapeArgs.rect.describe('Also show this rectangle [x, y, w, h]'),
+        cover_area: shapeArgs.rect.describe('Hide this rectangle again'),
+        reveal_all: z.boolean().optional(),
+        reset: z.boolean().optional().describe('Hide everything again (fog stays on)'),
+      },
+    },
+    (a) =>
+      guarded(() => {
+        const map = store.get(a.map).map;
+        const fog = updateFog(map, {
+          ...(a.on !== undefined ? { on: a.on } : {}),
+          ...(a.reveal ? { reveal: a.reveal } : {}),
+          ...(a.cover ? { cover: a.cover } : {}),
+          ...(a.reveal_area ? { revealArea: { rect: a.reveal_area } } : {}),
+          ...(a.cover_area ? { coverArea: { rect: a.cover_area } } : {}),
+          ...(a.reveal_all ? { revealAll: true } : {}),
+          ...(a.reset ? { reset: true } : {}),
+        });
+        const c = service.apply(a.map, [{ op: 'update_map', set: { fog } }], { by: BY });
+        return text(`${fogSummary(c.map) ?? 'Fog of war: off.'} Players' screen: ${base}/maps/${encodeURIComponent(a.map)}/screen. Map is at rev ${c.rev}.`);
       }),
   );
 

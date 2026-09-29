@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest';
+import { applyOps, buildScene, describeMap, floorArea, fogShade, revealedBounds, sceneToSvg, updateFog, visibleFloor, visiblePaths, type DelveMap } from '../src/index.ts';
+import { testMap } from './fixtures.ts';
+
+const withFog = (fog: DelveMap['fog']): DelveMap => ({ ...testMap(), ...(fog ? { fog } : {}) });
+const area = (polys: { outer: [number, number][]; holes: [number, number][][] }[]) => {
+  const ring = (r: [number, number][]) => Math.abs(r.reduce((s, [x, y], i) => s + x * r[(i + 1) % r.length]![1] - r[(i + 1) % r.length]![0] * y, 0)) / 2;
+  return polys.reduce((s, p) => s + ring(p.outer) - p.holes.reduce((t, h) => t + ring(h), 0), 0);
+};
+
+describe('updateFog', () => {
+  it('reveals and covers rooms, turns fog on when revealing, and checks ids', () => {
+    const map = testMap();
+    const f1 = updateFog(map, { reveal: ['r1', 'c1'] });
+    expect(f1).toEqual({ on: true, revealed: ['r1', 'c1'] });
+    const f2 = updateFog({ ...map, fog: f1 }, { cover: ['c1'], coverArea: { rect: [7, 25, 2, 2] } });
+    expect(f2).toEqual({ on: true, revealed: ['r1'], hide: [{ rect: [7, 25, 2, 2] }] });
+    // revealing r1 again lifts the cover-up that lies over it
+    expect(updateFog({ ...map, fog: f2 }, { reveal: ['r1'] }).hide).toBeUndefined();
+    expect(() => updateFog(map, { reveal: ['nope', 'd1'] })).toThrow(/nope, d1 are not rooms/);
+    expect(updateFog(map, { revealAll: true }).revealed?.length).toBe(map.objects.filter((o) => o.type === 'room' || o.type === 'corridor').length);
+    expect(updateFog({ ...map, fog: f1 }, { reset: true })).toEqual({ on: true });
+    expect(updateFog({ ...map, fog: f1 }, { on: false })).toEqual({ on: false, revealed: ['r1', 'c1'] });
+    // revealing both ends of a corridor reveals the corridor too (c1 joins r1 and r2)
+    expect(updateFog(map, { reveal: ['r1', 'r2'] }).revealed).toEqual(['r1', 'r2', 'c1']);
+  });
+});
+
+describe('what the players can see', () => {
+  it('is nothing until something is revealed, then the revealed floor plus a margin for walls', () => {
+    expect(visibleFloor(withFog({ on: true }))).toEqual([]);
+    expect(area(visibleFloor(withFog({ on: false })))).toBeCloseTo(floorArea(testMap()));
+    const one = withFog({ on: true, revealed: ['r1'] });
+    expect(area(visibleFloor(one))).toBeCloseTo(36.6); // room 1 (6×6) plus the 0.3 margin into the 2-wide corridor mouth
+    expect(revealedBounds(one)).toEqual({ x0: 6.7, y0: 24.7, x1: 13.3, y1: 31.3 });
+    expect(visiblePaths(withFog({ on: true, show: [{ rect: [0, 0, 2, 2] }] })).length).toBe(1);
+  });
+
+  it('shades the rest in the GM view and leaves it out in the players view', () => {
+    const map = withFog({ on: true, revealed: ['r1'] });
+    const gm = buildScene(map, { fog: 'dim' });
+    const shade = gm.layers.find((l) => l.name === 'fog');
+    expect(shade).toMatchObject({ kind: 'fill', opacity: 0.5 });
+    expect(gm.layers.at(-1)?.name).toBe('room-numbers'); // numbers stay readable over the shade
+    expect(fogShade(withFog({ on: false, revealed: ['r1'] }), 1)).toEqual([]);
+
+    const players = buildScene(map, { view: 'players', fog: 'hide' });
+    expect(players.contentClip).toBe('fog-visible');
+    const svg = sceneToSvg(players);
+    expect(svg).toMatch(/<g data-layer="background"[^]*<g clip-path="url\(#clip-fog-visible\)"><g data-layer="shading"/);
+    // fog off, or no fog option: the map is whole
+    expect(buildScene(withFog({ on: false }), { view: 'players', fog: 'hide' }).contentClip).toBeUndefined();
+    expect(buildScene(map, { view: 'players' }).contentClip).toBeUndefined();
+  });
+
+  it('is in the map summary and survives undo', () => {
+    const { map, inverse } = applyOps(testMap(), [{ op: 'update_map', set: { fog: { on: true, revealed: ['r1'] } } }]);
+    expect(describeMap(map)).toContain('Fog of war: on. Revealed: 1 Entrance hall [r1].');
+    expect(applyOps(map, inverse).map.fog).toBeUndefined();
+  });
+});

@@ -164,3 +164,27 @@ describe('the 3D view', () => {
     expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?background=0` })).body).not.toContain('data-layer="background"');
   });
 });
+
+describe('fog of war', () => {
+  it('reveals rooms over MCP, shows only them on the players screen, and shades the rest for the GM', async () => {
+    const id = await newMapId();
+    const res = await call('fog', { map: id, reveal: ['r1', 'c1'] });
+    expect(res.text).toContain('Fog of war: on. Revealed: 1 Entrance hall [r1], c1.');
+    expect(res.text).toContain(`/maps/${id}/screen`);
+    expect((await call('fog', { map: id, reveal: ['zz'] })).isError).toBe(true);
+    const screen = await app.inject({ url: `/maps/${id}/screen` });
+    expect(screen.statusCode).toBe(200);
+    expect(screen.body).toContain('clip-path="url(#clip-fog-visible)"');
+    expect(screen.body).toContain('/assets/screen.js?v=test');
+    const players = (await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=players&fog=1` })).body;
+    expect(players).toContain('clip-fog-visible');
+    const gm = (await app.inject({ url: `/api/v1/maps/${id}/render.svg?fog=1` })).body;
+    expect(gm).toContain('data-layer="fog"');
+    // exports without fog=1 stay whole
+    expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=players` })).body).not.toContain('clip-fog-visible');
+    const page = (await app.inject({ url: `/maps/${id}` })).body;
+    expect(page).toContain('data-layer="fog"'); // the GM view's first picture is shaded
+    await call('fog', { map: id, on: false });
+    expect((await getMap(id)).map.fog?.on).toBe(false);
+  });
+});

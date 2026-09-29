@@ -5,8 +5,8 @@
 // and stairs that meet nothing are flagged. Changes stream in live.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { applyOps, buildScene, computeFloor, computeWalls, doorSegment, stairLinks, type Bounds, type Connector, type DelveMap, type Door, type Op, type StairPlan } from '@delve/core';
-import { intersect, startView, storeyHeights, texturePpg, unionOf, wallBox } from './stack-logic.ts';
+import { applyOps, buildScene, computeFloor, computeWalls, doorSegment, revealedBounds, stairLinks, visibleFloor, visiblePolygons, type Bounds, type Connector, type DelveMap, type Door, type Op, type StairPlan } from '@delve/core';
+import { clipSegments, insidePolygons, intersect, startView, storeyHeights, texturePpg, unionOf, wallBox } from './stack-logic.ts';
 
 interface Storey {
   id: string;
@@ -19,6 +19,8 @@ interface Loaded {
   rev: number;
   group: THREE.Group;
   bounds: Bounds;
+  /** What the camera frames: the whole storey, or in the players' view with fog, what they've seen (null: nothing). */
+  fit: Bounds | null;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -134,7 +136,10 @@ const heights = () => storeyHeights(storeys.map((s) => ({ id: s.id, order: order
 function build(l: Loaded): void {
   dispose(l.group);
   const map = l.map;
-  const floor = computeFloor(map);
+  // Players' view with fog of war: only what's been revealed exists at all.
+  const fogged = view === 'players' && Boolean(map.fog?.on);
+  const fullFloor = computeFloor(map);
+  const floor = fogged ? visibleFloor(map) : fullFloor;
   if (floor.length) {
     const shapes = floor.map((p) => {
       const s = new THREE.Shape(p.outer.map(([x, y]) => new THREE.Vector2(x, y)));
@@ -151,9 +156,10 @@ function build(l: Loaded): void {
   // The floor picture covers the same bounds as the server's PNG (same scene code).
   const b = buildScene(map, { view }).bounds;
   l.bounds = b;
+  l.fit = fogged ? revealedBounds(map) : b;
   const w = b.x1 - b.x0;
   const h = b.y1 - b.y0;
-  const url = `/api/v1/maps/${encodeURIComponent(l.storey.id)}/render.png?view=${view}&ppg=${texturePpg(b)}&background=0&rev=${l.rev}`;
+  const url = `/api/v1/maps/${encodeURIComponent(l.storey.id)}/render.png?view=${view}&ppg=${texturePpg(b)}&background=0&fog=1&rev=${l.rev}`;
   const tex = loader.load(url);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = maxAniso;
@@ -164,8 +170,9 @@ function build(l: Loaded): void {
   l.group.add(plane);
 
   // Walls: the floor's edge minus door gaps; for players, secret doors stay shut.
-  let segs = computeWalls(map, floor);
+  let segs = computeWalls(map, fullFloor);
   if (view === 'players') segs = segs.concat(map.objects.filter((o): o is Door => o.type === 'door' && o.style === 'secret').map(doorSegment));
+  if (fogged) segs = clipSegments(segs, visiblePolygons(map));
   if (wallHeight > 0 && segs.length) {
     const t = 0.16;
     const walls = new THREE.InstancedMesh(unitBox, wallMat, segs.length);
@@ -181,9 +188,12 @@ function build(l: Loaded): void {
     l.group.add(walls);
   }
 
-  const label = textSprite(storeyName(l.storey.id));
-  label.position.set(b.x0 - 0.5, 0.8, (b.y0 + b.y1) / 2);
-  l.group.add(label);
+  // A storey the players haven't found yet gets no name tag either.
+  if (!fogged || floor.length) {
+    const label = textSprite(storeyName(l.storey.id));
+    label.position.set(b.x0 - 0.5, 0.8, (b.y0 + b.y1) / 2);
+    l.group.add(label);
+  }
   l.group.position.y = heights().get(l.storey.id) ?? 0;
   l.group.visible = !hidden.has(l.storey.id);
 }
@@ -196,6 +206,16 @@ function buildLinks(): void {
   const list = [...loaded.values()];
   const plan = stairLinks(list.map((l) => ({ id: l.storey.id, order: orderOf(l.storey), map: l.map })));
   const ys = heights();
+  // Players with fog: only stairs they've seen on both storeys, and no red rings (those are for the GM).
+  const seen = new Map(list.map((l) => [l.storey.id, view === 'players' && l.map.fog?.on ? visiblePolygons(l.map) : null]));
+  const visible = (c: Connector) => {
+    const polys = seen.get(c.storey);
+    return !polys || insidePolygons(polys, [(c.bounds.x0 + c.bounds.x1) / 2, (c.bounds.y0 + c.bounds.y1) / 2]);
+  };
+  if (view === 'players') {
+    plan.links = plan.links.filter((k) => visible(k.lower) && visible(k.upper));
+    plan.loose = [];
+  }
   for (const { lower, upper } of plan.links) {
     if (hidden.has(lower.storey) || hidden.has(upper.storey)) continue;
     const box = intersect(lower.bounds, upper.bounds) ?? lower.bounds;
@@ -247,7 +267,7 @@ function stairsPanel(plan: StairPlan): void {
   box.replaceChildren(
     items.length
       ? el('ul', {}, ...items)
-      : el('p', { class: 'hint' }, 'No stairs, ladders or spiral stairs yet. Put them at the same spot on two storeys and they connect here.'),
+      : el('p', { class: 'hint' }, view === 'players' ? 'No stairs between storeys found yet.' : 'No stairs, ladders or spiral stairs yet. Put them at the same spot on two storeys and they connect here.'),
     ...(plan.loose.length ? [el('p', { class: 'hint' }, 'Red rings mark stairs without a partner: move them, or add the matching stairs on the next storey.')] : []),
   );
 }
@@ -273,7 +293,8 @@ function storeysPanel(): void {
 // ---------- camera, picking, snapshot ----------
 
 function fit(): void {
-  const b = unionOf([...loaded.values()].map((l) => l.bounds));
+  const fits = [...loaded.values()].filter((l) => !hidden.has(l.storey.id)).map((l) => l.fit).filter((x): x is Bounds => x !== null);
+  const b = unionOf(fits.length ? fits : [...loaded.values()].map((l) => l.bounds));
   if (!b) return;
   const top = Math.max(0, ...heights().values());
   const v = startView(b, top);
@@ -325,6 +346,7 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-view]')) {
     history.replaceState(null, '', url);
     for (const l of loaded.values()) build(l);
     buildLinks();
+    fit(); // the players may see much less than the GM
   });
 }
 
@@ -397,7 +419,7 @@ async function start(): Promise<void> {
   const results = await Promise.all(storeys.map(async (s) => ({ s, data: await fetchStorey(s) })));
   for (const { s, data } of results) {
     if (!data) continue;
-    const l: Loaded = { storey: s, map: data.map, rev: data.rev, group: new THREE.Group(), bounds: { x0: 0, y0: 0, x1: 10, y1: 10 } };
+    const l: Loaded = { storey: s, map: data.map, rev: data.rev, group: new THREE.Group(), bounds: { x0: 0, y0: 0, x1: 10, y1: 10 }, fit: null };
     loaded.set(s.id, l);
     scene.add(l.group);
     build(l);
