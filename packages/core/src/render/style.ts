@@ -26,10 +26,13 @@ export interface Style {
   grid: { style: 'lines' | 'dots' | 'none'; color: string; width: number; opacity: number };
   doors: { fill: string; stroke: string; strokeWidth: number };
   stairs: { color: string; width: number };
-  labels: { font: string; size: number; color: string };
+  /** font: free labels; numberFont: room numbers (needs clear lining figures). */
+  labels: { font: string; numberFont: string; size: number; color: string };
 }
 
 const FONT = 'IM FELL English';
+/** IM FELL's old-style figures make "1" read as "I"; room numbers use Marcellus SC. */
+const NUMBER_FONT = 'Marcellus SC';
 
 export const PRESETS: Record<string, Style> = {
   'classic-hatching': {
@@ -52,7 +55,7 @@ export const PRESETS: Record<string, Style> = {
     grid: { style: 'lines', color: '#5A5650', width: 0.022, opacity: 0.35 },
     doors: { fill: '#F0ECE0', stroke: '#111111', strokeWidth: 0.05 },
     stairs: { color: '#111111', width: 0.04 },
-    labels: { font: FONT, size: 0.9, color: '#111111' },
+    labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#111111' },
   },
   clean: {
     name: 'Clean',
@@ -66,7 +69,7 @@ export const PRESETS: Record<string, Style> = {
     grid: { style: 'lines', color: '#9AA3AE', width: 0.02, opacity: 0.6 },
     doors: { fill: '#FFFFFF', stroke: '#22252A', strokeWidth: 0.045 },
     stairs: { color: '#22252A', width: 0.035 },
-    labels: { font: FONT, size: 0.8, color: '#22252A' },
+    labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.8, color: '#22252A' },
   },
   'old-school-blue': {
     name: 'Old-school blue',
@@ -80,7 +83,7 @@ export const PRESETS: Record<string, Style> = {
     grid: { style: 'lines', color: '#9CBBDA', width: 0.03, opacity: 1 },
     doors: { fill: '#FFFFFF', stroke: '#0F2438', strokeWidth: 0.05 },
     stairs: { color: '#0F2438', width: 0.04 },
-    labels: { font: FONT, size: 0.9, color: '#0F2438' },
+    labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#0F2438' },
   },
   print: {
     name: 'Black and white print',
@@ -102,7 +105,7 @@ export const PRESETS: Record<string, Style> = {
     grid: { style: 'dots', color: '#000000', width: 0.05, opacity: 0.5 },
     doors: { fill: '#FFFFFF', stroke: '#000000', strokeWidth: 0.05 },
     stairs: { color: '#000000', width: 0.035 },
-    labels: { font: FONT, size: 0.9, color: '#000000' },
+    labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#000000' },
   },
 };
 

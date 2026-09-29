@@ -49,6 +49,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
 <title>${esc(map.name)} · Delve</title>
 <style>
   @font-face { font-family: "IM FELL English"; src: url("/fonts/im-fell-english.ttf") format("truetype"); font-display: swap; }
+  @font-face { font-family: "Marcellus SC"; src: url("/fonts/marcellus-sc.ttf") format("truetype"); font-display: swap; }
   :root { --bar: #FFFFFF; --ink: #1B1F24; --muted: #5B6470; --line: #D9DEE4; --accent: #2C6AA0; --accent-ink: #FFFFFF; --live: #2E9E5B; --warn: #C98A12; --bad: #C0392B; color-scheme: light; }
   @media (prefers-color-scheme: dark) {
     :root { --bar: #191E24; --ink: #E5E9ED; --muted: #97A1AC; --line: #29303A; --accent: #6FA6D8; --accent-ink: #0C1520; color-scheme: dark; }

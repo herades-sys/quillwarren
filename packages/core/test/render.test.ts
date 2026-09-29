@@ -13,7 +13,18 @@ describe('buildScene', () => {
     const names = buildScene(testMap()).layers.map((l) => l.name);
     expect(names.slice(0, 6)).toEqual(['background', 'shading', 'hatching', 'shadow', 'floor', 'grid']);
     expect(names.indexOf('walls')).toBeGreaterThan(names.indexOf('floor'));
-    expect(names.indexOf('labels')).toBe(names.length - 1);
+    expect(names.indexOf('room-numbers')).toBe(names.length - 1);
+  });
+
+  it('draws room numbers in the lining-figure face and free labels in the old-style one', () => {
+    const { map } = applyOps(testMap(), [{ op: 'add', object: { id: 'l1', type: 'label', text: 'Altar', at: [10, 3] } }]);
+    const scene = buildScene(map);
+    const font = (name: string) => {
+      const l = layer(scene, name);
+      return l?.kind === 'text' ? l.font : undefined;
+    };
+    expect(font('room-numbers')).toBe('Marcellus SC');
+    expect(font('labels')).toBe('IM FELL English');
   });
 
   it('keeps the whole dungeon plus hatching inside whole-square bounds', () => {

@@ -10,6 +10,7 @@
   "dependencies": {
     "@delve/core": "*",
     "@expo-google-fonts/im-fell-english": "^0.4.0",
+    "@expo-google-fonts/marcellus-sc": "^0.4.1",
     "@fastify/websocket": "^11.3.1",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@resvg/resvg-js": "^2.6.2",

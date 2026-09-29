@@ -14,6 +14,7 @@ npx esbuild apps/server/src/main.ts \
   --banner:js="import { createRequire as __delveRequire } from 'node:module'; const require = __delveRequire(import.meta.url);"
 sh scripts/build-web.sh release/web
 for pkg in node_modules/@resvg/*; do cp -R "$pkg" release/node_modules/@resvg/; done
-cp node_modules/@expo-google-fonts/im-fell-english/400Regular/IMFellEnglish_400Regular.ttf release/fonts/
+cp node_modules/@expo-google-fonts/im-fell-english/400Regular/IMFellEnglish_400Regular.ttf \
+   node_modules/@expo-google-fonts/marcellus-sc/400Regular/MarcellusSC_400Regular.ttf release/fonts/
 printf '%s\n' "$(git rev-parse --short HEAD 2>/dev/null || echo nogit)-$(date +%Y%m%d%H%M)" > release/VERSION
 echo "built release/ ($(cat release/VERSION), $(du -sh --apparent-size release | cut -f1))"

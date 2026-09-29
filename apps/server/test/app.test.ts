@@ -98,6 +98,12 @@ describe('preview page', () => {
     await withToken.close();
   });
 
+  it('serves the room-number font', async () => {
+    const res = await app.inject({ url: '/fonts/marcellus-sc.ttf' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('font/ttf');
+  });
+
   it('serves the label font', async () => {
     const res = await app.inject({ url: '/fonts/im-fell-english.ttf' });
     expect(res.statusCode).toBe(200);

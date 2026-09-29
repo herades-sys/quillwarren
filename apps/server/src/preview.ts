@@ -17,7 +17,7 @@ import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 
 import { editorSession, errorResponse, newMap } from './api.ts';
 import type { AppInfo } from './app.ts';
 import { isLoggedIn, type EditorAuth } from './login.ts';
-import { LABEL_FONT_FILE } from './png.ts';
+import { FONT_FILES } from './png.ts';
 import { asView, exportName, render, RenderQueryError, ROLL20_PPG, sceneFor, sizeInSquares, type RenderQuery } from './render.ts';
 import type { MapStore } from './store.ts';
 
@@ -107,6 +107,7 @@ function page(info: AppInfo, view: View, store: MapStore, loggedIn: boolean, pas
 <title>Delve</title>
 <style>
   @font-face { font-family: "IM FELL English"; src: url("/fonts/im-fell-english.ttf") format("truetype"); font-display: swap; }
+  @font-face { font-family: "Marcellus SC"; src: url("/fonts/marcellus-sc.ttf") format("truetype"); font-display: swap; }
   :root {
     --bg: #F2F4F6; --surface: #FFFFFF; --ink: #1B1F24; --muted: #5B6470; --line: #D9DEE4;
     --accent: #2C6AA0; --accent-ink: #FFFFFF; --code: #EAEEF2;
@@ -204,7 +205,7 @@ ${cards}
 }
 
 export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth): void {
-  const font = readFileSync(LABEL_FONT_FILE);
+  const fonts = Object.entries(FONT_FILES).map(([served, path]) => [served, readFileSync(path)] as const);
 
   app.get('/', async (req, reply) => {
     const view = asView((req.query as { view?: string }).view);
@@ -225,9 +226,11 @@ export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapS
     }
   });
 
-  app.get('/fonts/im-fell-english.ttf', async (_req, reply) =>
-    reply.type('font/ttf').header('cache-control', 'public, max-age=86400').send(font),
-  );
+  for (const [served, bytes] of fonts) {
+    app.get(`/fonts/${served}`, async (_req, reply) =>
+      reply.type('font/ttf').header('cache-control', 'public, max-age=86400').send(bytes),
+    );
+  }
 
   app.get('/preview/:file', async (req, reply) => {
     const { file } = req.params as { file: string };

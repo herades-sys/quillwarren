@@ -256,17 +256,18 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   if (secretLines.length) layers.push({ name: 'secret-doors', kind: 'stroke', lines: secretLines, color: style.walls.color, width: style.walls.width * 0.5, cap: 'butt', join: 'miter', dash: [0.15, 0.1] });
   if (secretMarks.length) layers.push({ name: 'secret-marks', kind: 'text', items: secretMarks, color: style.labels.color, font: style.labels.font });
 
-  // Labels: room numbers are a GM key; free labels show in both views.
-  const items: { text: string; at: Point; size: number }[] = [];
+  // Free labels show in both views; room numbers are a GM key, drawn on top in a face with clear digits.
+  const labels = map.objects.flatMap((o) => (o.type === 'label' ? [{ text: o.text, at: o.at, size: o.size ?? style.labels.size * 0.7 }] : []));
+  if (labels.length) layers.push({ name: 'labels', kind: 'text', items: labels, color: style.labels.color, font: style.labels.font });
   if (view === 'gm') {
+    const numbers: { text: string; at: Point; size: number }[] = [];
     for (const r of map.objects.filter((o): o is Room => o.type === 'room')) {
       if (!r.label) continue;
       const b = shapeBounds(r.shape);
-      items.push({ text: r.label, at: [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2], size: style.labels.size });
+      numbers.push({ text: r.label, at: [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2], size: style.labels.size });
     }
+    if (numbers.length) layers.push({ name: 'room-numbers', kind: 'text', items: numbers, color: style.labels.color, font: style.labels.numberFont });
   }
-  for (const o of map.objects) if (o.type === 'label') items.push({ text: o.text, at: o.at, size: o.size ?? style.labels.size * 0.7 });
-  if (items.length) layers.push({ name: 'labels', kind: 'text', items, color: style.labels.color, font: style.labels.font });
 
   return { bounds, clips, layers };
 }
