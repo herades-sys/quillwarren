@@ -15,9 +15,9 @@ import { NotFoundError, type MapStore } from './store.ts';
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-/** release/web/viewer.js next to the bundle, or apps/web/dist/viewer.js in development. */
-function findScript(): string | null {
-  for (const rel of ['./web/viewer.js', '../../web/dist/viewer.js']) {
+/** release/web/<name> next to the bundle, or apps/web/dist/<name> in development. */
+function findScript(name: string): string | null {
+  for (const rel of [`./web/${name}`, `../../web/dist/${name}`]) {
     const p = fileURLToPath(new URL(rel, import.meta.url));
     if (existsSync(p)) return p;
   }
@@ -205,6 +205,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   <label class="muted" for="style-select">Style</label>
   <select id="style-select">${options}</select>
   <button class="btn" id="fit" title="Fit the map (F or double-click)">Fit</button>
+  <a class="btn" id="view-3d" href="/maps/${encodeURIComponent(id)}/3d" title="All storeys stacked in 3D, with the stairs that connect them">3D</a>
   <a class="btn primary" id="png-link" href="/api/v1/maps/${encodeURIComponent(id)}/render.png?view=${view}">PNG for Roll20</a>
   ${editControl}
   ${chatControl}
@@ -229,7 +230,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
 }
 
 export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, chat?: ChatConfig): void {
-  let script: string | null = null;
+  const scripts = new Map<string, string>();
 
   app.get('/maps/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -255,14 +256,18 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
     }
   });
 
-  app.get('/assets/viewer.js', async (_req, reply) => {
-    if (script === null) {
-      const file = findScript();
-      if (!file) return reply.code(404).type('text/plain').send('viewer script not built: run npm run build:web');
-      script = readFileSync(file, 'utf8');
-    }
-    // Releases change ?v= with every version; a dev server is always "dev", so never cache there.
-    const cache = info.version === 'dev' ? 'no-store' : 'public, max-age=300';
-    return reply.type('text/javascript; charset=utf-8').header('cache-control', cache).send(script);
-  });
+  // viewer.js: the viewer and editor; stack.js: the 3D view (with three.js, so only that page loads it).
+  for (const name of ['viewer.js', 'stack.js']) {
+    app.get(`/assets/${name}`, async (_req, reply) => {
+      let script = scripts.get(name);
+      if (script === undefined) {
+        const file = findScript(name);
+        if (!file) return reply.code(404).type('text/plain').send(`${name} not built: run npm run build:web`);
+        scripts.set(name, (script = readFileSync(file, 'utf8')));
+      }
+      // Releases change ?v= with every version; a dev server is always "dev", so never cache there.
+      const cache = info.version === 'dev' ? 'no-store' : 'public, max-age=300';
+      return reply.type('text/javascript; charset=utf-8').header('cache-control', cache).send(script);
+    });
+  }
 }

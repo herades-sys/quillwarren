@@ -144,3 +144,23 @@ describe('deleting maps from the start page', () => {
     }
   });
 });
+
+describe('the 3D view', () => {
+  it('serves a page with the storeys, top first, and a link from the map page', async () => {
+    const id = await newMapId();
+    await call('add_level', { map: id, name: 'Loft' });
+    const page = await app.inject({ url: `/maps/${id}/3d` });
+    expect(page.statusCode).toBe(200);
+    const initial = JSON.parse(/<script id="delve-initial" type="application\/json">(.*?)<\/script>/.exec(page.body)![1]!) as { storeys: { level: { name: string } }[] };
+    expect(initial.storeys.map((s) => s.level.name)).toEqual(['Loft', 'Ground floor']);
+    expect(page.body).toContain('/assets/stack.js?v=test');
+    expect((await app.inject({ url: `/maps/${id}` })).body).toContain(`href="/maps/${id}/3d"`);
+    expect((await app.inject({ url: '/maps/map_000000000000/3d' })).statusCode).toBe(404);
+  });
+
+  it('renders floors without their background on request', async () => {
+    const id = await newMapId();
+    expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg` })).body).toContain('data-layer="background"');
+    expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?background=0` })).body).not.toContain('data-layer="background"');
+  });
+});

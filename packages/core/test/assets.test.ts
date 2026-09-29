@@ -16,6 +16,7 @@ import {
   propCentre,
   recolor,
   sceneToSvg,
+  stairLinks,
   terrainTint,
   validateMap,
   type DelveMap,
@@ -174,5 +175,36 @@ describe('terrain and storeys in the model', () => {
     expect(levelSiblings(maps, 'b').map((m) => m.id)).toEqual(['d', 'b', 'a']);
     expect(levelSiblings(maps, 'c').map((m) => m.id)).toEqual(['c']);
     expect(levelSiblings(maps, 'zz')).toEqual([]);
+  });
+});
+
+describe('how storeys connect', () => {
+  const storey = (id: string, order: number, objects: DelveMap['objects']) => ({ id, order, map: { ...testMap(), id, objects } });
+  const spiral = (id: string, at: [number, number]) => ({ id, type: 'prop' as const, asset: 'stairs-spiral', at });
+
+  it('links stairs that overlap on neighbouring storeys and flags the rest', () => {
+    const plan = stairLinks([
+      storey('top', 1, [spiral('i1', [27, 2])]),
+      storey('ground', 0, [spiral('i46', [27, 2]), { id: 's1', type: 'stairs', shape: { rect: [2, 2, 2, 3] }, direction: 'n' }]),
+      storey('cellar', -1, [spiral('i1', [27, 2]), { id: 'i9', type: 'prop', asset: 'ladder', at: [10.5, 10.5] }, { id: 'i8', type: 'prop', asset: 'stairs-up', at: [2.5, 2.5] }]),
+    ]);
+    expect(plan.links.map((l) => `${l.lower.storey}:${l.lower.id}->${l.upper.storey}:${l.upper.id}`)).toEqual(['cellar:i1->ground:i46', 'ground:i46->top:i1']);
+    expect(plan.loose.map((c) => `${c.storey}:${c.id}:${c.kind}`).sort()).toEqual(['cellar:i9:ladder', 'ground:s1:stairs']);
+    // the stairs-up GM symbol is a note, not a connection
+    expect(plan.connectors.some((c) => c.id === 'i8')).toBe(false);
+  });
+
+  it('skips storeys that are not neighbours', () => {
+    const plan = stairLinks([storey('a', 0, [spiral('x', [5, 5])]), storey('b', 1, []), storey('c', 2, [spiral('y', [5, 5])])]);
+    expect(plan.links).toEqual([]);
+    expect(plan.loose).toHaveLength(2);
+  });
+});
+
+describe('transparent backgrounds', () => {
+  it('leaves the background out on request', () => {
+    const names = buildScene(testMap(), { background: false }).layers.map((l) => l.name);
+    expect(names).not.toContain('background');
+    expect(names[0]).toBe('shading');
   });
 });

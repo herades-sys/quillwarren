@@ -48,7 +48,7 @@ export {
   type Category,
 } from './assets/catalog.ts';
 export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset } from './assets/svg.ts';
-export { levelSiblings, type LevelEntry } from './levels.ts';
+export { levelSiblings, connectorsOf, stairLinks, type LevelEntry, type Connector, type ConnectorKind, type StairPlan, type StoreyInput } from './levels.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
 

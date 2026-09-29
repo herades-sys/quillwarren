@@ -10,6 +10,7 @@ import { LiveHub } from './live.ts';
 import { registerLogin, type EditorAuth } from './login.ts';
 import { registerMcp } from './mcp.ts';
 import { registerPreview } from './preview.ts';
+import { registerStack } from './stack.ts';
 import { MapService } from './service.ts';
 import { MapStore } from './store.ts';
 import { registerViewer } from './viewer.ts';
@@ -78,6 +79,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat });
     registerLogin(scoped, auth);
     registerViewer(scoped, info, store, auth, opts.chat);
+    registerStack(scoped, info, store);
     registerPreview(scoped, info, store, auth);
   });
   return app;

@@ -10,6 +10,8 @@ export interface RenderQuery {
   ppg?: string;
   grid?: string;
   style?: string;
+  /** "0": transparent background (the 3D view's floor textures). */
+  background?: string;
 }
 
 export class RenderQueryError extends Error {}
@@ -30,7 +32,7 @@ export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
   } catch (e) {
     throw new RenderQueryError((e as Error).message);
   }
-  return buildScene(m, { view: asView(q.view), grid: q.grid !== '0', assets: assets.body }, style);
+  return buildScene(m, { view: asView(q.view), grid: q.grid !== '0', background: q.background !== '0', assets: assets.body }, style);
 }
 
 export function sizeInSquares(scene: Scene): { w: number; h: number } {

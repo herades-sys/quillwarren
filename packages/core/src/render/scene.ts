@@ -20,6 +20,8 @@ export interface RenderOptions {
   margin?: number;
   /** An asset's SVG body (see assets/svg.ts), or undefined while it isn't loaded: then a dashed outline stands in. */
   assets?: (asset: string) => string | undefined;
+  /** false: leave the background out (transparent), e.g. for the 3D view's floor textures. */
+  background?: boolean;
 }
 
 /** One prop in an 'assets' layer: its body (in asset units, 100 per square) placed around `at`. */
@@ -200,9 +202,10 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
       }
     : { x0: 0, y0: 0, x1: 10, y1: 10 };
 
-  layers.push({ name: 'background', kind: 'rect', bounds, color: style.background });
+  const background = opts.background !== false;
+  if (background) layers.push({ name: 'background', kind: 'rect', bounds, color: style.background });
 
-  if (style.backgroundGrid) {
+  if (background && style.backgroundGrid) {
     const lines: Polyline[] = [];
     for (let x = Math.ceil(bounds.x0); x <= bounds.x1; x++) lines.push(open([[x, bounds.y0], [x, bounds.y1]]));
     for (let y = Math.ceil(bounds.y0); y <= bounds.y1; y++) lines.push(open([[bounds.x0, y], [bounds.x1, y]]));

@@ -42,6 +42,21 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 
 **Storeys:** a place with several storeys is several maps that share `level: { group, name, order }` (higher `order` is further up). Each storey has its own undo history and exports as its own Roll20 page, and all of them share one grid, so stairs line up. The editor shows a storey picker at the top and the floor of the storey below as a dashed outline. Open viewers get `{ type: "levels" }` when a storey is added or deleted.
 
+## 3D view: `/maps/:id/3d`
+
+All storeys of a place stacked like a cutaway model: the **3D** button on the map page.
+
+- **What it shows:**
+  - Each floor is the storey's own map, from `render.png?background=0` (transparent around the drawing), on a stone slab.
+  - Walls stand up from the same wall lines as the 2D map. In the players' view secret doors stay shut.
+  - Each storey has its name next to it.
+- **Stairs:** stairs, spiral stairs, ladders and trapdoors that overlap on neighbouring storeys get an amber shaft between them (`stairLinks` in core). Ones that meet nothing get a red ring and a note in the side panel. The stairs-up/down GM symbols count as notes, not connections.
+- **Controls:**
+  - Spread and wall-height sliders, storey checkboxes to see inside, and GM/players' view.
+  - Drag to turn, right-drag or Shift-drag to pan, scroll to zoom. Double-click a floor to edit that storey, and use Save picture for a PNG.
+- **Live:** changes stream in from every storey's WebSocket, so you can watch Claude build a storey in 3D.
+- **Script:** `apps/web/src/stack.ts` (three.js), bundled as `/assets/stack.js`, so the normal editor never loads three.js.
+
 ## Props and terrain
 
 | Path | Returns |
