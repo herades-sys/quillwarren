@@ -102,8 +102,27 @@ function newMapForm(): string {
   <span class="or">or</span>
   <label class="button" for="ds-file">Import Dungeon Scrawl file…</label>
   <input id="ds-file" type="file" accept=".ds" hidden>
+  <label class="button" for="city-file" title="A city from Watabou's Medieval Fantasy City Generator: Menu → Export as → JSON">Import city (Watabou JSON)…</label>
+  <input id="city-file" type="file" accept=".json,application/json" hidden>
+  <label>1 square = <select id="city-feet"><option value="5">5 ft (true scale)</option><option value="10" selected>10 ft</option><option value="20">20 ft (overview)</option></select></label>
   <span id="import-status" class="note" role="status"></span>
 </form>
+<script>
+  document.getElementById('city-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const status = document.getElementById('import-status');
+    status.textContent = 'Importing ' + file.name + '…';
+    const name = file.name.replace(/\\.json$/i, '').replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    const feet = document.getElementById('city-feet').value;
+    const res = await fetch('/api/v1/maps/import.city?feet=' + feet + '&name=' + encodeURIComponent(name), {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: await file.text(),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { status.textContent = 'Import failed: ' + (body.error || res.status); e.target.value = ''; return; }
+    location.href = '/maps/' + encodeURIComponent(body.id) + '?edit=1';
+  });
+</script>
 <script>
   document.getElementById('ds-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];

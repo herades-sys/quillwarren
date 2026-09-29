@@ -91,3 +91,33 @@ describe('Dungeon Scrawl over the API', () => {
     expect((await importDs(dsFile, {})).statusCode).toBe(401);
   });
 });
+
+describe('Watabou city import over the API', () => {
+  let app: FastifyInstance;
+  beforeEach(async () => {
+    app = buildApp({ version: 'test', started: 'now' }, { token: TOKEN });
+    await app.ready();
+  });
+  afterEach(async () => {
+    await app.close();
+  });
+  const city = readFileSync(resolve(import.meta.dirname, '../../../fixtures/watabou/feyvale.json'), 'utf8');
+  const post = (q: string, body: string, headers: Record<string, string> = auth) =>
+    app.inject({ method: 'POST', url: `/api/v1/maps/import.city${q}`, headers: { ...headers, 'content-type': 'application/json' }, payload: body });
+
+  it('imports a city as a new map at the chosen scale', async () => {
+    const res = await post('?name=Feyvale&feet=5', city);
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { id: string; map: DelveMap; notes: string[] };
+    expect(body.map).toMatchObject({ name: 'Feyvale', grid: { unit: '5 ft' } });
+    expect(body.notes.join(' ')).toContain('14 towers');
+    expect((await app.inject({ url: `/api/v1/maps/${body.id}/export.ds` })).statusCode).toBe(200);
+  });
+
+  it('refuses bad input and anonymous uploads', async () => {
+    expect((await post('?feet=0', city)).statusCode).toBe(400);
+    expect((await post('', '{"type":"nope"}')).json().error).toContain('not a Watabou city export');
+    expect((await post('', '{not json')).statusCode).toBe(400);
+    expect((await post('', city, {})).statusCode).toBe(401);
+  });
+});

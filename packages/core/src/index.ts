@@ -13,6 +13,7 @@ export {
   type DsExportOptions,
   type DsImportResult,
 } from './interop/dungeonscrawl.ts';
+export { fromWatabou, CityImportError, type CityImportOptions, type CityImportResult } from './interop/watabou.ts';
 export {
   shapePath,
   shapeBounds,

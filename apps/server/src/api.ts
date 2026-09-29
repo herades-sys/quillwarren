@@ -4,12 +4,14 @@
 import { randomInt } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  CityImportError,
   ConnectError,
   describeMap,
   DsImportError,
   FORMAT,
   FORMAT_VERSION,
   fromDungeonScrawl,
+  fromWatabou,
   OpError,
   toDungeonScrawl,
   parseOps,
@@ -46,7 +48,7 @@ export function errorResponse(e: unknown): { status: number; body: ErrorBody } {
   if (e instanceof StaleError) return { status: 409, body: { error: e.message, rev: e.rev } };
   if (e instanceof ConflictError) return { status: 409, body: { error: e.message } };
   if (e instanceof ValidationError) return { status: 400, body: { error: e.message, problems: e.problems } };
-  if (e instanceof OpError || e instanceof RenderQueryError || e instanceof ConnectError || e instanceof DsImportError || e instanceof ZipError) {
+  if (e instanceof OpError || e instanceof RenderQueryError || e instanceof ConnectError || e instanceof DsImportError || e instanceof ZipError || e instanceof CityImportError) {
     return { status: 400, body: { error: e.message } };
   }
   throw e;
@@ -262,6 +264,23 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
       const change = service.create(map, byOf(q.by, 'import'));
       return reply.code(201).send({ id: change.mapId, rev: change.rev, map: change.map, notes });
     } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  // A city from Watabou's Medieval Fantasy City Generator (its JSON export) as a new map.
+  app.post('/api/v1/maps/import.city', { preHandler: writer, bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
+    const q = req.query as { name?: string; feet?: string; style?: string; by?: string };
+    try {
+      const feet = q.feet === undefined ? 10 : Number(q.feet);
+      if (!Number.isFinite(feet) || feet < 1 || feet > 100) throw new ValidationError(['feet: feet per square, from 1 to 100 (5 is true scale, 10 the default)']);
+      if (q.style !== undefined && !PRESETS[q.style]) throw new ValidationError([`style: one of ${Object.keys(PRESETS).join(', ')}`]);
+      const body = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString('utf8')) : req.body;
+      const { map, notes } = fromWatabou(body, { id: newMapId(), name: q.name, feetPerSquare: feet, seed: randomInt(1, 2 ** 31), ...(q.style ? { style: q.style } : {}) });
+      const change = service.create(map, byOf(q.by, 'import'));
+      return reply.code(201).send({ id: change.mapId, rev: change.rev, map: change.map, notes });
+    } catch (e) {
+      if (e instanceof SyntaxError) return reply.code(400).send({ error: 'the file is not valid JSON' });
       return fail(reply, e);
     }
   });

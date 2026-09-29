@@ -114,6 +114,20 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 - **Export** writes the floor (rooms, corridors and cutouts merged into one outline), normal/locked/barred doors, room numbers and labels. Secret doors become an "S" in the GM view and plain wall for players; archways stay open. Stairs and Delve's styles don't carry over (Dungeon Scrawl uses its own).
 - **Import:** `POST /maps/import.ds?name=` with the raw file as `application/octet-stream` (token or editor login). Returns `201 { id, rev, map, notes }`. Dungeon Scrawl keeps only the merged outline, so the floor comes in as one polygon room per area (holes become cutouts), door stamps become doors and text becomes labels. `notes` says what came across and what was left out. Bad files get a `400` that says why. The start page has an "Import .ds" button.
 
+### Cities from Watabou's Medieval Fantasy City Generator
+
+- **Where the file comes from:** in the generator, Menu → Export as → JSON. It's version 0.11 or later: metres, with y pointing north.
+- **Request:** `POST /maps/import.city?name=&feet=10&style=clean` with the file as `application/json` (token or editor login). Returns `201 { id, rev, map, notes }`. The start page has an "Import city (Watabou JSON)" button with a scale choice.
+- **What comes across:**
+  - Buildings become rooms, pulled apart by 0.4 m so each keeps its own walls. The keep ("prisms") becomes a Landmark room.
+  - Each city or castle wall becomes wall strips, a round tower at every corner, and a gap where a road passes through a corner (a gate).
+  - Terrain: roads and plazas become cobblestones and flagstones, rivers and water become deep water, fields become dirt, and parks become grass.
+  - Trees become tree props and districts become name labels, and a compass rose is added.
+- **Crop and scale:** the map is cropped to the city (buildings, walls, plazas and 30 m around), not the generator's whole landscape. Default scale is 10 ft per square, and `feet=5` gives true scale. The style defaults to clean, because hatching around hundreds of houses is slow and busy.
+- **Streets:** the export has no street shapes inside the walls; the streets are the gaps between buildings.
+- **Dungeon Scrawl:** the result exports to `.ds` like any map, one outline per house.
+- **Code:** core `fromWatabou`.
+
 ## Live: WebSocket `/maps/:id/live`
 
 1. On connect the server sends `{ "type": "hello", "rev", "map" }`.
