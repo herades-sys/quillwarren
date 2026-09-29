@@ -1,0 +1,49 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Delve Props</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English&display=swap">
+<style>
+  html, body { margin:0; height:100%; }
+  body { background:var(--parchment); color:var(--ink); font-family:var(--font-display); overflow:hidden; }
+  .cover { position:relative; height:288px; overflow:hidden; }
+  .art { position:absolute; top:0; left:480px; width:480px; height:288px; overflow:hidden; }
+  .art svg { display:block; width:480px; height:288px; }
+  .ink { fill:var(--ink); }
+  .paper { fill:var(--paper); }
+  .shade { fill:var(--shade); }
+  .blk { stroke:var(--ink); stroke-width:2px; stroke-linejoin:round; }
+  .plus { fill:none; stroke:var(--parchment); stroke-width:2px; stroke-linecap:round; }
+  .words { position:absolute; left:32px; bottom:28px; max-width:440px; }
+  .name { margin:0; font-size:104px; line-height:.95; font-weight:400; color:var(--ink); }
+  .tag { margin:12px 0 0 4px; font-family:var(--font-mono); font-size:13px; line-height:20px; color:var(--label-ink); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 288" width="480" height="288">
+<!--
+  blocks      shade 240×192 (5×4 squares) · ink 144×216 (3×4.5) bled off the top · paper 144×96 (3×2) bled off the right — about 29% of 960×288
+  arrangement layered like a prop: shade laid first, ink over its right edge, paper over the ink's foot; every block outlined in ink, as every surface is
+  pattern     a plus at each open grid crossing of the shade block (9), cut in parchment, from "1 grid square = 100 units": the map grid under every prop
+  scales      square (100 units) at 0.48 = a 48px pitch; outline stroke-outline 4 at 0.48 ≈ 2px; round caps and joins; square corners (blocks are grid cells)
+-->
+<rect class="shade blk" x="48" y="48" width="240" height="192"/>
+<path class="plus" d="M91 96h10M96 91v10 M139 96h10M144 91v10 M187 96h10M192 91v10
+                      M91 144h10M96 139v10 M139 144h10M144 139v10 M187 144h10M192 139v10
+                      M91 192h10M96 187v10 M139 192h10M144 187v10 M187 192h10M192 187v10"/>
+<rect class="ink blk" x="240" y="-24" width="144" height="216"/>
+<rect class="paper blk" x="336" y="144" width="152" height="96"/>
+</svg>
+</div>
+<div class="words">
+<h1 class="name">Delve<br>Props</h1>
+<p class="tag">Top-down props in ink, paper and shade.</p>
+</div>
+</div>
+</body>
+</html>

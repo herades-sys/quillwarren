@@ -1,0 +1,6 @@
+[
+  {"id": "table-round", "name": "Round Table with Chairs", "category": "samples", "w": 2, "h": 2, "tags": ["table", "round", "chair", "furniture", "wood", "tavern", "dining"], "blocks": "movement"},
+  {"id": "chest", "name": "Treasure Chest", "category": "samples", "w": 1, "h": 1, "tags": ["chest", "treasure", "loot", "container", "locked", "wood", "iron"], "blocks": "movement"},
+  {"id": "barrel", "name": "Barrel", "category": "samples", "w": 1, "h": 1, "tags": ["barrel", "container", "storage", "wood", "cellar", "tavern"], "blocks": "movement"},
+  {"id": "statue", "name": "Statue on Plinth", "category": "samples", "w": 1, "h": 1, "tags": ["statue", "plinth", "stone", "monument", "hero", "decor"], "blocks": "sight"}
+]

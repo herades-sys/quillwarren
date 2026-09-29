@@ -1,0 +1,94 @@
+{
+  "v": 3,
+  "assetGroups": {
+    "overview": {
+      "files": {
+        "samples.png": {
+          "blob": "9c6c70e3720498221ad51f2553e07696",
+          "name": "samples.png",
+          "size": 52501,
+          "type": "image/png"
+        },
+        "samples.svg": {
+          "blob": "1def41d74bcb8f978afeddc22b1962b3",
+          "name": "samples.svg",
+          "size": 50100,
+          "type": "image/svg+xml"
+        }
+      },
+      "name": "overview",
+      "order": [
+        "samples.svg",
+        "samples.png"
+      ],
+      "tile": "l"
+    },
+    "samples": {
+      "files": {
+        "barrel.svg": {
+          "blob": "1d3e073b48928f145a800191ddb96009",
+          "name": "barrel.svg",
+          "size": 10116,
+          "type": "image/svg+xml"
+        },
+        "chest.svg": {
+          "blob": "76486d655223d039b285be92f174a244",
+          "name": "chest.svg",
+          "size": 10046,
+          "type": "image/svg+xml"
+        },
+        "statue.svg": {
+          "blob": "cdb1e040008449d0bfa70e11dc7b1800",
+          "name": "statue.svg",
+          "size": 11874,
+          "type": "image/svg+xml"
+        },
+        "table-round.svg": {
+          "blob": "130a05ab8a3b7fb4800df0e6af6a3a77",
+          "name": "table-round.svg",
+          "size": 17063,
+          "type": "image/svg+xml"
+        }
+      },
+      "name": "samples",
+      "order": [
+        "table-round.svg",
+        "chest.svg",
+        "barrel.svg",
+        "statue.svg"
+      ],
+      "tile": "m"
+    },
+    "scripts": {
+      "name": "scripts",
+      "tile": "s",
+      "order": [],
+      "files": {}
+    }
+  },
+  "blobs": {},
+  "createdOnFiles": {
+    "at": "2026-09-29T19:01:57Z",
+    "v": 1
+  },
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "groups": [
+    "samples",
+    "overview",
+    "scripts"
+  ],
+  "lastChange": {
+    "by": "Herades",
+    "at": "2026-09-29T19:04:19Z",
+    "via": "Claude (Cowork)",
+    "note": "Added the drawing and validation scripts under scripts"
+  },
+  "layout": "files",
+  "libraries": [],
+  "namespace": "DelveProps",
+  "sections": {},
+  "title": "Delve Props"
+}
