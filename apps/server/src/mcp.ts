@@ -23,6 +23,8 @@ import {
   type Shape,
 } from '@delve/core';
 import { errorResponse, newMap, tokenGuard } from './api.ts';
+import { bearer } from './auth.ts';
+import type { ChatTokens } from './chat/tokens.ts';
 import { render } from './render.ts';
 import type { MapService } from './service.ts';
 
@@ -447,11 +449,21 @@ export function buildMcpServer(service: MapService, base: string, version: strin
   return server;
 }
 
-export function registerMcp(app: FastifyInstance, deps: { service: MapService; token: string | undefined; version: string }): void {
-  const guard = tokenGuard(deps.token);
+export function registerMcp(
+  app: FastifyInstance,
+  deps: { service: MapService; token: string | undefined; version: string; chatTokens?: ChatTokens },
+): void {
+  const tokenOnly = tokenGuard(deps.token);
+  // A chat run's short-lived token works too (see chat/tokens.ts).
+  const chatGrant = (req: FastifyRequest) => deps.chatTokens?.lookup(bearer(req.headers.authorization)) ?? null;
+  const guard = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (chatGrant(req)) return;
+    return tokenOnly(req, reply);
+  };
 
   app.post('/mcp', { preHandler: guard }, async (req: FastifyRequest, reply: FastifyReply) => {
-    const base = (process.env.DELVE_PUBLIC_URL ?? `${req.protocol}://${req.headers.host}`).replace(/\/$/, '');
+    // Chat runs call in over 127.0.0.1, so their links use the address the user's browser used.
+    const base = (chatGrant(req)?.base ?? process.env.DELVE_PUBLIC_URL ?? `${req.protocol}://${req.headers.host}`).replace(/\/$/, '');
     const server = buildMcpServer(deps.service, base, deps.version);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     reply.hijack();

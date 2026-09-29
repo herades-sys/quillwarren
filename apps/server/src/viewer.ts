@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { PRESETS, sceneToSvg, type DelveMap } from '@delve/core';
 import type { AppInfo } from './app.ts';
+import type { ChatConfig } from './chat/route.ts';
 import { isLoggedIn, type EditorAuth } from './login.ts';
 import { asView, sceneFor } from './render.ts';
 import { NotFoundError, type MapStore } from './store.ts';
@@ -28,16 +29,31 @@ interface PageOpts {
   style: string | undefined;
   loggedIn: boolean;
   passwordSet: boolean;
+  /** The chat panel's default model, when the chat bridge is set up (logged-in editors only). */
+  chatModel: string | null;
 }
 
 function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts): string {
   const { view, style } = o;
   const scene = sceneFor(map, { view, style });
   const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '#EFEAE2';
-  const initial = JSON.stringify({ id, rev, map, edit: { loggedIn: o.loggedIn, passwordSet: o.passwordSet } }).replace(/</g, '\\u003c');
+  const chat = o.loggedIn && o.chatModel ? { enabled: true, model: o.chatModel } : undefined;
+  const initial = JSON.stringify({ id, rev, map, edit: { loggedIn: o.loggedIn, passwordSet: o.passwordSet }, ...(chat ? { chat } : {}) }).replace(/</g, '\\u003c');
   const editControl = o.loggedIn
     ? `<button class="btn" id="edit-toggle" aria-pressed="false" title="Edit this map">Edit</button>`
     : `<a class="btn" href="/login?next=${encodeURIComponent(`/maps/${id}?edit=1`)}">Log in to edit</a>`;
+  const chatControl = chat ? `<button class="btn" id="chat-toggle" aria-pressed="false" title="Chat with Claude about this map (uses your Claude subscription)">Claude</button>` : '';
+  const chatPanel = chat
+    ? `<aside id="chat" hidden aria-label="Chat with Claude">
+    <div class="chat-head"><strong>Claude</strong><select id="chat-model" aria-label="Model"></select><span class="spacer"></span><button class="btn small" id="chat-new" type="button" title="Start a new conversation">New chat</button><button class="btn small" id="chat-close" type="button" aria-label="Close the chat">✕</button></div>
+    <div id="chat-log" role="log" aria-live="polite"></div>
+    <div id="chat-status" role="status" hidden></div>
+    <form id="chat-form">
+      <textarea id="chat-input" rows="3" placeholder="Ask Claude to build or change the map… (Enter sends, Shift+Enter adds a line)"></textarea>
+      <div class="chat-foot"><span id="chat-usage"></span><button class="btn primary" id="chat-send" type="submit">Send</button></div>
+    </form>
+  </aside>`
+    : '';
   const options = [`<option value="">Map style (${esc(map.style?.preset ?? 'classic-hatching')})</option>`]
     .concat(Object.entries(PRESETS).map(([k, s]) => `<option value="${esc(k)}"${k === style ? ' selected' : ''}>${esc(s.name)}</option>`))
     .join('');
@@ -82,6 +98,44 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   #toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); max-width: min(560px, 90%); padding: 8px 12px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 13px; z-index: 3; }
   #toast[data-kind="info"] { background: var(--accent); color: var(--accent-ink); }
   #toast[hidden] { display: none; }
+  body.chatting #main { grid-template-columns: 1fr 360px; }
+  body.editing.chatting #main { grid-template-columns: 1fr 300px 360px; }
+  #chat { border-left: 1px solid var(--line); background: var(--bar); display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; min-width: 0; }
+  #chat[hidden] { display: none; }
+  .chat-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .chat-head select { padding: 3px 6px; font-size: 13px; }
+  .btn.small { padding: 3px 8px; font-size: 13px; }
+  #chat-log { overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .msg { padding: 8px 11px; border-radius: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; max-width: 88%; background: var(--accent); color: var(--accent-ink); white-space: pre-wrap; }
+  .msg.claude { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  .msg.error { background: color-mix(in srgb, var(--bad) 12%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); font-size: 13px; }
+  .msg p { margin: 0 0 6px; }
+  .msg ul, .msg ol { margin: 2px 0 6px; padding-left: 20px; }
+  .msg .md > :last-child, .msg .md > :last-child > :last-child { margin-bottom: 0; }
+  .msg code { font: 12px ui-monospace, Consolas, monospace; background: color-mix(in srgb, var(--ink) 10%, transparent); padding: 1px 4px; border-radius: 4px; }
+  .msg a { color: inherit; }
+  .tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; }
+  .tools:last-child { margin-bottom: 0; }
+  .tool { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .tool[data-state="running"] { border-color: var(--accent); color: var(--ink); }
+  .tool[data-state="failed"] { border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); color: var(--bad); }
+  .typing { color: var(--muted); }
+  .typing::after, .msg.live .md:last-child::after { content: "▍"; margin-left: 1px; animation: blink 1s steps(2, start) infinite; color: var(--muted); }
+  @keyframes blink { to { visibility: hidden; } }
+  .chat-empty { color: var(--muted); font-size: 13px; display: grid; gap: 7px; }
+  .chat-empty p { margin: 0 0 4px; }
+  .chat-empty button { text-align: left; font: inherit; color: var(--ink); border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 7px 9px; cursor: pointer; }
+  .chat-empty button:hover { border-color: var(--accent); }
+  #chat-status { padding: 0 12px 6px; font-size: 12.5px; color: var(--muted); }
+  #chat-status[data-kind="bad"] { color: var(--bad); }
+  #chat-status[hidden] { display: none; }
+  #chat-form { border-top: 1px solid var(--line); padding: 10px 12px 12px; display: grid; gap: 6px; }
+  #chat-input { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; resize: vertical; min-height: 64px; max-height: 40vh; }
+  #chat-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .chat-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #chat-usage { font-size: 12px; color: var(--muted); }
+  #chat-usage[data-kind="bad"] { color: var(--warn); }
   #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
   #stage[data-tool]:not([data-tool=""]):not([data-tool="select"]) { cursor: crosshair; }
   .ed .sel { fill: none; stroke: #3B9BFF; stroke-width: 2px; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }
@@ -136,6 +190,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   <button class="btn" id="fit" title="Fit the map (F or double-click)">Fit</button>
   <a class="btn primary" id="png-link" href="/api/v1/maps/${encodeURIComponent(id)}/render.png?view=${view}">PNG for Roll20</a>
   ${editControl}
+  ${chatControl}
 </header>
 <div id="main">
   <div id="stage">
@@ -148,6 +203,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
     <div id="tools"></div>
     <div id="props"></div>
   </aside>
+  ${chatPanel}
 </div>
 <script id="delve-initial" type="application/json">${initial}</script>
 <script type="module" src="/assets/viewer.js?v=${encodeURIComponent(info.version)}"></script>
@@ -155,7 +211,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
 </html>`;
 }
 
-export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth): void {
+export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, chat?: ChatConfig): void {
   let script: string | null = null;
 
   app.get('/maps/:id', async (req, reply) => {
@@ -164,7 +220,13 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
     try {
       const { rev, map } = store.get(id);
       const style = q.style && PRESETS[q.style] ? q.style : undefined;
-      const opts = { view: asView(q.view), style, loggedIn: isLoggedIn(auth, req), passwordSet: Boolean(auth.passwordHash) || auth.sessions.open };
+      const opts = {
+        view: asView(q.view),
+        style,
+        loggedIn: isLoggedIn(auth, req),
+        passwordSet: Boolean(auth.passwordHash) || auth.sessions.open,
+        chatModel: chat ? (chat.model ?? 'sonnet') : null,
+      };
       return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(page(info, id, rev, map, opts));
     } catch (e) {
       if (!(e instanceof NotFoundError)) throw e;

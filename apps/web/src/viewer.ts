@@ -2,6 +2,7 @@
 // browser, follows every change over the WebSocket, and pans to whatever
 // Claude focuses on. Viewing never needs a login; editing does.
 import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
+import { initChat } from './chat.ts';
 import { SVG_NS } from './ctx.ts';
 import { initEditor } from './editor.ts';
 import { ago, changedIds, countOps, easeInOut, lerpBounds, objectBounds, pad, unionBounds, zoomAt } from './logic.ts';
@@ -11,6 +12,8 @@ interface Initial {
   rev: number;
   map: DelveMap;
   edit: { loggedIn: boolean; passwordSet: boolean };
+  /** Only for logged-in editors on a server with the chat bridge set up. */
+  chat?: { enabled: boolean; model: string };
 }
 type Incoming =
   | { type: 'hello'; rev: number; map: DelveMap }
@@ -368,8 +371,9 @@ drawHighlights();
 showActivity();
 connect();
 
+let editor: { selection(): string[] } | null = null;
 if (initial.edit.loggedIn) {
-  initEditor({
+  editor = initEditor({
     mapId,
     stage,
     overlay,
@@ -388,4 +392,17 @@ if (initial.edit.loggedIn) {
       requestAnimationFrame(() => applyViewBox());
     },
   });
+}
+
+if (initial.chat?.enabled) {
+  initChat(
+    {
+      mapId,
+      selection: () => editor?.selection() ?? [],
+      view: () => (vb ? { ...vb } : null),
+      layout: () => requestAnimationFrame(() => applyViewBox()),
+      hasObjects: () => map.objects.length > 0,
+    },
+    { model: initial.chat.model },
+  );
 }

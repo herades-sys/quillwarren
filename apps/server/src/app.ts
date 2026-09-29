@@ -3,6 +3,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { FORMAT, FORMAT_VERSION } from '@delve/core';
 import { registerApi } from './api.ts';
 import { Sessions } from './auth.ts';
+import { registerChat, type ChatConfig } from './chat/route.ts';
+import { ChatTokens } from './chat/tokens.ts';
 import { LiveHub } from './live.ts';
 import { registerLogin, type EditorAuth } from './login.ts';
 import { registerMcp } from './mcp.ts';
@@ -26,6 +28,8 @@ export interface AppOptions {
   passwordHash?: string;
   /** DELVE_INSECURE_OPEN_EDIT=1: every browser counts as logged in. Development servers only. */
   openEdit?: boolean;
+  /** DELVE_CHAT_URL: the chat bridge that runs Claude Code. Without it, there's no chat panel. */
+  chat?: ChatConfig;
 }
 
 /** Never let the WebSocket token reach the log. */
@@ -65,11 +69,13 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   }));
 
   void app.register(websocket);
+  const chatTokens = new ChatTokens();
   void app.register(async (scoped) => {
     registerApi(scoped, { service, token: opts.token, sessions: auth.sessions });
-    registerMcp(scoped, { service, token: opts.token, version: info.version });
+    registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens });
+    registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat });
     registerLogin(scoped, auth);
-    registerViewer(scoped, info, store, auth);
+    registerViewer(scoped, info, store, auth, opts.chat);
     registerPreview(scoped, info, store, auth);
   });
   return app;

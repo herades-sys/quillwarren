@@ -77,7 +77,7 @@ function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement 
   return el;
 }
 
-export function initEditor(ctx: ViewerCtx): void {
+export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
   const panel = document.getElementById('panel')!;
   const toolbox = document.getElementById('tools')!;
   const props = document.getElementById('props')!;
@@ -647,4 +647,6 @@ export function initEditor(ctx: ViewerCtx): void {
   renderTools();
   renderPanel();
   setEditing(new URLSearchParams(location.search).get('edit') === '1');
+  // The chat panel tells Claude what's selected ("this room").
+  return { selection: () => (editing ? [...selection] : []) };
 }
