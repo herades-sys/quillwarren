@@ -6,7 +6,7 @@ set -eu
 cd "$(dirname "$0")/.."
 out="${1:-apps/web/dist}"
 mkdir -p "$out"
-for entry in viewer stack screen trace trace-worker; do
+for entry in viewer stack screen trace trace-worker table; do
   npx esbuild "apps/web/src/$entry.ts" \
     --bundle --format=esm --platform=browser --target=es2022 --minify \
     --outfile="$out/$entry.js" --log-level=warning

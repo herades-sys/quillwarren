@@ -7,10 +7,14 @@ import { clipPolylines, insidePolygons } from '../geometry/objects.ts';
 import type { Palette } from '../assets/svg.ts';
 import { computeFloor, floorPaths, polygonsOf } from '../geometry/floor.ts';
 import { roughFloor } from '../geometry/rough.ts';
+import { terrainArea, terrainPolygons } from '../geometry/terrain.ts';
+import { solidCutouts } from '../geometry/solid.ts';
+import { floorNumberLayer, stairTagLayer } from './floor-marks.ts';
 import { fromPath, PRECISION, shapeBounds, shapePath, toPath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
 import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
 import { MARKER_RADIUS } from '../markers.ts';
-import type { DelveMap, Door, MarkerKind, Point, Prop, Room, Stairs, Terrain } from '../schema.ts';
+import { imageBounds } from '../images.ts';
+import type { DelveMap, Door, ImageLayer, MapImage, MarkerKind, Point, Prop, Room, Stairs, Terrain } from '../schema.ts';
 import { hatchStrokes, insidePaths, outsideBand } from './hatching.ts';
 import { hashInts, hashString, rng } from './rng.ts';
 import { resolveStyle, type Style } from './style.ts';
@@ -33,6 +37,10 @@ export interface RenderOptions {
    * exports stay whole.
    */
   fog?: 'hide' | 'dim';
+  /** With fog 'hide': size the picture as if nothing were fogged (a VTT page keeps its frame as the players explore). */
+  fullBounds?: boolean;
+  /** false: no floor number in the GM view's top-left corner (the viewer shows it as a badge instead). */
+  floorNumber?: boolean;
 }
 
 /** One prop in an 'assets' layer: its body (in asset units, 100 per square) placed around `at`. */
@@ -46,6 +54,17 @@ export interface AssetItem {
   /** Footprint in squares before rotation and scale. */
   w: number;
   h: number;
+}
+
+/** One uploaded picture in an 'images' layer: w × h squares centred on `at`, turned clockwise by `rotation` degrees. */
+export interface ImageItem {
+  id: string;
+  src: string;
+  at: Point;
+  w: number;
+  h: number;
+  rotation: number;
+  opacity?: number;
 }
 
 interface LayerBase {
@@ -71,7 +90,11 @@ export type Layer =
   /** Polygons filled with `tint`, then with a 2×2-square tile repeated from the origin. */
   | (LayerBase & { kind: 'pattern'; polygons: Polygon[]; tile: string; body?: string; tint: string; palette: Palette })
   /** GM markers: badges of `radius` squares, each tagged with its id so a viewer can make it clickable. */
-  | (LayerBase & { kind: 'markers'; items: { id: string; kind: MarkerKind; at: Point; done: boolean }[]; radius: number });
+  | (LayerBase & { kind: 'markers'; items: { id: string; kind: MarkerKind; at: Point; done: boolean }[]; radius: number })
+  /** Short labels on rounded boxes `size` squares tall, centred on `at` (the GM's stair labels). */
+  | (LayerBase & { kind: 'tags'; items: { text: string; at: Point }[]; size: number; fill: string; color: string; font: string })
+  /** Uploaded pictures (image objects), each drawn from /api/v1/images/<src>. */
+  | (LayerBase & { kind: 'images'; items: ImageItem[] });
 
 export interface Scene {
   bounds: Bounds;
@@ -206,22 +229,32 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const fb = floorBounds(floor);
   const margin = opts.margin ?? 1;
   const props = map.objects.filter((o): o is Prop => o.type === 'prop' && (view === 'gm' || !categoryOf(o.asset)?.gmOnly) && seen(o.at));
+  const shownImage = (o: MapImage) => view === 'gm' || !o.gmOnly;
+  const images = map.objects.filter((o): o is MapImage => o.type === 'image' && shownImage(o) && seen(o.at));
   const terrain = map.objects
     .filter((o): o is Terrain => o.type === 'terrain')
     .map((t) => ({
       t,
-      polygons: seenPaths ? polygonsOf(intersectD([shapePath(t.shape)], seenPaths, FillRule.NonZero, PRECISION)) : [{ outer: fromPath(shapePath(t.shape)), holes: [] }],
+      // holes (e.g. the rooms inside a filled forest) are cut out of the shape
+      polygons: seenPaths ? polygonsOf(intersectD(terrainArea(t), seenPaths, FillRule.NonZero, PRECISION)) : terrainPolygons(t),
     }))
     .filter((x) => x.polygons.length);
   // The picture covers grid.bounds, the floor, terrain and props (a compass rose
   // may sit outside the dungeon), plus room for hatching and a margin, snapped
   // to whole squares so a VTT grid lines up with the image.
+  // With fullBounds, a fogged picture keeps the size it has without fog (blank
+  // where nothing is revealed), so a VTT page drawn from it stays lined up.
   const gb = map.grid.bounds;
+  const whole = opts.fullBounds && seenPaths;
+  const wholeFloor = whole ? floorBounds(fullFloor) : null;
   const parts: Bounds[] = [
     ...(gb ? [{ x0: gb[0], y0: gb[1], x1: gb[0] + gb[2], y1: gb[1] + gb[3] }] : []),
-    ...(fb ? [fb] : []),
-    ...terrain.flatMap((x) => (floorBounds(x.polygons) ? [floorBounds(x.polygons)!] : [])),
-    ...props.map(propBounds),
+    ...(whole ? (wholeFloor ? [wholeFloor] : []) : fb ? [fb] : []),
+    ...(whole
+      ? map.objects.flatMap((o) => (o.type === 'terrain' ? [shapeBounds(o.shape)] : []))
+      : terrain.flatMap((x) => (floorBounds(x.polygons) ? [floorBounds(x.polygons)!] : []))),
+    ...(whole ? map.objects.filter((o): o is Prop => o.type === 'prop' && (view === 'gm' || !categoryOf(o.asset)?.gmOnly)) : props).map(propBounds),
+    ...(whole ? map.objects.filter((o): o is MapImage => o.type === 'image' && shownImage(o)) : images).map(imageBounds),
   ];
   const content: Bounds | null = parts.length
     ? {
@@ -301,6 +334,15 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     });
   }
 
+  // Uploaded pictures: 'floor' ones (rugs, floor art) right here, under the grid and walls; the rest with the props.
+  const imageLayer = (layer: ImageLayer): void => {
+    const items: ImageItem[] = images
+      .filter((o) => (o.layer ?? 'props') === layer)
+      .map((o) => ({ id: o.id, src: o.src, at: o.at, w: o.w, h: o.h, rotation: o.rotation ?? 0, ...(o.opacity !== undefined ? { opacity: o.opacity } : {}) }));
+    if (items.length) layers.push({ name: layer === 'floor' ? 'floor-images' : 'images', kind: 'images', items });
+  };
+  imageLayer('floor');
+
   if ((opts.grid ?? true) && style.grid.style !== 'none' && fb) {
     if (style.grid.style === 'lines') {
       const lines: Polyline[] = [];
@@ -329,6 +371,10 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   // Decals (cracks, puddles, moss) lie on the floor under the walls.
   const decals = props.filter((p) => layerOfProp(p) === 'decals');
   if (decals.length) layers.push({ name: 'decals', kind: 'assets', items: assetItems(decals, opts.assets), palette: style.props });
+
+  // Solid cutouts (pillars, wall blocks) are filled with the wall colour; the walls then outline them.
+  const solid = solidCutouts(map, floor, seenPaths);
+  if (solid.length) layers.push({ name: 'solid-cutouts', kind: 'fill', polygons: solid, color: style.walls.color });
 
   // Walls. The players' view keeps secret doors shut: no gap, and a wall line across the opening.
   // With fog, only the parts of real walls inside what the players have seen.
@@ -394,6 +440,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   for (const layer of ['props', 'symbols'] as const) {
     const list = props.filter((p) => layerOfProp(p) === layer || (layer === 'props' && layerOfProp(p) === 'terrain'));
     if (list.length) layers.push({ name: layer, kind: 'assets', items: assetItems(list, opts.assets), palette: style.props });
+    if (layer === 'props') imageLayer('props'); // over the props, under the GM symbols
   }
 
   // Free labels show in both views; room numbers are a GM key, drawn on top in a face with clear digits.
@@ -412,6 +459,11 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
       numbers.push({ text: r.label, at: [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2], size: style.labels.size });
     }
     if (numbers.length) layers.push({ name: 'room-numbers', kind: 'text', items: numbers, color: style.labels.color, font: style.labels.numberFont });
+    // Storeys: the floor number in the corner (not on the 3D view's transparent floor textures) and the stair labels
+    const floorNo = opts.floorNumber !== false && background ? floorNumberLayer(map, bounds, style) : null;
+    if (floorNo) layers.push(floorNo);
+    const stairTags = stairTagLayer(map, style);
+    if (stairTags) layers.push(stairTags);
     // GM markers on top of everything: never in the players' view
     const markers = map.objects.flatMap((o) => (o.type === 'marker' ? [{ id: o.id, kind: o.kind, at: o.at, done: Boolean(o.done) }] : []));
     if (markers.length) layers.push({ name: 'markers', kind: 'markers', items: markers, radius: MARKER_RADIUS });

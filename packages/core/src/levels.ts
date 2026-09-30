@@ -28,7 +28,7 @@ export function levelSiblings<T extends LevelEntry>(maps: readonly T[], id: stri
 export type ConnectorKind = 'stairs' | 'spiral' | 'ladder' | 'trapdoor';
 
 /** Props that lead to another storey. (The stairs-up/down GM symbols are notes, not connections.) */
-const STAIR_PROPS: Record<string, ConnectorKind> = { 'stairs-spiral': 'spiral', ladder: 'ladder', trapdoor: 'trapdoor' };
+export const STAIR_PROPS: Record<string, ConnectorKind> ={ 'stairs-spiral': 'spiral', ladder: 'ladder', trapdoor: 'trapdoor' };
 
 export interface Connector {
   storey: string;

@@ -4,6 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { applyOps, validateMap, type DelveMap, type Level, type Op } from '@delve/core';
+import { SegmentStore } from './segment-store.ts';
 
 export class NotFoundError extends Error {
   constructor(id: string) {
@@ -82,11 +83,14 @@ export function newMapId(): string {
 
 export class MapStore {
   private readonly db: DatabaseSync;
+  /** Saved segments, in the same database file. */
+  readonly segments: SegmentStore;
 
   constructor(file: string) {
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.db.exec(SCHEMA);
+    this.segments = new SegmentStore(this.db);
   }
 
   close(): void {

@@ -4,6 +4,10 @@ import { insidePolygons, objectBounds, visiblePolygons, type Bounds, type Op } f
 import type { LiveHub } from './live.ts';
 import type { Change, MapStore } from './store.ts';
 
+/** Does a change set or unset a map's storey (level)? */
+const touchesLevel = (ops: readonly Op[]): boolean =>
+  ops.some((o) => (o.op === 'batch' ? touchesLevel(o.ops) : o.op === 'update_map' && (Object.hasOwn(o.set ?? {}, 'level') || Boolean(o.unset?.includes('level')))));
+
 export class MapService {
   readonly store: MapStore;
   readonly hub: LiveHub;
@@ -48,8 +52,19 @@ export class MapService {
     };
   }
 
+  private readonly listeners: ((mapId: string) => void)[] = [];
+
+  /** Hear about every change to any map, and deletions (Delve Table redraws the pages drawn from a map). */
+  onChange(cb: (mapId: string) => void): void {
+    this.listeners.push(cb);
+  }
+
   private publish(c: Change): Change {
     this.hub.broadcast(c.mapId, { type: 'ops', rev: c.rev, by: c.by, kind: c.kind, ops: c.ops });
+    for (const l of this.listeners) l(c.mapId);
+    // a storey renamed or renumbered: the other storeys' pickers list it again
+    const group = c.map.level?.group;
+    if (group && touchesLevel(c.ops)) for (const m of this.store.list()) if (m.level?.group === group && m.id !== c.mapId) this.hub.broadcast(m.id, { type: 'levels' });
     return c;
   }
 
@@ -76,6 +91,7 @@ export class MapService {
     const group = this.store.get(id).map.level?.group;
     this.store.delete(id);
     this.hub.broadcast(id, { type: 'deleted' });
+    for (const l of this.listeners) l(id);
     // the other storeys' pickers drop this one
     if (group) for (const m of this.store.list()) if (m.level?.group === group) this.hub.broadcast(m.id, { type: 'levels' });
   }

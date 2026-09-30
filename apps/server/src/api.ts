@@ -25,6 +25,7 @@ import { addLevel, levelsOf } from './levels.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
 import { render, renderHandout, RenderQueryError, type HandoutQuery, type RenderQuery } from './render.ts';
 import type { MapService } from './service.ts';
+import { labelStairs, labelStairsSummary } from './stair-labels.ts';
 import { ConflictError, newMapId, NotFoundError, StaleError } from './store.ts';
 import { unzipEntry, zipOne, ZipError } from './zip.ts';
 
@@ -207,6 +208,17 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
         by: byOf(body.by, 'api'),
       });
       return reply.code(201).send({ id: change.mapId, rev: change.rev, map: change.map });
+    } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  // Label every stair of this map's storeys (a single map: floor 0), e.g. 0A, 1A, 2A.
+  app.post('/api/v1/maps/:id/levels/label-stairs', { preHandler: writer }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const result = labelStairs(service, id, byOf((req.body as { by?: unknown } | undefined)?.by, 'api'));
+      return { ...result, summary: labelStairsSummary(result) };
     } catch (e) {
       return fail(reply, e);
     }

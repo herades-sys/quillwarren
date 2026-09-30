@@ -8,6 +8,8 @@
   },
   "dependencies": {
     "@delve/core": "*",
+    "@delve/table": "*",
+    "pixi.js": "8.21.0",
     "three": "0.186.1"
   },
   "devDependencies": {

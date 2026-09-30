@@ -45,12 +45,19 @@ export const Corridor = z.strictObject({
   roughness: Roughness.optional(),
 });
 
+/** How a cutout looks: "rock" (the default) shows what's around the dungeon; "solid" fills it with the wall colour (pillars, wall blocks). */
+export const CUTOUT_FILLS = ['rock', 'solid'] as const;
+
 export const Cutout = z.strictObject({
   type: z.literal('cutout'),
   ...common,
   shape: Shape,
   roughness: Roughness.optional(),
+  fill: z.enum(CUTOUT_FILLS).optional(),
 });
+
+/** The GM label of a stair, ladder or trapdoor: floor number, then the letter of its flight ("0A", "-1C"). */
+const StairLabel = z.string().max(8, 'at most 8 characters, e.g. "0A" or "-1C"');
 
 export const DOOR_STYLES = ['normal', 'double', 'locked', 'secret', 'portcullis', 'archway'] as const;
 
@@ -69,6 +76,7 @@ export const Stairs = z.strictObject({
   ...common,
   shape: Shape,
   direction: z.enum(['n', 'e', 's', 'w']),
+  label: StairLabel.optional(),
 });
 
 export const Label = z.strictObject({
@@ -86,6 +94,8 @@ export const Prop = z.strictObject({
   at: Point,
   rotation: z.number().optional(),
   scale: positive.optional(),
+  /** Ladders, trapdoors and spiral stairs: the GM stair label, like a stairs object's. */
+  label: StairLabel.optional(),
 });
 
 /** An area filled with a repeating terrain tile (water, grass, lava…), drawn over the floor and under props. */
@@ -94,6 +104,8 @@ export const Terrain = z.strictObject({
   ...common,
   shape: Shape,
   asset: z.string().min(1).max(100),
+  /** Rings cut out of the shape, [[x, y], ...] each: e.g. the rooms inside a forest filled around them. */
+  holes: z.array(z.array(Point).min(3, 'needs at least 3 points')).max(2000).optional(),
 });
 
 export const MARKER_KINDS = ['discover', 'interact', 'trap'] as const;
@@ -111,9 +123,32 @@ export const Marker = z.strictObject({
   done: z.boolean().optional(),
 });
 
-export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker'] as const;
+/** "<sha256>.<ext>": the name of an uploaded picture (served at /api/v1/images/<src>). Nothing else may appear as a src. */
+export const IMAGE_SRC = /^[0-9a-f]{64}\.(png|jpg|webp|gif)$/;
+export const IMAGE_LAYERS = ['floor', 'props'] as const;
 
-export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker]);
+/**
+ * An uploaded picture placed on the map (the user's own table, a rug, a painted
+ * mosaic): centred on `at`, w × h squares, turned clockwise by `rotation`
+ * degrees. Layer 'floor' lies under the grid and walls; 'props' (the default)
+ * stands on top of the walls with the props. `gmOnly` keeps it out of the players' view.
+ */
+export const MapImage = z.strictObject({
+  type: z.literal('image'),
+  ...common,
+  src: z.string().regex(IMAGE_SRC, 'must be the "<sha256>.<png|jpg|webp|gif>" name of an uploaded image (see GET /api/v1/images)'),
+  at: Point,
+  w: positive.max(1000),
+  h: positive.max(1000),
+  rotation: z.number().optional(),
+  layer: z.enum(IMAGE_LAYERS).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  gmOnly: z.boolean().optional(),
+});
+
+export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker', 'image'] as const;
+
+export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker, MapImage]);
 
 /**
  * Fog of war for the players' screen. With it on, players see only the revealed
@@ -169,6 +204,9 @@ export type Prop = z.infer<typeof Prop>;
 export type Terrain = z.infer<typeof Terrain>;
 export type Marker = z.infer<typeof Marker>;
 export type MarkerKind = (typeof MARKER_KINDS)[number];
+export type CutoutFill = (typeof CUTOUT_FILLS)[number];
+export type MapImage = z.infer<typeof MapImage>;
+export type ImageLayer = (typeof IMAGE_LAYERS)[number];
 export type Level = z.infer<typeof Level>;
 export type Fog = z.infer<typeof Fog>;
 export type MapObject = z.infer<typeof MapObject>;

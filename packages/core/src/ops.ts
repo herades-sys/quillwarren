@@ -84,14 +84,16 @@ function moved(o: MapObjectT, dx: number, dy: number): Record<string, unknown> |
     case 'room':
     case 'cutout':
     case 'stairs':
-    case 'terrain':
       return { shape: translateShape(o.shape, dx, dy) };
+    case 'terrain':
+      return { shape: translateShape(o.shape, dx, dy), ...(o.holes ? { holes: o.holes.map((ring) => ring.map(shift)) } : {}) };
     case 'corridor':
       return o.path ? { path: o.path.map(shift) } : null; // auto-routed corridors follow their rooms
     case 'door':
     case 'label':
     case 'prop':
     case 'marker':
+    case 'image':
       return { at: shift(o.at) };
   }
 }

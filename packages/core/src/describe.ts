@@ -5,8 +5,9 @@ import { containsPoint, shapeArea, shapeBounds } from './geometry/shapes.ts';
 import { boundarySegments, collinearOverlap, doorSegment } from './geometry/walls.ts';
 import { assetInfo } from './assets/catalog.ts';
 import { fogSummary } from './fog.ts';
+import { floorText, isConnector } from './floors.ts';
 import { MARKERS } from './markers.ts';
-import type { Corridor, Cutout, DelveMap, Door, Marker, Point, Prop, Room, Terrain } from './schema.ts';
+import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Point, Prop, Room, Terrain } from './schema.ts';
 
 const fmt = (n: number): string => String(Math.round(n * 100) / 100);
 
@@ -24,7 +25,8 @@ export function describeMap(map: DelveMap): string {
   const corridors = map.objects.filter((o): o is Corridor => o.type === 'corridor');
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
   const cutouts = map.objects.filter((o): o is Cutout => o.type === 'cutout');
-  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain', 'marker'].includes(o.type));
+  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain', 'marker', 'image'].includes(o.type));
+  const images = map.objects.filter((o): o is MapImage => o.type === 'image');
   const markers = map.objects.filter((o): o is Marker => o.type === 'marker');
   const props = map.objects.filter((o): o is Prop => o.type === 'prop');
   const terrain = map.objects.filter((o): o is Terrain => o.type === 'terrain');
@@ -35,6 +37,7 @@ export function describeMap(map: DelveMap): string {
     `${map.name} (${map.id}): ${rooms.length} rooms, ${corridors.length} corridors, ${doors.length} doors, ` +
       `${cutouts.length} cutouts. 1 square = ${unit.size} ${unit.name}.`,
   );
+  if (map.level) lines.push(`Floor ${floorText(map.level.order)} (${map.level.name}) of ${map.level.group}.`);
 
   if (map.roughness) lines.push(`Walls: roughness ${map.roughness} of 10${map.roughness >= 8 ? ' (cave-like)' : map.roughness === 1 ? ' (smooth)' : ''}.`);
   lines.push('Rooms:');
@@ -97,7 +100,7 @@ export function describeMap(map: DelveMap): string {
       const mid: Point = [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
       const inRoom = rooms.find((r) => containsPoint(shapeBounds(r.shape), mid));
       const key = inRoom ? `in ${roomName(inRoom)}` : 'outside rooms';
-      groups.set(key, [...(groups.get(key) ?? []), `${c.id}${c.name ? ` ${c.name.toLowerCase()}` : ''}`]);
+      groups.set(key, [...(groups.get(key) ?? []), `${c.id}${c.name ? ` ${c.name.toLowerCase()}` : ''}${c.fill === 'solid' ? ' (solid)' : ''}`]);
     }
     lines.push(`Cutouts: ${[...groups].map(([k, ids]) => `${ids.join(', ')} ${k}`).join('; ')}`);
   }
@@ -124,16 +127,27 @@ export function describeMap(map: DelveMap): string {
         .map((t) => {
           const b = shapeBounds(t.shape);
           const info = assetInfo(t.asset);
-          return `${t.id} ${info?.name ?? t.asset}${info?.difficult ? ' (difficult)' : ''} ${fmt(b.x1 - b.x0)}×${fmt(b.y1 - b.y0)} ${roomAt([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2])}`;
+          return `${t.id} ${info?.name ?? t.asset}${info?.difficult ? ' (difficult)' : ''} ${fmt(b.x1 - b.x0)}×${fmt(b.y1 - b.y0)} ${t.holes?.length ? `at ${fmt(b.x0)},${fmt(b.y0)} with ${t.holes.length} hole${t.holes.length === 1 ? '' : 's'} (the floor inside it stays clear)` : roomAt([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2])}`;
         })
         .join('; ')}`,
     );
+  }
+  if (images.length) {
+    lines.push('Images (uploaded pictures):');
+    for (const i of images) {
+      const how = [i.layer === 'floor' ? 'on the floor' : '', i.rotation ? `turned ${fmt(i.rotation)}°` : '', i.opacity !== undefined && i.opacity !== 1 ? `opacity ${fmt(i.opacity)}` : '', i.gmOnly ? 'GM only' : ''].filter(Boolean);
+      lines.push(`  ${i.id}${i.name ? ` "${i.name}"` : ''}: ${fmt(i.w)}×${fmt(i.h)} sq centred at ${fmt(i.at[0])},${fmt(i.at[1])} ${roomAt(i.at)}${how.length ? `, ${how.join(', ')}` : ''} (src ${i.src})`);
+    }
   }
   if (markers.length) {
     lines.push('GM markers (GM view only):');
     for (const m of markers) {
       lines.push(`  ${MARKERS[m.kind].symbol} ${m.id} at ${fmt(m.at[0])},${fmt(m.at[1])} ${roomAt(m.at)}${m.done ? ' (done)' : ''}: ${m.text ? JSON.stringify(m.text) : '(no text)'}`);
     }
+  }
+  const connectors = map.objects.filter(isConnector);
+  if (connectors.some((o) => 'label' in o && o.label)) {
+    lines.push(`Stair labels (GM view): ${connectors.map((o) => `${o.id} ${('label' in o && o.label) || '(none)'}`).join(', ')}`);
   }
   if (others.length) {
     const counts = new Map<string, number>();

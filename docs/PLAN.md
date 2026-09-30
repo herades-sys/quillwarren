@@ -59,13 +59,14 @@ See `fixtures/test-map-4p.delve.json` for the test dungeon. The top level looks 
 |---|---|---|
 | `room` | `shape`, `label`, `name`, `notes` | Shapes: `{"rect": [x, y, w, h]}`, `{"poly": [[x, y], ...]}`, `{"circle": [cx, cy, r]}` |
 | `corridor` | `from`, `to`, `width`, `path` | Without `path`, the server routes it (straight or L-shaped) and re-routes it whenever a connected room moves. `path` is the centerline, and the ends are square |
-| `cutout` | `shape`, `name` | Removed from the floor: pillars, pits |
+| `cutout` | `shape`, `name`, `fill` | Removed from the floor: pillars, pits. `fill: "solid"` draws it in the wall colour (solid pillars, wall blocks); the default `"rock"` shows what's around the dungeon |
 | `door` | `at`, `along` (`x` or `y`), `width`, `style`, `open` | Styles: normal, double, locked, secret, portcullis, archway. Secret doors render as wall in the players' view |
-| `stairs` | `shape`, `direction` | |
+| `stairs` | `shape`, `direction`, `label` | `label` is the GM stair label: floor number, then flight letter ("0A", "-1C"); ladder, trapdoor and spiral-stair props have it too |
 | `label` | `text`, `at`, `size` | Room numbers come from the room's own `label` |
-| `prop` | `asset`, `at`, `rotation`, `scale` | Phase 7 |
+| `prop` | `asset`, `at`, `rotation`, `scale`, `label` | Phase 7 |
 | `terrain` | `shape`, `asset` | An area filled with a repeating tile (water, grass, lava…) |
 | `marker` | `kind` (`discover`, `interact`, `trap`), `at`, `text`, `done` | GM note badges ("?", "!", skull), GM view only. Click to read, Shift-click to strike through |
+| `image` | `src` (an uploaded file, `<sha256>.<ext>`), `at` (centre), `w`, `h`, `rotation`, `layer` (`floor` or `props`), `opacity`, `gmOnly` | Your own pictures, uploaded through `/api/v1/images` |
 
 ### 2. Operations (the only way to change a map)
 

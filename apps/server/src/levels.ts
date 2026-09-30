@@ -4,6 +4,7 @@
 import { randomInt } from 'node:crypto';
 import { FORMAT, FORMAT_VERSION, levelSiblings, ValidationError, type DelveMap } from '@delve/core';
 import type { MapService } from './service.ts';
+import { labelStairs } from './stair-labels.ts';
 import { newMapId, type Change } from './store.ts';
 
 export interface AddLevelOptions {
@@ -43,6 +44,8 @@ export function addLevel(service: MapService, baseId: string, o: AddLevelOptions
     objects: [],
   };
   const created = service.create(map, o.by);
+  // the floor numbers may have shifted the stairs' labels (0A, 1A…): renumber them
+  labelStairs(service, created.mapId, o.by);
   // open editors of the other storeys refresh their storey picker
   for (const s of levelSiblings(service.store.list(), created.mapId)) if (s.id !== created.mapId) service.hub.broadcast(s.id, { type: 'levels' });
   return created;

@@ -36,7 +36,7 @@ export {
   type Segment,
   type Polyline,
 } from './geometry/walls.ts';
-export { buildScene, terrainTint, type Scene, type Layer, type RenderOptions, type View, type AssetItem } from './render/scene.ts';
+export { buildScene, terrainTint, type Scene, type Layer, type RenderOptions, type View, type AssetItem, type ImageItem } from './render/scene.ts';
 export {
   ASSETS,
   CATEGORIES,
@@ -54,11 +54,34 @@ export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset 
 export { objectBounds, insidePolygons, clipPolylines } from './geometry/objects.ts';
 export { roughFloor, hasRoughness, amplitudeOf, ROUGHNESS_AMPLITUDE } from './geometry/rough.ts';
 export { scatterAlong, type ScatterOptions, type Placement } from './scatter.ts';
+export {
+  collectSegment,
+  placeSegmentOps,
+  fillSegmentOps,
+  fillArea,
+  regionAround,
+  turnSegment,
+  quarterTurns,
+  segmentMap,
+  segmentCounts,
+  countsText,
+  type MapSegment,
+  type SegmentContent,
+  type SegmentPick,
+  type PlaceResult,
+  type FillOptions,
+  type FillResult,
+} from './segments.ts';
+export { terrainArea, terrainPolygons } from './geometry/terrain.ts';
 export { visiblePaths, visiblePolygons, visibleFloor, fogShade, revealedBounds, updateFog, fogSummary, type FogChange } from './fog.ts';
 export { levelSiblings, connectorsOf, stairLinks, type LevelEntry, type Connector, type ConnectorKind, type StairPlan, type StoreyInput } from './levels.ts';
+export { floorOf, floorText, labelText, storeyTitle, isConnector, chainLetter, stairLabels, stairLabelOps, stairTags, MINUS, type StoreyMap } from './floors.ts';
+export { DRAW_SHAPES, PRESET_SHAPES, OVAL_POINTS, shapeFromBox, shapeFromDrag, dragBox, freehandShape, type DrawShape, type BoxShape, type PresetShape, type Box, type FreehandOptions } from './geometry/draw.ts';
+export { solidCutouts } from './geometry/solid.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
 export { handoutSvg, PAPERS, type Paper, type HandoutOptions, type Handout } from './render/handout.ts';
 export { MARKERS, MARKER_RADIUS, markerGlyph, markerAt, type MarkerInfo } from './markers.ts';
+export { imageUrl, imageFit, imageBounds, onImage, imageCentre } from './images.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
 
 import type { DelveMap } from './schema.ts';

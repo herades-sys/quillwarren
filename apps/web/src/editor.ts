@@ -9,6 +9,9 @@ import {
   computeFloor,
   connectOps,
   DOOR_STYLES,
+  floorText,
+  freehandShape,
+  isConnector,
   MARKER_KINDS,
   MARKERS,
   nextId,
@@ -17,11 +20,16 @@ import {
   propBounds,
   propCentre,
   scatterAlong,
+  shapeBounds,
+  shapeFromDrag,
   updateFog,
   withAttachedDoors,
   type AssetInfo,
   type Bounds,
+  type BoxShape,
+  type CutoutFill,
   type DelveMap,
+  type DrawShape,
   type FogChange,
   type MapObject,
   type Op,
@@ -30,6 +38,7 @@ import {
   type Shape,
 } from '@delve/core';
 import { SVG_NS, type ViewerCtx } from './ctx.ts';
+import { drawHint, FILL_CHOICES, SHAPE_CHOICES, shapeGhost } from './draw-shapes.ts';
 import {
   closesPolygon,
   deletionSet,
@@ -47,9 +56,11 @@ import {
   snapPoint,
   type Handle,
 } from './edit-logic.ts';
+import { initImages } from './images.ts';
 import { objectBounds, pad } from './logic.ts';
+import { initSegments } from './segments.ts';
 
-type Tool = 'select' | 'room' | 'poly' | 'corridor' | 'door' | 'cutout' | 'stairs' | 'label' | 'prop' | 'terrain' | 'marker' | 'reveal';
+type Tool = 'select' | 'room' | 'poly' | 'corridor' | 'door' | 'cutout' | 'stairs' | 'label' | 'prop' | 'terrain' | 'marker' | 'reveal' | 'image' | 'segment';
 
 const PROPS = ASSETS.filter((a) => a.kind === 'prop');
 const TILES = ASSETS.filter((a) => a.kind === 'terrain');
@@ -60,7 +71,7 @@ const FACING: Record<number, string> = { 0: 'south', 90: 'west', 180: 'north', 2
 
 const TOOLS: { id: Tool; name: string; key: string; hint: string }[] = [
   { id: 'select', name: 'Select', key: 'V', hint: 'Click to select, Shift-click to add. Drag to move, drag a handle to resize. Drag empty space to pan.' },
-  { id: 'room', name: 'Room', key: 'R', hint: 'Drag to draw a rectangular room.' },
+  { id: 'room', name: 'Room', key: 'R', hint: 'Drag to draw a room in the shape picked below.' },
   { id: 'poly', name: 'Polygon', key: 'O', hint: 'Click corners; click the first corner, double-click or press Enter to finish.' },
   { id: 'corridor', name: 'Corridor', key: 'C', hint: 'Click one room, then another. The corridor routes itself and follows its rooms.' },
   { id: 'door', name: 'Door', key: 'D', hint: 'Drag along a wall or across an opening.' },
@@ -71,6 +82,8 @@ const TOOLS: { id: Tool; name: string; key: string; hint: string }[] = [
   { id: 'terrain', name: 'Terrain', key: 'T', hint: 'Pick a tile below, then drag an area: water, grass, rubble…' },
   { id: 'marker', name: 'Marker', key: 'M', hint: 'GM notes: pick ?, ! or trap below, click to pin one and type its note. Click a marker to read it, Shift-click to strike it through. Players never see them.' },
   { id: 'reveal', name: 'Reveal', key: 'G', hint: 'Fog of war: click a room or corridor to show or hide it for the players. Drag to reveal an area, Shift-drag to cover one.' },
+  { id: 'image', name: 'Image', key: 'I', hint: 'Your own pictures: upload one below (or drop or paste it here), pick it, then click to place it. Q and E turn it.' },
+  { id: 'segment', name: 'Segment', key: 'K', hint: 'Save part of the map, place saved segments again, or fill an area with one.' },
 ];
 
 interface Drag {
@@ -87,6 +100,8 @@ interface Drag {
   /** Reveal tool: the unsnapped point (for clicking a room) and whether Shift was held (cover instead). */
   raw?: Point;
   cover?: boolean;
+  /** Room and Pillar tools: Shift is down, so the shape keeps width and height equal. */
+  regular?: boolean;
 }
 
 type Attrs = Record<string, string | number | boolean | undefined | ((e: Event) => void)>;
@@ -144,6 +159,16 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     brushSpacing: 3,
     brushPlacement: 'regular' as 'regular' | 'irregular',
     brushSpread: 1,
+    roomShape: 'rect' as DrawShape,
+    pillarShape: 'rect' as DrawShape,
+    pillarFill: 'rock' as CutoutFill,
+  };
+  /** A freehand outline being drawn with the Room or Pillar tool (unsnapped points). */
+  let sketch: Point[] | null = null;
+  const shapeOf = (t: Tool): DrawShape => (t === 'cutout' ? settings.pillarShape : settings.roomShape);
+  const boxShapeOf = (t: Tool): BoxShape => {
+    const k = shapeOf(t);
+    return k === 'freehand' ? 'rect' : k;
   };
 
   const map = () => ctx.map();
@@ -190,6 +215,24 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     draw();
   }
 
+  // the Image tool (images.ts): uploads, the picker, placing and the picture's panel fields
+  const images = initImages({
+    stage: ctx.stage,
+    map,
+    active: () => editing && tool === 'image',
+    toMap: ctx.toMap,
+    apply,
+    toast: ctx.toast,
+    refresh: () => {
+      renderTools();
+      draw();
+    },
+    snap: () => settings.snap,
+  });
+
+  // the Segment tool (segments.ts): save, place and fill with saved pieces of maps
+  const segments = initSegments({ ctx, apply, refreshTools: () => renderTools(), refreshPanel: () => renderPanel(), redraw: () => draw() });
+
   // ---------- mode ----------
 
   function setEditing(on: boolean): void {
@@ -220,6 +263,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     poly = [];
     corridorFrom = null;
     stroke = null;
+    sketch = null;
+    if (t === 'segment') segments.activate();
     ctx.stage.dataset.tool = editing ? t : '';
     renderTools();
     draw();
@@ -266,6 +311,15 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       }
       case 'room':
       case 'cutout':
+        if (shapeOf(tool) === 'freehand') {
+          // freehand: collect the outline until the button comes up
+          sketch = [p];
+          ctx.handled.add(e);
+          ctx.stage.setPointerCapture(e.pointerId);
+          break;
+        }
+        start('create', { regular: e.shiftKey });
+        break;
       case 'stairs':
       case 'terrain':
         start('create');
@@ -312,6 +366,17 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         // the middle of a square, or any half square with Alt
         addMarker(step(e) >= 1 ? [Math.floor(p[0]) + 0.5, Math.floor(p[1]) + 0.5] : snapPoint(p, 0.5));
         break;
+      case 'image':
+        ctx.handled.add(e);
+        images.place(p, step(e));
+        break;
+      case 'segment':
+        // Place: a click drops a copy; Save and Fill: drag a box (whole squares)
+        if (segments.mode() === 'place') {
+          ctx.handled.add(e);
+          segments.click(p);
+        } else start('create', {}, snapPoint(p, 1));
+        break;
     }
     draw();
   }
@@ -328,8 +393,14 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 0.1) stroke.path.push(p);
       ctx.handled.add(e);
     }
+    if (sketch) {
+      const last = sketch.at(-1)!;
+      if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 0.05) sketch.push(p);
+      ctx.handled.add(e);
+    }
     if (drag) {
       drag.cur = drag.kind === 'move' ? p : snapPoint(p, step(e));
+      drag.regular = e.shiftKey;
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 3) drag.moved = true;
       ctx.handled.add(e);
     }
@@ -340,6 +411,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     if (editing && stroke) {
       ctx.handled.add(e);
       return finishStroke();
+    }
+    if (editing && sketch) {
+      ctx.handled.add(e);
+      return finishSketch();
     }
     if (!editing || !drag) return;
     const d = drag;
@@ -385,12 +460,19 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           }
           break;
         }
+        if (tool === 'segment') {
+          const area = rectFromDrag(d.start, d.cur, 1);
+          if (area) segments.area(area);
+          break;
+        }
         const rect = rectFromDrag(d.start, d.cur, s);
-        if (!rect) break;
-        const shape: Shape = { rect };
+        // rooms and pillars take the picked shape (Shift: as wide as high)
+        const drawn = tool === 'room' || tool === 'cutout' ? shapeFromDrag(boxShapeOf(tool), d.start, d.cur, { regular: e.shiftKey, min: s }) : null;
+        if (!rect && !drawn) break;
+        const shape: Shape = drawn ?? { rect: rect! };
         let obj: MapObject;
         if (tool === 'room') obj = { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
-        else if (tool === 'cutout') obj = { id: nextId(m, 'p'), type: 'cutout', shape };
+        else if (tool === 'cutout') obj = { id: nextId(m, 'p'), type: 'cutout', shape, ...(settings.pillarFill === 'solid' ? { fill: 'solid' as const } : {}) };
         else if (tool === 'terrain') obj = { id: nextId(m, 't'), type: 'terrain', shape, asset: settings.tile };
         else obj = { id: nextId(m, 's'), type: 'stairs', shape, direction: settings.stairsDir };
         void apply([{ op: 'add', object: obj }], [obj.id]);
@@ -414,6 +496,24 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       void apply([{ op: 'add', object: { id, type: 'room', shape: { poly: [...poly] }, label: nextLabel(m) } }], [id]);
     }
     poly = [];
+    draw();
+  }
+
+  /** A freehand outline, let go: closed, tidied and snapped (core freehandShape), then added as a room or pillar. */
+  function finishSketch(): void {
+    const shape = freehandShape(sketch ?? []);
+    const moved = (sketch?.length ?? 0) > 2;
+    sketch = null;
+    if (!shape) {
+      if (moved) ctx.toast('Too small to keep: draw the whole outline, a bit bigger.', 'info');
+      return draw();
+    }
+    const m = map();
+    const obj: MapObject =
+      tool === 'cutout'
+        ? { id: nextId(m, 'p'), type: 'cutout', shape, ...(settings.pillarFill === 'solid' ? { fill: 'solid' as const } : {}) }
+        : { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
+    void apply([{ op: 'add', object: obj }], [obj.id]);
     draw();
   }
 
@@ -518,6 +618,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
   /** Q / E: turn the prop about to be placed, or the selected props, a quarter turn. */
   function turn(by: number): void {
+    if (tool === 'segment') return segments.turn(by); // the segment about to be placed
+    if (tool !== 'prop' && images.turn(by, tool === 'image', selection.map(byId))) return;
     const props = selection.map(byId).filter((o): o is Extract<MapObject, { type: 'prop' }> => o?.type === 'prop');
     if (tool === 'prop' || !props.length) {
       settings.propRotation = quarter(settings.propRotation + by);
@@ -612,10 +714,13 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     if (t) return setTool(t.id);
     if (e.key === 'Escape') {
       if (stroke) stroke = null;
+      else if (sketch) sketch = null;
       else if (drag) drag = null;
       else if (poly.length) poly = [];
       else if (corridorFrom) corridorFrom = null;
-      else if (selection.length) selection = [];
+      else if (segments.cancel(tool === 'segment')) {
+        // a half-done segment save, a rename, or the segment about to be placed
+      } else if (selection.length) selection = [];
       else setTool('select');
       renderPanel();
       draw();
@@ -635,6 +740,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
   function rectEl(b: Bounds, cls: string): SVGElement {
     return svgEl('rect', { x: b.x0, y: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, class: cls });
+  }
+
+  function shapeElement(shape: Shape, cls: string): SVGElement {
+    const g = shapeGhost(shape);
+    return svgEl(g.tag, { ...g.attrs, class: cls });
   }
 
   function draw(): void {
@@ -666,8 +776,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       layer.appendChild(rectEl(resizeBounds(drag.bounds!, drag.handle!, drag.cur, settings.snap), 'ghost'));
     } else if (drag?.kind === 'create') {
       const [a, c] = [drag.start, drag.cur];
-      const b = { x0: Math.min(a[0], c[0]), y0: Math.min(a[1], c[1]), x1: Math.max(a[0], c[0]), y1: Math.max(a[1], c[1]) };
-      layer.appendChild(rectEl(b, 'ghost'));
+      // rooms and pillars: a ghost of the exact shape they'll get
+      const exact = tool === 'room' || tool === 'cutout' ? shapeFromDrag(boxShapeOf(tool), a, c, { regular: Boolean(drag.regular), min: 1e-6 }) : null;
+      const b = exact ? shapeBounds(exact) : { x0: Math.min(a[0], c[0]), y0: Math.min(a[1], c[1]), x1: Math.max(a[0], c[0]), y1: Math.max(a[1], c[1]) };
+      layer.appendChild(exact ? shapeElement(exact, 'ghost') : rectEl(b, 'ghost'));
       const label = svgEl('text', { x: b.x1 + 6 * px, y: b.y1 + 14 * px, 'font-size': 12 * px, class: 'dim' });
       label.textContent = `${b.x1 - b.x0}×${b.y1 - b.y0}`;
       layer.appendChild(label);
@@ -696,7 +808,13 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       layer.appendChild(svgEl('polyline', { points: pts, class: 'ghost-line' }));
       layer.appendChild(svgEl('circle', { cx: poly[0]![0], cy: poly[0]![1], r: 5 * px, class: 'start' }));
     }
-    if (hover && tool !== 'select' && tool !== 'corridor' && tool !== 'prop' && !drag) {
+    if (sketch) {
+      // freehand: the line as drawn, and the tidy outline it will become
+      const tidy = freehandShape(sketch);
+      if (tidy) layer.appendChild(shapeElement(tidy, 'ghost'));
+      layer.appendChild(svgEl('polyline', { points: sketch.map((q) => q.join(',')).join(' '), class: 'ghost-line' }));
+    }
+    if (hover && tool !== 'select' && tool !== 'corridor' && tool !== 'prop' && tool !== 'image' && !drag) {
       const s = 5 * px;
       layer.appendChild(svgEl('path', { d: `M${hover[0] - s} ${hover[1]}H${hover[0] + s}M${hover[0]} ${hover[1] - s}V${hover[1] + s}`, class: 'cross' }));
     }
@@ -713,6 +831,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       layer.appendChild(svgEl('polyline', { points: stroke.path.map((q) => q.join(',')).join(' '), class: 'ghost-line brush-path' }));
       for (const s of brushSpots()) ghost(s.at, s.rotation, s.scale);
     } else if (info && hoverRaw && !drag) ghost(propAt(hoverRaw, hoverStep), settings.propRotation, 1);
+    if (tool === 'image' && hoverRaw && !drag) images.ghost(layer, hoverRaw, hoverStep);
+    if (tool === 'segment' && !drag) segments.draw(layer, hoverRaw);
   }
 
   // ---------- panel ----------
@@ -724,7 +844,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const choose = <T extends string>(opts: [T, string][], value: T, on: (v: T) => void) =>
       h('select', { onchange: (e: Event) => on((e.target as HTMLSelectElement).value as T) }, ...opts.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
     const opts: HTMLElement[] = [];
-    if (['room', 'poly', 'cutout', 'stairs', 'door', 'select', 'prop', 'terrain'].includes(tool)) {
+    if (['room', 'poly', 'cutout', 'stairs', 'door', 'select', 'prop', 'terrain', 'image'].includes(tool)) {
       opts.push(h('label', {}, 'Snap ', choose([['1', '1 square'], ['0.5', '½ square']], String(settings.snap) as '1' | '0.5', (v) => (settings.snap = Number(v)))));
     }
     if (tool === 'corridor') {
@@ -737,6 +857,15 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     if (tool === 'stairs') {
       opts.push(h('label', {}, 'Up towards ', choose([['n', 'north'], ['e', 'east'], ['s', 'south'], ['w', 'west']], settings.stairsDir, (v) => (settings.stairsDir = v))));
     }
+    if (tool === 'room' || tool === 'cutout') {
+      const set = (v: DrawShape) => {
+        if (tool === 'cutout') settings.pillarShape = v;
+        else settings.roomShape = v;
+        renderTools(); // the hint changes with the shape
+      };
+      opts.push(h('label', {}, 'Shape ', choose(SHAPE_CHOICES, shapeOf(tool), set)));
+    }
+    if (tool === 'cutout') opts.push(h('label', {}, 'Fill ', choose(FILL_CHOICES, settings.pillarFill, (v) => (settings.pillarFill = v))));
     if (tool === 'marker') {
       opts.push(
         h(
@@ -779,6 +908,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       opts.push(propPicker());
     }
     if (tool === 'terrain') opts.push(tilePicker());
+    if (tool === 'image') opts.push(images.picker());
+    if (tool === 'segment') opts.push(...segments.options());
     if (tool === 'reveal') opts.push(...fogControls());
     toolbox.replaceChildren(
       h(
@@ -789,7 +920,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         ),
       ),
       ...(opts.length ? [h('div', { class: 'opts' }, ...opts)] : []),
-      h('p', { class: 'hint' }, info.hint, ' Hold Alt for half squares.'),
+      h('p', { class: 'hint' }, tool === 'room' || tool === 'cutout' ? drawHint(shapeOf(tool), tool === 'room' ? 'room' : 'pillar') : info.hint, ' Hold Alt for half squares.'),
       h(
         'div',
         { class: 'row' },
@@ -924,12 +1055,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       case 'room':
         out.push(field('Room number', text(id, 'label', o.label)), field('GM notes (never drawn)', text(id, 'notes', o.notes, { area: true })), roughnessPick(o), ...shapeFields(o));
         break;
-      case 'cutout':
-        out.push(roughnessPick(o), ...shapeFields(o));
+      case 'cutout': {
+        const fill = (e: Event) => {
+          const v = (e.target as HTMLSelectElement).value;
+          void apply([v === 'solid' ? { op: 'update', id, set: { fill: 'solid' } } : { op: 'update', id, unset: ['fill'] }]);
+        };
+        out.push(field('Fill', h('select', { onchange: fill }, ...FILL_CHOICES.map(([v, l]) => h('option', { value: v, selected: v === (o.fill ?? 'rock') }, l)))), roughnessPick(o), ...shapeFields(o));
         break;
+      }
       case 'stairs':
         out.push(
           field('Up towards', h('select', { onchange: (e: Event) => upd({ direction: (e.target as HTMLSelectElement).value }) }, ...(['n', 'e', 's', 'w'] as const).map((d) => h('option', { value: d, selected: d === o.direction }, { n: 'north', e: 'east', s: 'south', w: 'west' }[d])))),
+          stairLabelField(o),
           ...shapeFields(o),
         );
         break;
@@ -969,6 +1106,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           h('div', { class: 'rotate' }, 'Facing ', h('button', { type: 'button', title: 'Turn left (Q)', onclick: () => setRot(rot - 90) }, '↺'), h('strong', {}, FACING[rot] ?? `${rot}°`), h('button', { type: 'button', title: 'Turn right (E)', onclick: () => setRot(rot + 90) }, '↻')),
           pair(field('X (centre)', number(o.at[0], 0.5, (v) => upd({ at: [v, o.at[1]] }))), field('Y (centre)', number(o.at[1], 0.5, (v) => upd({ at: [o.at[0], v] })))),
           field('Scale', number(o.scale, 0.25, (v) => (v > 0 && v !== 1 ? upd({ scale: v }) : void apply([{ op: 'update', id, unset: ['scale'] }])), '1')),
+          ...(isConnector(o) ? [stairLabelField(o)] : []),
           field('GM notes (never drawn)', text(id, 'notes', o.notes, { area: true })),
         );
         break;
@@ -985,6 +1123,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           pair(field('X', number(o.at[0], 0.5, (v) => upd({ at: [v, o.at[1]] }))), field('Y', number(o.at[1], 0.5, (v) => upd({ at: [o.at[0], v] })))),
           h('p', { class: 'hint' }, 'Only in the GM view. Shift-click the marker on the map to strike it through.'),
         );
+        break;
+      case 'image':
+        out.push(...images.fields(o));
         break;
     }
     return out;
@@ -1037,6 +1178,37 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     );
   }
 
+  /** A stair's, ladder's or trapdoor's GM label (0A, -1C): set by "Number the stairs", editable by hand. */
+  function stairLabelField(o: MapObject & { label?: string }): HTMLElement {
+    const input = text(o.id, 'label', o.label);
+    input.setAttribute('maxlength', '8');
+    input.setAttribute('placeholder', 'e.g. 0A');
+    return field('Label (GM view: floor, then flight letter)', input);
+  }
+
+  /** The storey's floor number (level.order): 0 ground level, below it −1, −2; above it 1, 2. */
+  function floorField(level: NonNullable<DelveMap['level']>): HTMLElement {
+    const set = (v: number) => {
+      if (!Number.isInteger(v) || v === level.order) return renderPanel();
+      const clash = ctx.storeys().find((s) => s.id !== ctx.mapId && s.level?.order === v);
+      if (clash) ctx.toast(`“${clash.level?.name ?? clash.name}” is floor ${floorText(v)} too. Give each storey its own number.`);
+      void apply([{ op: 'update_map', set: { level: { ...level, order: v } } }]);
+    };
+    return field('Floor number (0 ground, −1 below, 1 above)', number(level.order, 1, set));
+  }
+
+  /** Label every stair of this place's storeys (or of this map, as floor 0): 0A, 1A, 2A… */
+  async function numberStairs(): Promise<void> {
+    const res = await fetch(`/api/v1/maps/${encodeURIComponent(ctx.mapId)}/levels/label-stairs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ by: 'editor' }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { summary?: string; error?: string };
+    if (!res.ok) return ctx.toast(body.error ?? `numbering the stairs failed (${res.status})`);
+    ctx.toast(body.summary ?? 'Stairs numbered.', 'info');
+  }
+
   function mapFields(): HTMLElement[] {
     const m = map();
     const style = m.style ?? { preset: 'classic-hatching' };
@@ -1052,10 +1224,12 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       ),
       h('h3', {}, 'Storeys'),
       ...(m.level
-        ? [field('This storey', h('input', { type: 'text', value: m.level.name, onchange: (e: Event) => { const v = (e.target as HTMLInputElement).value.trim(); if (v && v !== m.level!.name) setMap({ level: { ...m.level!, name: v } }); } }))]
+        ? [field('This storey', h('input', { type: 'text', value: m.level.name, onchange: (e: Event) => { const v = (e.target as HTMLInputElement).value.trim(); if (v && v !== m.level!.name) setMap({ level: { ...m.level!, name: v } }); } })), floorField(m.level)]
         : [h('p', { class: 'hint' }, 'A tower, a keep with a cellar: add storeys, and switch between them at the top.')]),
       ...(guide ? [h('p', { class: 'hint' }, `The dashed outline is the floor of “${guide.name}”, so the storeys line up.`)] : []),
       h('div', { class: 'row' }, h('button', { type: 'button', onclick: () => void addStorey('above') }, 'Add above'), h('button', { type: 'button', onclick: () => void addStorey('below') }, 'Add below')),
+      h('button', { type: 'button', title: 'Label every stair, ladder and trapdoor in the GM view: floor number, then a letter per flight (0A, 1A, 2A)', onclick: () => void numberStairs() }, 'Number the stairs'),
+      h('p', { class: 'hint' }, m.level ? 'Stairs that line up on the storeys above and below share a letter.' : 'This map counts as floor 0.'),
       h('h3', {}, 'Fog of war'),
       ...fogControls(),
       h('p', { class: 'hint' }, 'Reveal rooms with the Reveal tool (G), or ask Claude.'),
@@ -1077,6 +1251,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     } else {
       kids = [h('h3', {}, `${sel.length} selected`), h('p', { class: 'hint' }, sel.map((o) => o.id).join(', '))];
     }
+    if (sel.length) kids.push(segments.selectionSave(sel.map((o) => o.id)));
     if (sel.length) kids.push(h('button', { type: 'button', class: 'danger', onclick: deleteSelection }, sel.length === 1 ? 'Delete' : `Delete ${sel.length}`));
     props.replaceChildren(...kids);
     if (focusField) {

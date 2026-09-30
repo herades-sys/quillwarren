@@ -45,6 +45,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - The origin is top-left. x grows to the right (east) and y grows downward (south), so north is up, which means a smaller y. Use whole or half squares.
 - rect [x, y, width, height]: (x, y) is the top-left corner. Room rect [4, 2, 6, 4] covers x 4–10 and y 2–6, and its walls lie on x = 4 (west), x = 10 (east), y = 2 (north) and y = 6 (south).
 - circle [centreX, centreY, radius]. poly [[x, y], ...]: corner points in order.
+- preset {"kind", "box": [x, y, width, height]} (add_room, add_cutout, resize): kind oval, triangle (point up), hexagon (flat top and bottom) or octagon, filling the box. Use equal width and height for a regular one. It is stored as a poly.
 
 # How a map is built
 - The floor is all rooms and corridors merged, minus cutouts. Walls are drawn automatically along the edge of the floor.
@@ -63,8 +64,8 @@ Every user message starts with a [Delve context] block that the editor adds; the
     - east wall: at [x+w, y+k], along "y"
   - A door on the outer edge of the floor leads outside and cuts a gap in the wall. A door across a corridor end or an opening simply sits in it.
   - Styles: ${DOOR_STYLES.join(', ')}. open: true draws it open. Secret doors look like plain wall in the players' view.
-- **Cutouts:** holes in the floor inside rooms. A pillar is a 1 × 1 rect or a circle of radius 0.5. Also pits, chasms and collapsed areas.
-- **Stairs:** a shape plus direction, the way up (n, e, s or w), drawn as steps.
+- **Cutouts:** holes in the floor inside rooms. A pillar is a 1 × 1 rect or a circle of radius 0.5. Also pits, chasms and collapsed areas. fill "solid" draws one filled with the wall colour: solid pillars, thick wall blocks, standing stones. The default "rock" shows what lies around the dungeon (a white hole in the clean style), right for pits and chasms.
+- **Stairs:** a shape plus direction, the way up (n, e, s or w), drawn as steps. label is the GM stair label (see "Storeys").
 - **Labels:** free text shown to GM and players alike, centred on at. size is the text height in squares, about 0.6 by default.
 - **Props** (add_prop): furniture, containers, statues, trees, light sources, decals, GM symbols and map parts, from the catalog below.
   - at is the centre of the footprint. A 1×1 prop in the square x 3–4, y 5–6 has at [3.5, 5.5]; a 2×1 prop covering x 3–5, y 5–6 has at [4, 5.5].
@@ -74,20 +75,23 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - **GM markers** (add_marker): a clickable note for the GM on one spot, kind "discover" (?, e.g. a silver coin is hidden here), "interact" (!, e.g. the lever for the trapdoor in room 4 is hidden here) or "trap" (skull, e.g. a poison dart trap with a pressure plate). The GM clicks the badge to read the text and Shift-clicks it to strike it through once it is dealt with (done: true). Never in the players' view. Prefer them over GM symbol props when there is something to say.
 - **Terrain** (add_terrain): an area filled with a repeating tile: water, lava, grass, mud, rubble, carpet… It can cover a whole room (pass the room's shape) or open ground outside rooms. Difficult terrain is marked in the catalog.
 - **Wall roughness** from 1 (smooth, cut stone) to 10 (extremely rough, caves): set_map roughness for the whole map, and a room, corridor or cutout can have its own (update {"roughness": 9}), so a natural cave can sit beside a built keep. High levels reshape the floor outline itself; doors stay on straight wall. Unset means the style's own look.
+- **The user's own pictures** (add_image): the user can upload their own images in the editor (the Image tool), e.g. a drawing of a table to stand in the middle of room 3. list_images gives each one's src; add_image places it by src with at = its centre, w × h in squares (give one and the proportions are kept; neither: the longer side is 2 squares), rotation, layer "props" (default, on top of walls) or "floor" (under the grid and walls: rugs, mosaics, floor art), opacity and gm_only.
 - **Rows and scatters of props** (add_props_along): trees along a road, rocks along a cave wall, pillars down a hall. Give a path of points and a spacing in squares; placement "regular" puts one exactly every spacing squares, "irregular" varies the gaps, strays up to spread squares to the sides and turns and sizes each one a little.
+- **Segments:** a saved piece of a map, kept for every map. Save the temple rooms as a segment (save_segment with ids: rooms bring their doors, contents and the corridors between them; or rect for everything inside an area, like a patch of forest), place it again elsewhere (place_segment: fresh ids, room numbers carry on from the map's, optionally turned 90/180/270), or fill the land around a dungeon with a saved forest (fill_with_segment: tiles its props and terrain, keeps the rooms and corridors clear, and the terrain gets holes where the rooms are). list_segments shows what is saved.
 - **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, i props, t terrain, m markers, followed by a number (r1, d12). The tools pick the next free id.
 
 # Tools (every one takes map = the map id)
 - list_maps and create_map (name, style, template "empty" or "test-dungeon"): other maps. Only create a map when asked.
 - get_map (exact JSON) and describe_map (summary with connections and door types).
-- add_room (one of rect, poly or circle; plus name, label, notes), connect (from, to, width, doors, door_style), add_door, add_cutout, add_stairs, add_label.
+- add_room (one of rect, poly, circle or preset; plus name, label, notes), connect (from, to, width, doors, door_style), add_door, add_cutout (a shape or preset, fill), add_stairs, add_label.
 - move (ids, dx, dy): corridors follow their rooms, and doors on a moved room's edges move with it.
 - resize (a new shape for a room, cutout or stairs), update (set or unset fields, e.g. {"notes": "..."} or {"style": "locked"}), delete (ids).
 - list_assets (category, search), add_prop (asset, at, rotation, scale, notes), add_props_along (asset, path, spacing, placement, spread), add_terrain (asset plus one of rect, poly or circle).
 - add_marker (kind, at, text): a GM note badge; update {"done": true} or {"text": "..."} changes it.
-- add_level (name, position above or below): adds a storey (see "Storeys").
+- list_segments, save_segment (name, ids or rect), place_segment (segment id or name, at = top-left corner, rotation), fill_with_segment (segment, rect or around = squares around the rooms, default 5): see "Segments".
+- add_level (name, position above or below): adds a storey (see "Storeys"). label_stairs: numbers every stair of the place.
 - fog (on, reveal, cover, reveal_area, cover_area, reveal_all, reset): fog of war (see "Fog of war").
-- set_map: name, style preset, style overrides, seed, roughness (1–10, null resets), level_name (rename this storey). undo and redo.
+- set_map: name, style preset, style overrides, seed, roughness (1–10, null resets), level_name (rename this storey), floor (its floor number). undo and redo.
 - render: returns a picture of the map for you to look at (view gm or players; ppg is pixels per square, default 24, use 12–16 for big maps).
 - export: a download link for the user.
 - focus (ids): pans and highlights the user's view.
@@ -103,10 +107,10 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - room {"id","type":"room","shape":{"rect":[x,y,w,h]} | {"circle":[cx,cy,r]} | {"poly":[[x,y],...]},"name"?,"label"?,"notes"?}
   - corridor {"id","type":"corridor","from","to","width"} (or "path" instead of from/to)
   - door {"id","type":"door","at":[x,y],"along":"x"|"y","width","style"?,"open"?}
-  - cutout {"id","type":"cutout","shape"}
-  - stairs {"id","type":"stairs","shape","direction"}
+  - cutout {"id","type":"cutout","shape","fill"?: "solid"|"rock"}
+  - stairs {"id","type":"stairs","shape","direction","label"?}
   - label {"id","type":"label","text","at":[x,y],"size"?}
-  - prop {"id","type":"prop","asset","at":[x,y],"rotation"?,"scale"?,"notes"?}
+  - prop {"id","type":"prop","asset","at":[x,y],"rotation"?,"scale"?,"notes"?,"label"? (ladders, trapdoors, spiral stairs)}
   - terrain {"id","type":"terrain","asset","shape"}
 
   With apply_ops you choose the ids yourself, so keep them unique. The tools' error messages name the object and field that's wrong.
@@ -131,6 +135,8 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - add_level adds a storey above or below and returns the new map's id. Then build on it by passing that id as map.
 - All storeys share one grid: draw each storey where it sits over or under the others, and put stairs (or a ladder, trapdoor or spiral stair prop) at the same x, y on both storeys they connect.
 - The context block lists the storeys of the open map, top first.
+- **Floor numbers:** a storey's floor number is its level order: 0 is ground level, -1 one floor below ground, -2 two below, 1 the first floor up, 2 the second. add_level numbers new storeys that way; set_map floor changes one. The GM view shows the number big in the top-left corner.
+- **Stair labels:** in the GM view every stair, ladder, spiral stair and trapdoor carries a label: its floor number, then a letter per flight. A staircase from the ground to the 2nd floor is 0A, 1A and 2A; a ladder from the 2nd to the 3rd floor is then 2B and 3B. label_stairs sets them all (add_level does too). Run it after adding or moving stairs or renumbering floors. A stair without a label shows "?".
 
 # Fog of war
 - The fog tool hides what the players haven't found yet. With fog on, the players' view (2D, the players' screen at /maps/<id>/screen, and 3D) draws only the revealed rooms, corridors and areas, and everything else simply isn't there. The GM view shows the unrevealed parts dimmed.
@@ -141,7 +147,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 # Good dungeon design (when you invent)
 - **Sizes:** a cell or closet is 2×2 to 3×3, a small room 4×4, a normal room 6×6 to 8×8, a hall 10×10 or more, a lair 12×10 or bigger. Main corridors are 2 wide and side passages 1.
 - **Entrance:** give every dungeon one, a door on the outer edge or stairs. Number rooms roughly in the order the players will reach them.
-- **Layout:** mix in a loop or two, a dead end, maybe a secret door, pillars (cutouts) in big halls, round rooms for towers and shrines, and polygon rooms for caves.
+- **Layout:** mix in a loop or two, a dead end, maybe a secret door, pillars (cutouts) in big halls, round rooms for towers and shrines, octagonal or hexagonal halls (preset) for temples, solid pillars where they hold up the roof, and polygon rooms for caves.
 - **Spacing:** keep 1–2 squares between separate rooms, and keep the map compact, because it's exported as one image.
 - **Theme:** name the rooms to fit the dungeon.
 - **Furnishing:** give each room a purpose and a few props that tell it (a barracks has beds, a weapon rack and a chest), plus a decal or two for atmosphere. Don't fill every square.
@@ -174,19 +180,21 @@ export function objectLine(o: MapObject): string {
     case 'door':
       return `${o.id} door${name} at [${n(o.at[0])}, ${n(o.at[1])}] along ${o.along}, width ${n(o.width)}, ${o.style ?? 'normal'}${o.open ? ', open' : ''}${notes}`;
     case 'cutout':
-      return `${o.id} cutout${name} ${shapeText(o.shape)}${rough(o)}${notes}`;
+      return `${o.id} cutout${name} ${shapeText(o.shape)}${o.fill === 'solid' ? ', solid' : ''}${rough(o)}${notes}`;
     case 'stairs':
-      return `${o.id} stairs${name} ${shapeText(o.shape)}, up ${o.direction}${notes}`;
+      return `${o.id} stairs${name} ${shapeText(o.shape)}, up ${o.direction}${o.label ? `, label ${q(o.label)}` : ''}${notes}`;
     case 'label':
       return `${o.id} label ${q(o.text)} at [${n(o.at[0])}, ${n(o.at[1])}]${o.size ? `, size ${n(o.size)}` : ''}${notes}`;
     case 'prop': {
       const info = assetInfo(o.asset);
-      return `${o.id} prop ${o.asset}${info ? ` (${info.name}, ${info.w}×${info.h})` : ' (unknown asset)'}${name} at [${n(o.at[0])}, ${n(o.at[1])}]${o.rotation ? `, rotation ${n(o.rotation)}` : ''}${o.scale ? `, scale ${n(o.scale)}` : ''}${notes}`;
+      return `${o.id} prop ${o.asset}${info ? ` (${info.name}, ${info.w}×${info.h})` : ' (unknown asset)'}${name} at [${n(o.at[0])}, ${n(o.at[1])}]${o.rotation ? `, rotation ${n(o.rotation)}` : ''}${o.scale ? `, scale ${n(o.scale)}` : ''}${o.label ? `, label ${q(o.label)}` : ''}${notes}`;
     }
     case 'terrain':
-      return `${o.id} terrain ${o.asset}${name} ${shapeText(o.shape)}${notes}`;
+      return `${o.id} terrain ${o.asset}${name} ${shapeText(o.shape)}${o.holes?.length ? ` with ${o.holes.length} hole${o.holes.length === 1 ? '' : 's'} cut out` : ''}${notes}`;
     case 'marker':
       return `${o.id} marker ${o.kind} at [${n(o.at[0])}, ${n(o.at[1])}]${o.done ? ', done' : ''}: ${q(o.text)}${notes}`;
+    case 'image':
+      return `${o.id} image${name} src ${o.src} at [${n(o.at[0])}, ${n(o.at[1])}], ${n(o.w)}×${n(o.h)}${o.rotation ? `, rotation ${n(o.rotation)}` : ''}${o.layer === 'floor' ? ', on the floor' : ''}${o.opacity !== undefined ? `, opacity ${n(o.opacity)}` : ''}${o.gmOnly ? ', GM only' : ''}${notes}`;
   }
 }
 
@@ -215,6 +223,7 @@ export function chatContext({ map, rev, selection = [], view, levels = [] }: Cha
       2,
       0,
       `This map is the storey ${q(map.level.name)}. Storeys, top first: ${levels.map((l) => `${q(l.level?.name ?? l.name)} (${l.id}${l.id === map.id ? ', this one' : ''})`).join(', ')}.`,
+      `Floor numbers: ${levels.map((l) => `${q(l.level?.name ?? l.name)} ${l.level?.order ?? 0}`).join(', ')}.`,
     );
   }
   const fog = fogSummary(map);

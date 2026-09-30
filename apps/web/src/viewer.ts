@@ -1,7 +1,7 @@
 // Live map viewer, and host for the editor. Renders with @delve/core in the
 // browser, follows every change over the WebSocket, and pans to whatever
 // Claude focuses on. Viewing never needs a login; editing does.
-import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
+import { applyOps, buildScene, floorText, PRESETS, sceneToSvg, storeyTitle, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
 import { artLoader } from './art.ts';
 import { initChat } from './chat.ts';
 import { SVG_NS } from './ctx.ts';
@@ -90,7 +90,9 @@ function render(): void {
   art.ensure(map);
   const m = styleOverride ? { ...map, style: { ...map.style, preset: styleOverride } } : map;
   // fog of war: the GM sees unrevealed parts shaded, the players' view doesn't draw them
-  const scene = buildScene(m, { view, assets: art.body, fog: view === 'players' ? 'hide' : 'dim' });
+  // the floor number is a badge in the corner of the stage here, not part of the picture
+  const scene = buildScene(m, { view, assets: art.body, fog: view === 'players' ? 'hide' : 'dim', floorNumber: false });
+  showFloor();
   stage.style.background = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '';
   canvas.innerHTML = sceneToSvg(scene, { ppg: 20 });
   svg = canvas.querySelector('svg');
@@ -157,6 +159,15 @@ function updateChrome(): void {
   if (view === 'players') url.searchParams.set('view', view);
   if (styleOverride) url.searchParams.set('style', styleOverride);
   history.replaceState(null, '', url);
+}
+
+/** A storey's floor number, big in the stage's top-left corner (0 ground level, −1 below it); nothing for a single map. */
+function showFloor(): void {
+  const badge = document.getElementById('floor-badge');
+  if (!badge) return;
+  badge.hidden = !map.level;
+  badge.textContent = map.level ? floorText(map.level.order) : '';
+  badge.title = map.level ? `Floor ${floorText(map.level.order)}: ${map.level.name}` : '';
 }
 
 function setConnection(state: 'live' | 'connecting' | 'offline' | 'deleted'): void {
@@ -288,7 +299,7 @@ const storeySelect = document.getElementById('storey-select') as HTMLSelectEleme
 function showStoreys(): void {
   if (!storeySelect) return;
   storeySelect.replaceChildren(
-    ...storeys.map((s) => Object.assign(document.createElement('option'), { value: s.id, textContent: s.level?.name ?? s.name, selected: s.id === mapId })),
+    ...storeys.map((s) => Object.assign(document.createElement('option'), { value: s.id, textContent: storeyTitle(s), selected: s.id === mapId })),
   );
   storeySelect.hidden = storeys.length < 2;
 }

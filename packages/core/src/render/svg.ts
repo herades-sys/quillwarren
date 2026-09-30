@@ -4,7 +4,8 @@ import { recolor, type Palette } from '../assets/svg.ts';
 import { markerGlyph } from '../markers.ts';
 import type { Polygon } from '../geometry/shapes.ts';
 import type { Polyline } from '../geometry/walls.ts';
-import type { AssetItem, Layer, Scene } from './scene.ts';
+import { imageUrl } from '../images.ts';
+import type { AssetItem, ImageItem, Layer, Scene } from './scene.ts';
 
 export interface SvgOptions {
   /** Pixels per grid square. Roll20's default grid is 70. */
@@ -62,6 +63,16 @@ function assetSvg(it: AssetItem, palette: Palette): string {
   return `<g transform="${place} scale(${n(it.scale / 100)}) translate(${n(-it.w * 50)} ${n(-it.h * 50)})">${recolor(it.body, palette)}</g>`;
 }
 
+/** An uploaded picture stretched over its footprint and turned about its centre. The src was checked against IMAGE_SRC. */
+function imageSvg(it: ImageItem): string {
+  const turn = it.rotation ? ` transform="rotate(${n(it.rotation)} ${n(it.at[0])} ${n(it.at[1])})"` : '';
+  const fade = it.opacity !== undefined && it.opacity !== 1 ? ` opacity="${n(it.opacity)}"` : '';
+  return (
+    `<image data-image="${esc(it.id)}" href="${esc(imageUrl(it.src))}" x="${n(it.at[0] - it.w / 2)}" y="${n(it.at[1] - it.h / 2)}" ` +
+    `width="${n(it.w)}" height="${n(it.h)}" preserveAspectRatio="none"${turn}${fade}/>`
+  );
+}
+
 function common(layer: Layer, prefix: string): string {
   let a = '';
   if (layer.opacity !== undefined && layer.opacity !== 1) a += ` opacity="${n(layer.opacity)}"`;
@@ -113,6 +124,8 @@ function layerSvg(layer: Layer, prefix: string): string {
     }
     case 'assets':
       return layer.items.length ? g(layer.items.map((it) => assetSvg(it, layer.palette)).join('')) : '';
+    case 'images':
+      return layer.items.length ? g(layer.items.map(imageSvg).join('')) : '';
     case 'pattern': {
       const d = polygonsD(layer.polygons);
       if (!d) return '';
@@ -128,6 +141,21 @@ function layerSvg(layer: Layer, prefix: string): string {
           )
           .join(''),
       );
+    case 'tags': {
+      // a dark rounded box per label, as wide as its text (figures and capitals run about 0.68 em)
+      const s = layer.size;
+      const fs = s * 0.68;
+      const items = layer.items
+        .map((t) => {
+          const w = Math.max(s, fs * 0.68 * [...t.text].length + s * 0.4);
+          return (
+            `<rect x="${n(t.at[0] - w / 2)}" y="${n(t.at[1] - s / 2)}" width="${n(w)}" height="${n(s)}" rx="${n(s * 0.25)}" fill="${layer.fill}" fill-opacity="0.9"/>` +
+            `<text x="${n(t.at[0])}" y="${n(t.at[1] + fs * 0.35)}" font-size="${n(fs)}" text-anchor="middle" fill="${layer.color}">${esc(t.text)}</text>`
+          );
+        })
+        .join('');
+      return items ? g(`<g font-family="${esc(layer.font)}, serif" font-weight="700">${items}</g>`) : '';
+    }
   }
 }
 

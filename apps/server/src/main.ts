@@ -29,7 +29,7 @@ const chat = chatUrl ? { bridgeUrl: chatUrl, port: port || 8790, model: process.
 
 const app = buildApp(
   { version: readVersion(), started: new Date().toISOString() },
-  { logger: true, store, token, passwordHash, openEdit, chat },
+  { logger: true, store, token, passwordHash, openEdit, chat, dataDir },
 );
 if (!token) app.log.warn('DELVE_API_TOKEN is not set: the API is read-only');
 if (!passwordHash && !openEdit) app.log.info('no editor password set (run delve-passwd): the browser editor is read-only');

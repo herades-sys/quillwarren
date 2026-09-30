@@ -3,9 +3,11 @@
 // visible area grows a little past the floor edge so walls and doors show.
 import { differenceD, EndType, FillRule, inflatePathsD, intersectD, JoinType, unionD, type PathsD } from 'clipper2-ts';
 import { propBounds } from './assets/catalog.ts';
+import { imageBounds } from './images.ts';
 import { corridorOutline, corridorPath, roomsById } from './geometry/corridors.ts';
 import { floorPaths, polygonsOf } from './geometry/floor.ts';
 import { maxBulge } from './geometry/rough.ts';
+import { terrainArea } from './geometry/terrain.ts';
 import { PRECISION, shapeBounds, shapePath, type Bounds, type Polygon } from './geometry/shapes.ts';
 import type { DelveMap, Fog, MapObject, Shape } from './schema.ts';
 import { ValidationError } from './validate.ts';
@@ -14,6 +16,7 @@ import { ValidationError } from './validate.ts';
 const MARGIN = 0.3;
 
 function outlineOf(o: MapObject, map: DelveMap): PathsD {
+  if (o.type === 'terrain') return terrainArea(o); // without its holes (the rooms inside a forest)
   if ('shape' in o) return [shapePath(o.shape)];
   if (o.type === 'corridor') {
     const path = corridorPath(o, roomsById(map));
@@ -71,6 +74,7 @@ export function fogShade(map: DelveMap, reach: number): Polygon[] {
   for (const o of map.objects) {
     if (o.type === 'terrain') content.push(shapePath(o.shape));
     else if (o.type === 'prop') content.push(box(propBounds(o)));
+    else if (o.type === 'image') content.push(box(imageBounds(o)));
   }
   return content.length ? polygonsOf(content, visiblePaths(map)) : [];
 }

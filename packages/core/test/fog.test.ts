@@ -88,3 +88,16 @@ describe('what the players can see', () => {
     expect(applyOps(map, inverse).map.fog).toBeUndefined();
   });
 });
+
+describe('a fogged picture at full size', () => {
+  it("keeps the players' picture as big as without fog, so a tabletop page lines up", () => {
+    // a map without grid.bounds, whose picture would otherwise shrink to what is revealed
+    const plain = { ...testMap(), grid: { type: 'square' as const } };
+    const fogged: DelveMap = { ...plain, fog: { on: true, revealed: ['r1'] } };
+    const whole = buildScene(plain, { view: 'players' }).bounds;
+    expect(buildScene(fogged, { view: 'players', fog: 'hide' }).bounds).not.toEqual(whole);
+    expect(buildScene(fogged, { view: 'players', fog: 'hide', fullBounds: true }).bounds).toEqual(whole);
+    // still nothing unrevealed in it
+    expect(area(buildScene(fogged, { view: 'players', fog: 'hide', fullBounds: true }).clips.floor!)).toBeLessThan(floorArea(testMap()) / 2);
+  });
+});

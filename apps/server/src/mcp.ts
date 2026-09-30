@@ -11,10 +11,14 @@ import {
   assetInfo,
   CATEGORIES,
   connectOps,
+  CUTOUT_FILLS,
   describeMap,
   DOOR_STYLES,
   MARKER_KINDS,
   fogSummary,
+  IMAGE_LAYERS,
+  imageBounds,
+  imageFit,
   nextId,
   nextLabel,
   parseOps,
@@ -35,9 +39,13 @@ import {
 import { errorResponse, newMap, tokenGuard } from './api.ts';
 import { bearer } from './auth.ts';
 import type { ChatTokens } from './chat/tokens.ts';
+import type { ImageLibrary } from './images.ts';
 import { addLevel, levelsOf } from './levels.ts';
+import { presetArg, shapeOrPreset } from './draw-args.ts';
 import { render } from './render.ts';
+import { registerSegmentTools } from './segments.ts';
 import type { MapService } from './service.ts';
+import { labelStairs, labelStairsSummary } from './stair-labels.ts';
 
 const BY = 'claude';
 
@@ -48,9 +56,13 @@ Each tool call is one undoable step. Check your work with render (returns a pict
 Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.
 Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
 A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.
+Floor numbers: a storey's floor is its level order (0 ground level, -1 one floor below ground, 1 the first floor up; set_map floor changes it). label_stairs gives every stair, ladder and trapdoor its GM label, floor number then flight letter (0A, 1A, 2A up one staircase).
+Room and cutout shapes: rect, circle, poly, or preset {kind: oval|triangle|hexagon|octagon, box: [x, y, w, h]}. Cutouts with fill "solid" draw as solid pillars or wall blocks.
 Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
 Wall roughness: set_map roughness 1 (smooth) to 10 (caves); rooms, corridors and cutouts can have their own (update {"roughness": 9}). Rows of props (trees along a road): add_props_along.
-GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.`;
+GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.
+Segments: save_segment saves part of a map under a name (rooms 1–5 as "Temple of Efferd", a patch of trees and grass as "Mixed forest"); place_segment adds a renumbered copy anywhere, turned if asked; fill_with_segment tiles one over the land around the rooms, keeping the floor clear. list_segments shows what is saved.
+The user's own pictures (uploaded in the editor): list_images gives their src, and add_image places one by src (a table in the middle of room 3, a rug, a mosaic on the floor).`;
 
 const presetNames = Object.keys(PRESETS) as [string, ...string[]];
 
@@ -104,7 +116,7 @@ function where(shape: Shape): string {
   return `${b.x1 - b.x0}×${b.y1 - b.y0} squares at ${b.x0},${b.y0}`;
 }
 
-export function buildMcpServer(service: MapService, base: string, version: string): McpServer {
+export function buildMcpServer(service: MapService, base: string, version: string, images?: ImageLibrary): McpServer {
   const server = new McpServer({ name: 'delve', title: 'Delve map editor', version }, { instructions: INSTRUCTIONS });
   const { store } = service;
   const viewer = (id: string) => `${base}/maps/${encodeURIComponent(id)}`;
@@ -171,10 +183,11 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'add_room',
     {
       title: 'Add room',
-      description: 'Add a room. Give exactly one shape. The label (room number) defaults to the next free number; pass "" for none.',
+      description: 'Add a room. Give exactly one shape: rect, poly, circle, or preset (an oval, triangle, hexagon or octagon filling a box). The label (room number) defaults to the next free number; pass "" for none.',
       inputSchema: {
         map: mapId,
         ...shapeArgs,
+        preset: presetArg,
         name: z.string().max(200).optional().describe('e.g. "Guard room"'),
         label: z.string().max(20).optional(),
         notes: z.string().max(10_000).optional().describe('GM notes (never drawn)'),
@@ -185,7 +198,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const map = store.get(a.map).map;
-        const shape = oneShape(a);
+        const shape = shapeOrPreset(a);
         const label = a.label ?? nextLabel(map);
         const room: Room = {
           id: a.id ?? nextId(map, 'r'),
@@ -239,15 +252,25 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'add_cutout',
     {
       title: 'Add cutout',
-      description: 'Remove floor inside a room: pillars, pits, collapsed sections. Give exactly one shape.',
-      inputSchema: { map: mapId, ...shapeArgs, name: z.string().max(200).optional().describe('e.g. "Pillar"'), id: z.string().optional() },
+      description:
+        'Remove floor inside a room: pillars, pits, collapsed sections. Give exactly one shape (rect, poly, circle or preset). ' +
+        'fill "solid" draws it filled with the wall colour (solid pillars, thick wall blocks, standing stones); the default "rock" shows what lies around the dungeon.',
+      inputSchema: {
+        map: mapId,
+        ...shapeArgs,
+        preset: presetArg,
+        fill: z.enum(CUTOUT_FILLS).optional().describe('solid or rock (default)'),
+        name: z.string().max(200).optional().describe('e.g. "Pillar"'),
+        id: z.string().optional(),
+      },
     },
     (a) =>
       guarded(() => {
         const map = store.get(a.map).map;
-        const shape = oneShape(a);
+        const shape = shapeOrPreset(a);
         const id = a.id ?? nextId(map, 'p');
-        return addObject(a.map, { id, type: 'cutout', shape, ...(a.name ? { name: a.name } : {}) }, `Added cutout ${id}: ${where(shape)}.`);
+        const fill = a.fill === 'solid' ? { fill: 'solid' as const } : {};
+        return addObject(a.map, { id, type: 'cutout', shape, ...fill, ...(a.name ? { name: a.name } : {}) }, `Added ${a.fill === 'solid' ? 'solid ' : ''}cutout ${id}: ${where(shape)}.`);
       }),
   );
 
@@ -451,6 +474,84 @@ export function buildMcpServer(service: MapService, base: string, version: strin
   );
 
   server.registerTool(
+    'list_images',
+    {
+      title: 'List uploaded images',
+      description: "The user's own pictures, uploaded in the editor (Image tool), newest first: the src to pass to add_image, the name, the size in pixels and the default size in squares.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    () =>
+      guarded(() => {
+        const list = images?.list() ?? [];
+        if (!list.length) return text('No pictures uploaded yet. The user uploads them in the editor with the Image tool (I).');
+        return text(
+          list
+            .map((i) => {
+              const fit = imageFit(i.width, i.height);
+              return `${i.src} — "${i.name}", ${i.width}×${i.height} px, default ${fit.w}×${fit.h} squares`;
+            })
+            .join('\n'),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'add_image',
+    {
+      title: 'Add image',
+      description:
+        "Place one of the user's uploaded pictures (see list_images) on the map, e.g. their table in the middle of room 3. at is the centre of the picture. " +
+        'w and h are its size in squares: give one and the other follows the picture\'s proportions; give neither and its longer side is 2 squares. rotation turns it clockwise in degrees. ' +
+        'layer "props" (default) stands on top of walls like a prop; "floor" lies on the floor under the grid and walls (rugs, mosaics, floor art). gm_only keeps it out of the players\' view.',
+      inputSchema: {
+        map: mapId,
+        src: z.string().describe('The picture\'s src from list_images, "<sha256>.png"'),
+        at: point.describe('Centre of the picture [x, y] in squares'),
+        w: z.number().positive().max(1000).optional().describe('Width in squares'),
+        h: z.number().positive().max(1000).optional().describe('Height in squares'),
+        rotation: z.number().optional().describe('Degrees clockwise'),
+        layer: z.enum(IMAGE_LAYERS).optional().describe('props (default: on top of walls) or floor (under grid and walls)'),
+        opacity: z.number().min(0).max(1).optional().describe('0 (invisible) to 1 (default)'),
+        gm_only: z.boolean().optional().describe('Only in the GM view'),
+        name: z.string().max(200).optional().describe("Defaults to the picture's name"),
+        notes: z.string().max(10_000).optional().describe('GM notes (never drawn)'),
+        id: z.string().optional().describe('Defaults to the next img<n>'),
+      },
+    },
+    (a) =>
+      guarded(() => {
+        const info = images?.get(a.src);
+        if (!info) throw new ValidationError([`src: there is no uploaded picture "${a.src}" (see list_images)`]);
+        const map = store.get(a.map).map;
+        const ratio = info.width > 0 && info.height > 0 ? info.height / info.width : 1;
+        const r2 = (v: number) => Math.max(0.05, Math.round(v * 100) / 100);
+        const size = a.w !== undefined && a.h !== undefined ? { w: a.w, h: a.h } : a.w !== undefined ? { w: a.w, h: r2(a.w * ratio) } : a.h !== undefined ? { w: r2(a.h / ratio), h: a.h } : imageFit(info.width, info.height);
+        const name = a.name ?? (info.name !== info.src ? info.name : undefined);
+        const image: MapObject = {
+          id: a.id ?? nextId(map, 'img'),
+          type: 'image',
+          src: a.src,
+          at: a.at,
+          ...size,
+          ...(a.rotation ? { rotation: a.rotation } : {}),
+          ...(a.layer === 'floor' ? { layer: 'floor' as const } : {}),
+          ...(a.opacity !== undefined && a.opacity !== 1 ? { opacity: a.opacity } : {}),
+          ...(a.gm_only ? { gmOnly: true } : {}),
+          ...(name ? { name } : {}),
+          ...(a.notes ? { notes: a.notes } : {}),
+        };
+        const b = imageBounds({ at: a.at, ...size, rotation: a.rotation });
+        const f = (v: number) => String(Math.round(v * 100) / 100);
+        return addObject(
+          a.map,
+          image,
+          `Added image ${image.id}${name ? ` "${name}"` : ''}, ${f(size.w)}×${f(size.h)} squares${a.layer === 'floor' ? ' on the floor' : ''}${a.gm_only ? ' (GM only)' : ''}, covering x ${f(b.x0)}–${f(b.x1)}, y ${f(b.y0)}–${f(b.y1)}.`,
+        );
+      }),
+  );
+
+  server.registerTool(
     'fog',
     {
       title: 'Fog of war',
@@ -502,8 +603,26 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const c = addLevel(service, a.map, { name: a.name, position: a.position, currentName: a.current_name, by: BY });
-        const all = levelsOf(service, c.mapId).map((l) => `${l.level?.name ?? l.name} (${l.id})`);
+        const all = levelsOf(service, c.mapId).map((l) => `${l.level?.name ?? l.name} (${l.id}, floor ${l.level?.order ?? 0})`);
         return text(`Added storey "${a.name}" as map ${c.mapId}: ${viewer(c.mapId)}. Storeys, top first: ${all.join(', ')}.`);
+      }),
+  );
+
+  server.registerTool(
+    'label_stairs',
+    {
+      title: 'Number the stairs',
+      description:
+        'Give every stair, ladder, spiral stair and trapdoor on all storeys of this map\'s place (or on this map alone, as floor 0) its GM label: the floor number, then a letter per flight. ' +
+        'Stairs that line up on neighbouring storeys share the letter: a staircase from the ground to the 2nd floor is 0A, 1A, 2A, and a ladder from the 2nd to the 3rd floor then 2B, 3B. ' +
+        'Labels show in the GM view only. Run it after adding or moving stairs or changing floor numbers; update {"label": "..."} sets one by hand.',
+      inputSchema: { map: mapId },
+    },
+    (a) =>
+      guarded(() => {
+        const r = labelStairs(service, a.map, BY);
+        const per = r.storeys.filter((s) => s.stairs).map((s) => `${s.name} (floor ${s.floor}): ${s.stairs}${s.changed ? `, ${s.changed} changed, rev ${s.rev}` : ''}`);
+        return text(`${labelStairsSummary(r)}${per.length ? ` ${per.join('; ')}.` : ''}`);
       }),
   );
 
@@ -526,12 +645,12 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'resize',
     {
       title: 'Resize or reshape',
-      description: 'Give a room, cutout, stairs or terrain area a new shape (exactly one of rect, poly, circle).',
-      inputSchema: { map: mapId, id: z.string(), ...shapeArgs },
+      description: 'Give a room, cutout, stairs or terrain area a new shape (exactly one of rect, poly, circle or preset).',
+      inputSchema: { map: mapId, id: z.string(), ...shapeArgs, preset: presetArg },
     },
     (a) =>
       guarded(() => {
-        const shape = oneShape(a);
+        const shape = shapeOrPreset(a);
         return change(a.map, [{ op: 'update', id: a.id, set: { shape } }], `Reshaped ${a.id}: ${where(shape)}.`);
       }),
   );
@@ -561,7 +680,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'set_map',
     {
       title: 'Map settings',
-      description: 'Rename the map, change its style preset, style overrides (e.g. {"walls.width": 0.2}; null clears them), its random seed, or its wall roughness (1 smooth to 10 caves; null goes back to the style).',
+      description: 'Rename the map, change its style preset, style overrides (e.g. {"walls.width": 0.2}; null clears them), its random seed, or its wall roughness (1 smooth to 10 caves; null goes back to the style). For a storey: its name (level_name) and floor number (floor).',
       inputSchema: {
         map: mapId,
         name: z.string().min(1).max(200).optional(),
@@ -570,27 +689,36 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         seed: z.number().int().optional().describe('Changes the hatching and wall wobble'),
         roughness: z.number().int().min(1).max(10).nullable().optional().describe('Wall roughness for the whole map: 1 smooth, 10 extremely rough (caves); null resets'),
         level_name: z.string().min(1).max(60).optional().describe('Rename this storey (only for maps that are storeys, see add_level)'),
+        floor: z.number().int().optional().describe("This storey's floor number: 0 ground level, -1 one floor below ground, 1 the first floor up (only for storeys)"),
       },
     },
     (a) =>
       guarded(() => {
         const map = store.get(a.map).map;
         const set: Record<string, unknown> = {};
+        let note = '';
+        if (a.floor !== undefined) {
+          if (!map.level) throw new ValidationError(['floor: this map is not a storey (a single map is floor 0); use add_level to make one']);
+          set.level = { ...map.level, order: a.floor };
+          const clash = levelsOf(service, a.map).find((l) => l.id !== a.map && l.level?.order === a.floor);
+          if (clash) note = ` Note: storey "${clash.level?.name ?? clash.name}" (${clash.id}) is floor ${a.floor} too; give each storey its own number.`;
+          note += ' Run label_stairs to renumber the stairs.';
+        }
         if (a.name) set.name = a.name;
         if (a.seed !== undefined) set.seed = a.seed;
         const unset = a.roughness === null ? ['roughness'] : [];
         if (a.roughness) set.roughness = a.roughness;
         if (a.level_name) {
           if (!map.level) throw new ValidationError(['level_name: this map is not a storey; use add_level to make one']);
-          set.level = { ...map.level, name: a.level_name };
+          set.level = { ...map.level, ...(set.level as object | undefined), name: a.level_name };
         }
         if (a.style !== undefined || a.overrides !== undefined) {
           const cur = map.style ?? { preset: 'classic-hatching' };
           const overrides = a.overrides === undefined ? cur.overrides : (a.overrides ?? undefined);
           set.style = { preset: a.style ?? cur.preset, ...(overrides ? { overrides } : {}) };
         }
-        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, overrides, seed, roughness or level_name']);
-        return change(a.map, [{ op: 'update_map', set, ...(unset.length ? { unset } : {}) }], `Updated map settings (${[...Object.keys(set), ...unset].join(', ')}).`);
+        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, overrides, seed, roughness, level_name or floor']);
+        return change(a.map, [{ op: 'update_map', set, ...(unset.length ? { unset } : {}) }], `Updated map settings (${[...Object.keys(set), ...unset].join(', ')}).${note}`);
       }),
   );
 
@@ -683,12 +811,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) => guarded(() => change(a.map, parseOps(a.ops), `Applied ${a.ops.length} op${a.ops.length === 1 ? '' : 's'}.`, a.base_rev)),
   );
 
+  registerSegmentTools(server, service, BY);
   return server;
 }
 
 export function registerMcp(
   app: FastifyInstance,
-  deps: { service: MapService; token: string | undefined; version: string; chatTokens?: ChatTokens },
+  deps: { service: MapService; token: string | undefined; version: string; chatTokens?: ChatTokens; images?: ImageLibrary },
 ): void {
   const tokenOnly = tokenGuard(deps.token);
   // A chat run's short-lived token works too (see chat/tokens.ts).
@@ -701,7 +830,7 @@ export function registerMcp(
   app.post('/mcp', { preHandler: guard }, async (req: FastifyRequest, reply: FastifyReply) => {
     // Chat runs call in over 127.0.0.1, so their links use the address the user's browser used.
     const base = (chatGrant(req)?.base ?? process.env.DELVE_PUBLIC_URL ?? `${req.protocol}://${req.headers.host}`).replace(/\/$/, '');
-    const server = buildMcpServer(deps.service, base, deps.version);
+    const server = buildMcpServer(deps.service, base, deps.version, deps.images);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     reply.hijack();
     reply.raw.on('close', () => {

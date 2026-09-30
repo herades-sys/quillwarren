@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { levelSiblings, PRESETS, revealedBounds, sceneToSvg, type DelveMap, type Level } from '@delve/core';
+import { floorText, levelSiblings, PRESETS, revealedBounds, sceneToSvg, storeyTitle, type DelveMap, type Level } from '@delve/core';
 import type { AppInfo } from './app.ts';
 import type { ChatConfig } from './chat/route.ts';
 import { isLoggedIn, type EditorAuth } from './login.ts';
@@ -38,9 +38,12 @@ interface PageOpts {
 function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts): string {
   const { view, style } = o;
   const scene = sceneFor(map, { view, style, fog: '1' });
+  // the page shows the floor number as a badge over the map instead
+  scene.layers = scene.layers.filter((l) => l.name !== 'floor-number');
+  const floorBadge = `<div id="floor-badge" aria-label="Floor number"${map.level ? '' : ' hidden'}>${map.level ? floorText(map.level.order) : ''}</div>`;
   const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '#EFEAE2';
   const chat = o.loggedIn && o.chatModel ? { enabled: true, model: o.chatModel } : undefined;
-  const storeyOptions = o.levels.map((l) => `<option value="${esc(l.id)}"${l.id === id ? ' selected' : ''}>${esc(l.level?.name ?? l.name)}</option>`).join('');
+  const storeyOptions = o.levels.map((l) => `<option value="${esc(l.id)}"${l.id === id ? ' selected' : ''}>${esc(storeyTitle(l))}</option>`).join('');
   const initial = JSON.stringify({ id, rev, map, levels: o.levels, edit: { loggedIn: o.loggedIn, passwordSet: o.passwordSet }, ...(chat ? { chat } : {}) }).replace(/</g, '\\u003c');
   const editControl = o.loggedIn
     ? `<button class="btn" id="edit-toggle" aria-pressed="false" title="Edit this map">Edit</button>`
@@ -102,6 +105,8 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   #toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); max-width: min(560px, 90%); padding: 8px 12px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 13px; z-index: 3; }
   #toast[data-kind="info"] { background: var(--accent); color: var(--accent-ink); }
   #toast[hidden] { display: none; }
+  #floor-badge { position: absolute; top: 12px; left: 12px; z-index: 2; min-width: 1.5em; padding: 6px 16px 2px; border-radius: 12px; background: color-mix(in srgb, var(--bar) 70%, transparent); border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); color: var(--ink); font: 400 48px/1 "Marcellus SC", Georgia, serif; text-align: center; font-variant-numeric: lining-nums; pointer-events: none; }
+  #floor-badge[hidden] { display: none; }
   body.chatting #main { grid-template-columns: 1fr 360px; }
   body.editing.chatting #main { grid-template-columns: 1fr 300px 360px; }
   #chat { border-left: 1px solid var(--line); background: var(--bar); display: grid; grid-template-rows: auto 1fr auto auto; min-height: 0; min-width: 0; }
@@ -171,6 +176,15 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   .picker-grid .swatch { width: 56px; height: 56px; border-radius: 6px; background-size: 56px 56px; }
   .rotate { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
   .ed .ghost-prop { opacity: .75; }
+  /* the Image tool and a selected picture (apps/web/src/images.ts) */
+  .image-picker.drop { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; }
+  .image-picker .upload { justify-content: center; flex: 1; }
+  .image-picker > button.danger { font: inherit; font-size: 13px; padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line)); border-radius: 7px; background: transparent; color: var(--bad); cursor: pointer; }
+  .image-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: center; overflow-wrap: anywhere; }
+  .image-card img { width: 64px; height: 64px; object-fit: contain; background: #F0ECE0; border: 1px solid var(--line); border-radius: 6px; }
+  #panel .rotate input[type="number"] { width: 5.5em; }
+  .field.opacity input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .field.opacity output { color: var(--muted); font-variant-numeric: tabular-nums; }
   .ed .guide { fill: rgba(59, 155, 255, .05); stroke: #3B9BFF; stroke-opacity: .6; stroke-width: 1.5px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
   .title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
   #map-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
@@ -221,6 +235,26 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   .marker-kinds [data-kind="discover"] .kind-dot { background: #D9961A; }
   .marker-kinds [data-kind="interact"] .kind-dot { background: #2F7FD1; }
   .marker-kinds [data-kind="trap"] .kind-dot { background: #C43A2F; }
+  /* the Segment tool (apps/web/src/segments.ts): modes, the name form, the library */
+  .seg-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .seg-modes button, .seg-around, .seg-save button, .seg-acts button { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; }
+  .seg-modes button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .seg-save { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; }
+  #props .seg-save button { justify-content: center; flex: 1; }
+  .seg-lib { display: grid; gap: 6px; max-height: 46vh; overflow-y: auto; padding: 2px; }
+  .seg-item { display: grid; gap: 5px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; }
+  .seg-item[aria-selected="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .seg-pick { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; align-items: center; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  div.seg-pick { cursor: default; }
+  .seg-thumb { width: 72px; height: 54px; display: grid; place-items: center; overflow: hidden; background: #F0ECE0; border: 1px solid var(--line); border-radius: 6px; }
+  .seg-thumb svg { width: 100%; height: 100%; display: block; }
+  .seg-text { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+  .seg-name { font-weight: 600; font-size: 13px; }
+  .seg-meta { font-size: 12px; color: var(--muted); }
+  .seg-acts { display: flex; gap: 6px; }
+  .seg-acts button { font-size: 12px; padding: 2px 9px; }
+  .seg-acts .danger { color: var(--bad); }
+  .ed .ghost-seg { opacity: .75; }
 </style>
 </head>
 <body>
@@ -246,6 +280,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   <div id="stage">
     <div id="canvas">${sceneToSvg(scene, { ppg: 20 })}</div>
     <svg id="overlay" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" viewBox="${scene.bounds.x0} ${scene.bounds.y0} ${scene.bounds.x1 - scene.bounds.x0} ${scene.bounds.y1 - scene.bounds.y0}"></svg>
+    ${floorBadge}
     <div id="activity">Waiting for changes</div>
     <div id="toast" role="status" hidden></div>
   </div>

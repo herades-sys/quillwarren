@@ -26,7 +26,7 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 |---|---|
 | 400 | Malformed ops, or a result that wouldn't validate. `problems` lists every issue, e.g. `c1 (objects[6]) width: must be greater than 0` |
 | 401 / 503 | Missing or wrong token / no token configured |
-| 404 | No such map |
+| 404 | No such map (or segment) |
 | 409 | `baseRev` is stale (`rev` holds the current one), the id is taken, or there's nothing to undo or redo |
 
 ## Maps
@@ -38,9 +38,32 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 | GET | `/maps/:id` | | `{ id, rev, map }` |
 | DELETE | `/maps/:id` | | `204`. A soft delete: the row stays in the database file, and the id can't be reused. The start page and the editor's map panel have Delete buttons |
 | GET | `/maps/:id/levels` | | `{ levels: [{ id, name, level }] }`: this map's storeys, top first (just the map itself when it has none) |
-| POST | `/maps/:id/levels` | `{ name, position?: "above" \| "below", currentName?, by? }` | `201 { id, rev, map }`: a new empty storey in the same group. The first time, this map joins the group as `currentName` (default "Ground floor") |
+| POST | `/maps/:id/levels` | `{ name, position?: "above" \| "below", currentName?, by? }` | `201 { id, rev, map }`: a new empty storey in the same group. The first time, this map joins the group as `currentName` (default "Ground floor"). The stairs are then numbered again (below) |
+| POST | `/maps/:id/levels/label-stairs` | `{ by? }` | `{ storeys: [{ id, name, floor, stairs, changed, rev }], summary }`, top first: labels every stair of the map's storeys (a single map counts as floor 0). One undo step per map whose labels changed; maps already right are left alone |
 
-**Storeys:** a place with several storeys is several maps that share `level: { group, name, order }` (higher `order` is further up). Each storey has its own undo history and exports as its own Roll20 page, and all of them share one grid, so stairs line up. The editor shows a storey picker at the top and the floor of the storey below as a dashed outline. Open viewers get `{ type: "levels" }` when a storey is added or deleted.
+**Storeys:** a place with several storeys is several maps that share `level: { group, name, order }` (higher `order` is further up). Each storey has its own undo history and exports as its own Roll20 page, and all of them share one grid, so stairs line up. The editor shows a storey picker at the top and the floor of the storey below as a dashed outline. Open viewers get `{ type: "levels" }` when a storey is added, deleted, renamed or renumbered.
+
+**Floor numbers:** a storey's floor number is its `level.order`: 0 is ground level, -1 one floor below ground, -2 two below, 1 the first floor, 2 the second. `addLevel` numbers new storeys that way (below: lowest − 1, above: highest + 1). A map that isn't a storey is floor 0 and shows no number.
+- The viewer shows the number as a big badge in the stage's top-left corner (with a real minus sign, "−1"), in both views. The storey picker reads "2 · Wizard's floor", "0 · Ground floor", "−1 · Cellar", top floor first.
+- GM renders of a storey draw the number big and faded in the picture's top-left corner (layer `floor-number`). Not in the players' view, the handout, or the 3D view's transparent floor textures (`background=0`). `buildScene` option `floorNumber: false` leaves it out (the viewer does, because of its badge).
+- Editor: the map panel's Storeys section has a "Floor number" field; it warns when another storey already has that number. MCP: `set_map floor`. `describe_map` says "Floor −1 (Cellar) of <group>".
+
+**Stair labels:** every stair and every ladder, spiral stair or trapdoor prop (what `connectorsOf` counts) gets a GM label: the floor number, then a letter per flight, stored as `label` on the object (at most 8 characters, e.g. `"0A"`, `"-1C"`).
+- Connectors that `stairLinks` joins across neighbouring storeys form one flight and share the letter; a connector that meets nothing is a flight of its own. Letters go by the flight's lowest floor, then top to bottom and left to right: a staircase from the ground to the 2nd floor is 0A, 1A, 2A, and a ladder from the 2nd to the 3rd floor then 2B, 3B.
+- Set them with the editor's "Number the stairs" button (Storeys section, single maps too), MCP `label_stairs`, or the endpoint above; `addLevel` runs it too. Edit one by hand with the Label field of a stairs or ladder, or `update {"label": "…"}`.
+- Drawn in the GM view only (layer `stair-labels`, kind `tags`): a small dark rounded tag, half a square tall, on the connector's centre. When some connectors on a map have a label, the others show "?". Never in the players' view, the handout or Dungeon Scrawl exports.
+- Core: `floors.ts` (`stairLabels`, `stairLabelOps`, `stairTags`, `floorText`, `storeyTitle`); server: `stair-labels.ts`.
+
+## Room shapes and solid cutouts
+
+- **Shapes:** the Room (R) and Pillar (P) tools have a Shape choice: rectangle, circle, oval, triangle, hexagon, octagon or freehand. Drag a box to draw one; Shift keeps width and height equal (a circle always is). A ghost shows the exact shape while dragging.
+  - Circles are `{circle}`; the others become `{poly}` with points rounded to 0.01 squares (an oval has 40 points, a hexagon has a flat top and bottom, a triangle points up).
+  - Freehand: hold the button and draw the outline. On release it closes, is simplified (Douglas–Peucker, 0.15 squares) and snapped to quarter squares. Strokes with fewer than 3 distinct points or almost no area are dropped.
+  - MCP `add_room`, `add_cutout` and `resize` take `preset: { kind: "oval" | "triangle" | "hexagon" | "octagon", box: [x, y, w, h] }` instead of `rect`, `poly` or `circle`.
+  - Core: `geometry/draw.ts` (`shapeFromBox`, `shapeFromDrag`, `dragBox`, `freehandShape`).
+- **Solid cutouts:** a cutout with `fill: "solid"` is drawn filled with the style's wall colour inside its wall outline: solid pillars, thick wall blocks, standing stones. It shows in every style and both views (layer `solid-cutouts`, after the floor, before the walls). Only the floor the cutout took away is filled, so a block reaching out of a room ends at the room's edge, and rough walls stay closed around it.
+  - The default, `"rock"` (or no `fill`), looks as before: whatever lies around the dungeon (hatching, or a white hole in "clean").
+  - Editor: the Pillar tool's Fill choice (like the rock / solid) and the Fill field of a selected cutout. MCP: `add_cutout fill`. Core: `geometry/solid.ts`.
 
 ## Fog of war
 
@@ -94,7 +117,7 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
   - Unset keeps the style's own look.
   - Exports to Dungeon Scrawl keep the plain outline.
   - Core: `geometry/rough.ts`.
-- **Terrain** is `{ type: "terrain", asset, shape }`, drawn over the floor and under the grid, as a tint plus a repeating 2×2-square tile.
+- **Terrain** is `{ type: "terrain", asset, shape, holes? }`, drawn over the floor and under the grid, as a tint plus a repeating 2×2-square tile. `holes` are rings (`[[x, y], ...]`, 3 points or more) cut out of the shape: a forest filled around a dungeon leaves its rooms out this way. Moving the terrain moves its holes; fog of war and the editor's clicks ignore the holes' area.
 - **Drawing order:** decals lie under the walls, props sit on top of walls and doors, and GM symbols come last. GM symbols appear in the GM view only.
 - **Recolouring:** every style recolours the three asset inks (`props` in the style preset).
 - **GM markers** are `{ type: "marker", kind: "discover" | "interact" | "trap", at, text, done? }`. They are notes pinned to a spot: "?" is something to discover, "!" something to interact with, and a skull a trap.
@@ -103,6 +126,45 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
   - The editor's Marker tool (M) places them at square centres (Alt for half squares) and opens the box for typing.
   - The SVG tags each badge `data-marker="<id>" data-kind="<kind>"`, plus `data-done` when done. Code: core `markers.ts`, web `markers.ts`.
 - **Where the art comes from:** `delve-props-design-system/assets`. `npm run assets` rebuilds `packages/core/src/assets/catalog.json` and the full `manifest.json` from the batch generators' metadata, and reports files that are listed but missing. Every SVG goes through a whitelist (`parseAssetSvg`) before it reaches a page or a PNG.
+
+## Uploaded images (your own pictures)
+
+| Method | Path | Body / query | Returns |
+|---|---|---|---|
+| POST | `/images?name=` | the raw file, `image/*` or `application/octet-stream` (token or editor login) | `201 { src, url, width, height, name }`; the same bytes again give `200` and the same `src` |
+| GET | `/images` | | `{ images: [{ src, url, name, width, height, bytes, uploaded }] }`, newest first |
+| GET | `/images/:src` | | The file, public like maps: its real type, `nosniff`, cached for a year (the name is its hash) |
+| DELETE | `/images/:src` | (token or editor login) | `204`, or `409 { error, maps: [{ id, name }] }` while a map still uses it |
+
+- **Files:** PNG, JPEG, WebP or GIF, up to 10 MB and 12000 px a side (50 megapixels). The kind comes from the first bytes, never from the client, and the pixel size from the header. They are kept as `${DELVE_DATA}/images/<sha256>.<ext>` beside `index.json` (name, size, upload time). Code: server `images.ts`.
+- **On a map:** `{ type: "image", src, at, w, h, rotation?, layer?: "floor" | "props", opacity?, gmOnly?, name?, notes? }`. `src` must match `<sha256>.<png|jpg|webp|gif>`. `at` is the centre, `w` × `h` are squares, and `rotation` turns it clockwise about its centre.
+  - `layer: "props"` (the default) draws it over the props, walls and doors, under GM symbols. `"floor"` draws it right after the floor and terrain, under the grid and walls: rugs, painted floors, mosaics.
+  - `gmOnly` pictures are left out of the players' view. With fog of war, players see only pictures whose centre they have seen, and the GM view dims the rest. Dungeon Scrawl exports leave pictures out.
+  - The SVG draws each as `<image data-image="<id>" href="/api/v1/images/<src>" preserveAspectRatio="none">`. Server PNGs (renders, the 3D view's floors, the handout) load them from disk through resvg's `imagesToResolve`/`resolveImage` (`png.ts`). resvg can't read WebP, so a WebP picture is missing from server PNGs; the editor uploads WebP files as PNG for that reason.
+- **Editor:** the Image tool (I) has an upload button (and takes a picture dropped on the map or pasted with Ctrl+V), the uploaded pictures to pick from, and a ghost that follows the pointer, snapped like a prop, with Q/E to turn. New pictures get their longer side 2 squares. A selected picture has width and height (keep proportions on by default), position, rotation, layer, opacity and GM only in the panel. Code: web `images.ts`.
+- **MCP:** `list_images`, and `add_image` (`src`, `at`, `w?`, `h?`, `rotation?`, `layer?`, `opacity?`, `gm_only?`): with only one of `w`/`h` the other follows the picture's proportions, with neither the longer side is 2 squares.
+
+## Segments (saved pieces of maps)
+
+A segment is part of a map saved under a name ("rooms 1–5 as Temple of Efferd", "this patch as Mixed forest"), kept for all maps in `delve.db` (table `segments`). It can be placed again anywhere, turned, or tiled over an area.
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET | `/segments` | | `{ segments: [{ id, name, size: [w, h], counts: {room: 5, prop: 20…}, created, updated, source? }] }`, newest first |
+| GET | `/segments/:id` | | `{ segment: { id, name, created, size, objects, counts } }` |
+| POST | `/segments` | `{ name, map, ids?: string[], rect?: [x, y, w, h] }` (exactly one of `ids`, `rect`) | `201 { segment }`, collected from the map |
+| PATCH | `/segments/:id` | `{ name }` | `{ segment }` (the summary) |
+| DELETE | `/segments/:id` | | `204`. A soft delete, like maps. Copies already placed stay |
+| POST | `/maps/:id/segments/place` | `{ segment, at: [x, y], rotation?: 0 \| 90 \| 180 \| 270, baseRev?, by? }` | `{ rev, ids, summary }`, one undo step |
+| POST | `/maps/:id/segments/fill` | `{ segment, rect?: [x, y, w, h], around?: 5, margin?: 0.5, vary?: true, seed?, baseRev?, by? }` | `{ rev, ids, props, terrain, skipped, summary }`, one undo step (nothing is applied when nothing fits) |
+
+Writes need the token or an editor login; reads are public like maps. `segment` may be an id or a segment's exact name (ignoring case).
+
+- **Saving** (core `collectSegment`): by `ids`, the objects plus, for rooms, the doors on their edges and everything whose centre stands inside them (props, terrain, labels, markers, cutouts, stairs, pictures; an area must also fit inside the picked floor, so a forest around the rooms stays behind), and every corridor whose two rooms are both in. By `rect`, every object lying completely inside it, terrain cut to it; doors on the walls of rooms left outside stay behind. A picked corridor whose rooms aren't both in keeps its current route as a fixed `path` (and drops the missing room); unpicked corridors to rooms outside stay behind. Objects are stored moved so the segment's top-left is 0,0, in a box of whole squares (`rect` saves are exactly the box, which is the tile size for filling).
+- **Placing** (core `placeSegmentOps`): the copy's top-left goes to `at`, rounded to whole squares, turned clockwise about the segment's centre (shapes, points, paths, door directions, prop and picture rotation, the way up of stairs). Every object gets a fresh id after the highest of its kind on the map (r, c, d, p, s, l, i, t, m), numbered rooms continue the map's room numbers in their old order, and corridors point at the copies of their rooms. An auto-routed corridor that would route differently once turned keeps the turned route as a fixed path, so it still meets its doors. The summary names rooms of the map the copy overlaps.
+- **Filling** (core `fillSegmentOps`): copies of the segment's props and terrain are laid side by side from the area's top-left. `rect` is the area; without it, the area is the bounds of the map's rooms, corridors, doors, stairs and cutouts grown by `around` squares (`regionAround`). A prop is left out when its footprint would come within `margin` squares of a room or corridor (plus the wall roughness bulge), stick out of the area, overlap a prop already on the map or from another copy, or stand on the map's own terrain of another kind (no trees in the river). With `vary`, each prop moves up to 0.3 squares and nature props and decals get a random turn. Terrain: per tile kind, the copies are joined and cut to the area minus the floor grown by the margin, so rooms and corridors become `holes`; it goes in under the map's other terrain. Fills repeat only props and terrain: rooms, doors, labels and markers of the segment are left out (the summary says so).
+- **Editor:** the Segment tool (K) has three modes. **Save**: drag a box, name it in the panel, done; with the Select tool, the selection panel has "Save as segment…" too. **Place**: pick a segment in the library (thumbnails drawn in the browser), a ghost follows the pointer, Q/E turn it, a click places it (and selects the copy). **Fill**: pick a segment and drag an area, or press "Fill around the rooms" (5 squares out). Library entries can be renamed and deleted. Placing and filling are worked out in the browser with core and sent as ops. Code: web `segments.ts`, server `segments.ts` + `segment-store.ts`, core `segments.ts` + `geometry/terrain.ts`.
+- **MCP:** `list_segments`, `save_segment` (`map`, `name`, `ids` or `rect`), `place_segment` (`map`, `segment`, `at`, `rotation?`), `fill_with_segment` (`map`, `segment`, `rect` or `around?`=5, `margin?`, `vary?`).
 
 ## Changes
 
@@ -122,7 +184,7 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
 
 | Path | Query | Returns |
 |---|---|---|
-| `/maps/:id/render.png` | `ppg` (10–300, default **70**, Roll20's grid), `view` (`gm` or `players`), `style` (preset override), `grid=0` | PNG. The filename includes the size in squares, e.g. `crypt_classic-hatching_players_26x38.png` |
+| `/maps/:id/render.png` | `ppg` (10–300, default **70**, Roll20's grid), `view` (`gm` or `players`), `style` (preset override), `grid=0`, `background=0`, `fog=1`, `bounds=full` (with fog, keep the unfogged picture size) | PNG. The filename includes the size in squares, e.g. `crypt_classic-hatching_players_26x38.png` |
 | `/maps/:id/render.svg` | same | SVG, scalable, for print |
 | `/maps/:id/describe` | | Plain text: rooms, sizes, connections, doors |
 | `/maps/:id/export.ds` | `view` (`gm` or `players`) | A Dungeon Scrawl save file, e.g. `crypt.ds` or `crypt_players.ds`. Open it in Dungeon Scrawl with File → Open save file |
@@ -214,13 +276,16 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 |---|---|
 | `list_maps`, `create_map` (`name`, `style?`, `template?`) | Find or start maps. Returns the viewer link |
 | `get_map`, `describe_map` | Full JSON / plain-text summary |
-| `add_room` (`rect` \| `poly` \| `circle`, `name?`, `label?`, `notes?`) | The room number defaults to the next free one |
+| `add_room` (`rect` \| `poly` \| `circle` \| `preset`, `name?`, `label?`, `notes?`) | The room number defaults to the next free one. `preset` is `{kind: oval/triangle/hexagon/octagon, box: [x, y, w, h]}` |
 | `connect` (`from`, `to`, `width?`=2, `doors?` none/from/to/both, `door_style?`) | Auto-routed corridor that follows its rooms, with doors across its mouths |
-| `add_cutout`, `add_door`, `add_stairs`, `add_label` | Details |
+| `add_cutout` (a shape or `preset`, `fill?` solid/rock), `add_door`, `add_stairs`, `add_label` | Details |
 | `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_props_along` (`asset`, `path`, `spacing?`, `placement?`, `spread?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
 | `add_marker` (`kind` discover/interact/trap, `at`, `text`) | A GM note badge (GM view only); `update` with `{"done": true}` strikes it through |
+| `list_images`, `add_image` (`src`, `at`, `w?`, `h?`, `rotation?`, `layer?`, `opacity?`, `gm_only?`) | The user's uploaded pictures, placed by `src` |
 | `add_level` (`name`, `position?` above/below, `current_name?`) | Adds a storey (a new map in the same group) |
-| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, roughness 1–10, level_name) | Changes; `add_room` also takes `roughness` |
+| `label_stairs` (`map`) | Numbers every stair of the place: 0A, 1A, 2A… (GM view only) |
+| `list_segments`, `save_segment` (`name`, `ids` \| `rect`), `place_segment` (`segment`, `at`, `rotation?`), `fill_with_segment` (`segment`, `rect` \| `around?`=5, `margin?`, `vary?`) | Saved pieces of maps: save, place a renumbered copy, fill the land around the rooms (see "Segments") |
+| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, roughness 1–10, level_name, floor) | Changes; `add_room` also takes `roughness` |
 | `undo`, `redo` | History |
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
 | `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70) | A download link for the user; `handout` links the parchment handout page |

@@ -5,6 +5,7 @@ import {
   corridorPath,
   doorSegment,
   MARKER_RADIUS,
+  onImage,
   roomsById,
   shapeArea,
   type Bounds,
@@ -67,6 +68,9 @@ export function hitAll(map: DelveMap, p: Point, tol: number): string[] {
     const [a, b] = doorSegment(d);
     if (distToSegment(p, a, b) <= Math.max(tol, 0.3)) out.push(d.id);
   }
+  // uploaded pictures: the ones standing on top come before the props under them; floor ones rank with the areas below
+  const pictures = of('image').filter((o) => onImage(o, p, tol));
+  for (const im of [...pictures].reverse()) if (im.layer !== 'floor') out.push(im.id);
   for (const l of map.objects.filter((o) => o.type === 'label' || o.type === 'prop').reverse()) {
     const b = objectBounds(l, map);
     if (b && p[0] >= b.x0 - tol && p[0] <= b.x1 + tol && p[1] >= b.y0 - tol && p[1] <= b.y1 + tol) out.push(l.id);
@@ -79,9 +83,17 @@ export function hitAll(map: DelveMap, p: Point, tol: number): string[] {
     const outline = corridorOutline(path, c.width).map((ring) => ring.map((q) => [q.x, q.y] as Point));
     if (outline.some((ring) => pointInRing(p, ring))) out.push(c.id);
   }
-  const areas = [...of('terrain'), ...of('room')].filter((o) => pointInShape(o.shape, p));
+  // a click in a terrain's hole (a room inside a filled forest) doesn't hit the terrain
+  const areas = [...of('terrain'), ...of('room')].filter((o) => pointInShape(o.shape, p) && !(o.type === 'terrain' && o.holes?.some((h) => pointInRing(p, h))));
   areas.sort((a, b) => shapeArea(a.shape) - shapeArea(b.shape) || (a.type === 'terrain' ? -1 : 0) - (b.type === 'terrain' ? -1 : 0));
   out.push(...areas.map((o) => o.id));
+  // a floor picture goes before the first area bigger than it: a rug before its room, a backdrop after every room
+  for (const im of pictures.filter((o) => o.layer === 'floor').sort((a, b) => a.w * a.h - b.w * b.h)) {
+    const next = areas.find((o) => shapeArea(o.shape) > im.w * im.h);
+    const at = next ? out.indexOf(next.id) : -1;
+    if (at === -1) out.push(im.id);
+    else out.splice(at, 0, im.id);
+  }
   return out;
 }
 

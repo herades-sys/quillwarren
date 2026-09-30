@@ -14,6 +14,8 @@ export interface RenderQuery {
   background?: string;
   /** "1": apply fog of war (players' view: only what's revealed; GM view: the rest shaded). */
   fog?: string;
+  /** "full": with fog, keep the picture at the unfogged size (Delve Table page backgrounds). */
+  bounds?: string;
 }
 
 export class RenderQueryError extends Error {}
@@ -36,7 +38,7 @@ export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
   }
   const view = asView(q.view);
   const fog = q.fog === '1' ? (view === 'players' ? 'hide' : 'dim') : undefined;
-  return buildScene(m, { view, grid: q.grid !== '0', background: q.background !== '0', assets: assets.body, ...(fog ? { fog } : {}) }, style);
+  return buildScene(m, { view, grid: q.grid !== '0', background: q.background !== '0', assets: assets.body, ...(fog ? { fog } : {}), ...(q.bounds === 'full' ? { fullBounds: true } : {}) }, style);
 }
 
 export function sizeInSquares(scene: Scene): { w: number; h: number } {

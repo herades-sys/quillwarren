@@ -166,7 +166,7 @@ describe('storeys', () => {
     // the editor shows a storey picker, and deleting a storey takes it out of the group
     const page = (await app.inject({ url: `/maps/${id}` })).body;
     expect(page).toMatch(/<select id="storey-select" aria-label="Storey" title="Storeys of this place">/);
-    expect(page).toContain('>Belfry</option>');
+    expect(page).toContain('>1 · Belfry</option>'); // floor number first
     expect((await app.inject({ method: 'DELETE', url: `/api/v1/maps/${cellar.id}`, headers: auth })).statusCode).toBe(204);
     expect((await app.inject({ url: `/api/v1/maps/${id}/levels` })).json().levels).toHaveLength(2);
     const alone = (await app.inject({ url: `/maps/${await newMapId('empty')}` })).body;

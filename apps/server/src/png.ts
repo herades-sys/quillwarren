@@ -29,14 +29,38 @@ export const LABEL_FONT_FILE = FONT_FILES['im-fell-english.ttf']!;
 type ResvgClass = typeof import('@resvg/resvg-js').Resvg;
 let resvg: Promise<ResvgClass> | undefined;
 
+// Uploaded map pictures (images.ts) are drawn as <image href="/api/v1/images/<src>">.
+// resvg can't fetch, and hands over only http(s) links for us to resolve (it
+// would read any other href from its own file system), so those hrefs become
+// links under a reserved host and their bytes come from the registered sources.
+const IMAGE_HREF = /href="\/api\/v1\/images\/([0-9a-f]{64}\.(?:png|jpg|webp|gif))"/g;
+const IMAGE_HOST = 'https://images.delve.invalid/';
+const imageSources = new Set<(src: string) => Buffer | null>();
+
+/** Let PNG exports read uploaded pictures (src -> bytes, or null). Returns the undo. */
+export function addImageSource(read: (src: string) => Buffer | null): () => void {
+  imageSources.add(read);
+  return () => imageSources.delete(read);
+}
+
 export async function svgToPng(svg: string): Promise<Buffer> {
   resvg ??= import('@resvg/resvg-js').then((m) => m.Resvg);
   const Resvg = await resvg;
-  const r = new Resvg(svg, {
+  const r = new Resvg(svg.replace(IMAGE_HREF, (_m, src: string) => `href="${IMAGE_HOST}${src}"`), {
     font: { fontFiles: Object.values(FONT_FILES), loadSystemFonts: false, defaultFontFamily: 'IM FELL English' },
     shapeRendering: 2, // geometricPrecision: anti-aliased edges
     textRendering: 1, // optimizeLegibility
   });
+  for (const href of new Set(r.imagesToResolve())) {
+    const src = href.startsWith(IMAGE_HOST) ? href.slice(IMAGE_HOST.length) : '';
+    let bytes: Buffer | null = null;
+    for (const read of imageSources) if (src && (bytes = read(src))) break;
+    try {
+      if (bytes) r.resolveImage(href, bytes);
+    } catch {
+      // resvg reads PNG, JPEG and GIF only: a WebP picture is left out of the PNG (browsers still show it)
+    }
+  }
   return r.render().asPng();
 }
 
