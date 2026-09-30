@@ -91,6 +91,7 @@ function moved(o: MapObjectT, dx: number, dy: number): Record<string, unknown> |
     case 'door':
     case 'label':
     case 'prop':
+    case 'marker':
       return { at: shift(o.at) };
   }
 }

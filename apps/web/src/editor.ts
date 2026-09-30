@@ -9,6 +9,8 @@ import {
   computeFloor,
   connectOps,
   DOOR_STYLES,
+  MARKER_KINDS,
+  MARKERS,
   nextId,
   nextLabel,
   PRESETS,
@@ -45,7 +47,7 @@ import {
 } from './edit-logic.ts';
 import { objectBounds, pad } from './logic.ts';
 
-type Tool = 'select' | 'room' | 'poly' | 'corridor' | 'door' | 'cutout' | 'stairs' | 'label' | 'prop' | 'terrain' | 'reveal';
+type Tool = 'select' | 'room' | 'poly' | 'corridor' | 'door' | 'cutout' | 'stairs' | 'label' | 'prop' | 'terrain' | 'marker' | 'reveal';
 
 const PROPS = ASSETS.filter((a) => a.kind === 'prop');
 const TILES = ASSETS.filter((a) => a.kind === 'terrain');
@@ -65,6 +67,7 @@ const TOOLS: { id: Tool; name: string; key: string; hint: string }[] = [
   { id: 'label', name: 'Label', key: 'L', hint: 'Click to place text, then type it in the panel.' },
   { id: 'prop', name: 'Prop', key: 'A', hint: 'Pick a prop below, then click the map to place it (again and again). Q and E turn it.' },
   { id: 'terrain', name: 'Terrain', key: 'T', hint: 'Pick a tile below, then drag an area: water, grass, rubble…' },
+  { id: 'marker', name: 'Marker', key: 'M', hint: 'GM notes: pick ?, ! or trap below, click to pin one and type its note. Click a marker to read it, Shift-click to strike it through. Players never see them.' },
   { id: 'reveal', name: 'Reveal', key: 'G', hint: 'Fog of war: click a room or corridor to show or hide it for the players. Drag to reveal an area, Shift-drag to cover one.' },
 ];
 
@@ -104,7 +107,7 @@ function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement 
   return el;
 }
 
-export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
+export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): string | null } {
   const panel = document.getElementById('panel')!;
   const toolbox = document.getElementById('tools')!;
   const props = document.getElementById('props')!;
@@ -133,6 +136,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
     propCategory: 'furniture',
     propSearch: '',
     tile: TILES[0]?.id ?? '',
+    markerKind: 'discover' as (typeof MARKER_KINDS)[number],
   };
 
   const map = () => ctx.map();
@@ -285,6 +289,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
         ctx.handled.add(e);
         addLabel(snapPoint(p, 0.5));
         break;
+      case 'marker':
+        ctx.handled.add(e);
+        // the middle of a square, or any half square with Alt
+        addMarker(step(e) >= 1 ? [Math.floor(p[0]) + 0.5, Math.floor(p[1]) + 0.5] : snapPoint(p, 0.5));
+        break;
     }
     draw();
   }
@@ -395,6 +404,12 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
     focusField = 'text';
     setTool('select'); // one label per click of the tool; the text field takes over
     void apply([{ op: 'add', object: { id, type: 'label', text: 'Label', at } }], [id]);
+  }
+
+  function addMarker(at: Point): void {
+    const id = nextId(map(), 'm');
+    // the tool stays on for the next one; the note box opens for typing
+    void apply([{ op: 'add', object: { id, type: 'marker', kind: settings.markerKind, at, text: '' } }], [id]).then(() => ctx.openMarker?.(id));
   }
 
   function fogChange(c: FogChange): void {
@@ -653,6 +668,22 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
     if (tool === 'stairs') {
       opts.push(h('label', {}, 'Up towards ', choose([['n', 'north'], ['e', 'east'], ['s', 'south'], ['w', 'west']], settings.stairsDir, (v) => (settings.stairsDir = v))));
     }
+    if (tool === 'marker') {
+      opts.push(
+        h(
+          'div',
+          { class: 'marker-kinds', role: 'radiogroup', 'aria-label': 'Marker' },
+          ...MARKER_KINDS.map((k) =>
+            h(
+              'button',
+              { type: 'button', role: 'radio', 'aria-checked': String(k === settings.markerKind), 'aria-pressed': String(k === settings.markerKind), 'data-kind': k, onclick: () => ((settings.markerKind = k), renderTools()) },
+              h('span', { class: 'kind-dot' }, k === 'discover' ? '?' : k === 'interact' ? '!' : '☠'),
+              MARKERS[k].name,
+            ),
+          ),
+        ),
+      );
+    }
     if (tool === 'prop') opts.push(propPicker());
     if (tool === 'terrain') opts.push(tilePicker());
     if (tool === 'reveal') opts.push(...fogControls());
@@ -795,7 +826,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
     const id = o.id;
     const upd = (set: Record<string, unknown>) => void apply([{ op: 'update', id, set }]);
     const out: HTMLElement[] = [];
-    if (o.type !== 'label') out.push(field('Name', text(id, 'name', o.name)));
+    if (o.type !== 'label' && o.type !== 'marker') out.push(field('Name', text(id, 'name', o.name)));
     switch (o.type) {
       case 'room':
         out.push(field('Room number', text(id, 'label', o.label)), field('GM notes (never drawn)', text(id, 'notes', o.notes, { area: true })), ...shapeFields(o));
@@ -850,6 +881,16 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
       }
       case 'terrain':
         out.push(field('Terrain', h('select', { onchange: (e: Event) => upd({ asset: (e.target as HTMLSelectElement).value }) }, ...assetOptions(TILES, o.asset))), ...shapeFields(o));
+        break;
+      case 'marker':
+        out.push(
+          field('Kind', h('select', { onchange: (e: Event) => upd({ kind: (e.target as HTMLSelectElement).value }) }, ...MARKER_KINDS.map((k) => h('option', { value: k, selected: k === o.kind }, MARKERS[k].name)))),
+          // the note may be empty, but it is never unset
+          field('Note for the GM', h('textarea', { rows: 4, maxlength: 2000, 'data-field': 'text', onchange: (e: Event) => { const v = (e.target as HTMLTextAreaElement).value; if (v !== o.text) upd({ text: v }); } }, o.text)),
+          h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: Boolean(o.done), onchange: (e: Event) => void apply([(e.target as HTMLInputElement).checked ? { op: 'update', id, set: { done: true } } : { op: 'update', id, unset: ['done'] }]) }), ' Done (struck through)'),
+          pair(field('X', number(o.at[0], 0.5, (v) => upd({ at: [v, o.at[1]] }))), field('Y', number(o.at[1], 0.5, (v) => upd({ at: [o.at[0], v] })))),
+          h('p', { class: 'hint' }, 'Only in the GM view. Shift-click the marker on the map to strike it through.'),
+        );
         break;
     }
     return out;
@@ -943,5 +984,5 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[] } {
   renderPanel();
   setEditing(new URLSearchParams(location.search).get('edit') === '1');
   // The chat panel tells Claude what's selected ("this room").
-  return { selection: () => (editing ? [...selection] : []) };
+  return { selection: () => (editing ? [...selection] : []), tool: () => (editing ? tool : null) };
 }

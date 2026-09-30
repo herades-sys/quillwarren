@@ -4,6 +4,7 @@ import {
   corridorOutline,
   corridorPath,
   doorSegment,
+  MARKER_RADIUS,
   roomsById,
   shapeArea,
   type Bounds,
@@ -60,6 +61,8 @@ function distToSegment(p: Point, a: Point, b: Point): number {
 export function hitAll(map: DelveMap, p: Point, tol: number): string[] {
   const of = <T extends MapObject['type']>(t: T) => map.objects.filter((o): o is Extract<MapObject, { type: T }> => o.type === t);
   const out: string[] = [];
+  // GM markers sit on top of everything
+  for (const m of of('marker').reverse()) if (Math.hypot(m.at[0] - p[0], m.at[1] - p[1]) <= MARKER_RADIUS + tol) out.push(m.id);
   for (const d of of('door')) {
     const [a, b] = doorSegment(d);
     if (distToSegment(p, a, b) <= Math.max(tol, 0.3)) out.push(d.id);

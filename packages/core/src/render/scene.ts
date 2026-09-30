@@ -8,7 +8,8 @@ import type { Palette } from '../assets/svg.ts';
 import { computeFloor, floorPaths, polygonsOf } from '../geometry/floor.ts';
 import { fromPath, PRECISION, shapeBounds, shapePath, toPath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
 import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
-import type { DelveMap, Door, Point, Prop, Room, Stairs, Terrain } from '../schema.ts';
+import { MARKER_RADIUS } from '../markers.ts';
+import type { DelveMap, Door, MarkerKind, Point, Prop, Room, Stairs, Terrain } from '../schema.ts';
 import { hatchStrokes, insidePaths, outsideBand } from './hatching.ts';
 import { hashInts, hashString, rng } from './rng.ts';
 import { resolveStyle, type Style } from './style.ts';
@@ -67,7 +68,9 @@ export type Layer =
   | (LayerBase & { kind: 'text'; items: { text: string; at: Point; size: number }[]; color: string; font: string })
   | (LayerBase & { kind: 'assets'; items: AssetItem[]; palette: Palette })
   /** Polygons filled with `tint`, then with a 2×2-square tile repeated from the origin. */
-  | (LayerBase & { kind: 'pattern'; polygons: Polygon[]; tile: string; body?: string; tint: string; palette: Palette });
+  | (LayerBase & { kind: 'pattern'; polygons: Polygon[]; tile: string; body?: string; tint: string; palette: Palette })
+  /** GM markers: badges of `radius` squares, each tagged with its id so a viewer can make it clickable. */
+  | (LayerBase & { kind: 'markers'; items: { id: string; kind: MarkerKind; at: Point; done: boolean }[]; radius: number });
 
 export interface Scene {
   bounds: Bounds;
@@ -397,6 +400,9 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
       numbers.push({ text: r.label, at: [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2], size: style.labels.size });
     }
     if (numbers.length) layers.push({ name: 'room-numbers', kind: 'text', items: numbers, color: style.labels.color, font: style.labels.numberFont });
+    // GM markers on top of everything: never in the players' view
+    const markers = map.objects.flatMap((o) => (o.type === 'marker' ? [{ id: o.id, kind: o.kind, at: o.at, done: Boolean(o.done) }] : []));
+    if (markers.length) layers.push({ name: 'markers', kind: 'markers', items: markers, radius: MARKER_RADIUS });
   }
 
   return { bounds, clips, layers };

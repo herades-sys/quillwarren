@@ -30,6 +30,8 @@ export function objectBounds(o: MapObject, map: DelveMap): Bounds | null {
     }
     case 'prop':
       return propBounds(o);
+    case 'marker':
+      return { x0: o.at[0] - 0.4, y0: o.at[1] - 0.4, x1: o.at[0] + 0.4, y1: o.at[1] + 0.4 };
   }
 }
 

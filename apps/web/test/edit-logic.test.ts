@@ -74,6 +74,11 @@ describe('picking with props and terrain', () => {
     expect(hitAll(furnished, [12.5, 25.5], 0)).toEqual(['t1', 'r1']);
   });
 
+  it('puts a GM marker above the prop it sits on', () => {
+    const marked: DelveMap = { ...furnished, objects: [...furnished.objects, { id: 'm1', type: 'marker', kind: 'trap', at: [10.5, 27.5], text: 'Needle trap in the lock.' }] };
+    expect(hitAll(marked, [10.6, 27.6], 0)).toEqual(['m1', 'i1', 't1', 'r1']);
+  });
+
   it('moves on to the next hit when the selected one is clicked again', () => {
     expect(nextHit(['i1', 't1', 'r1'], 'i1')).toBe('t1');
     expect(nextHit(['i1', 't1', 'r1'], 'r1')).toBe('i1');

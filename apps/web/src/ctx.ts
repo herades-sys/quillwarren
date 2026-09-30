@@ -23,4 +23,6 @@ export interface ViewerCtx {
   onView(cb: () => void): void;
   toast(msg: string, kind?: 'error' | 'info'): void;
   setEditing(on: boolean): void;
+  /** Open a GM marker's note box (markers.ts), e.g. right after placing one. */
+  openMarker?(id: string): void;
 }

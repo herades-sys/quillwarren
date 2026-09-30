@@ -190,6 +190,30 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   @keyframes pulse { 50% { stroke-opacity: .25; fill-opacity: .05; } }
   @keyframes fade { to { stroke-opacity: 0; fill-opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .hl-focus, .hl-change { animation: none; } }
+  /* GM markers: the note box (apps/web/src/markers.ts) and the marker tool's kinds */
+  #stage.on-marker:not(.dragging) { cursor: pointer !important; }
+  .marker-box { position: fixed; z-index: 20; width: min(300px, calc(100vw - 16px)); display: grid; gap: 8px; padding: 10px 12px 10px; border-radius: 10px; border: 1px solid var(--line); border-top: 4px solid var(--kind, var(--accent)); background: var(--bar); color: var(--ink); box-shadow: 0 8px 28px rgba(0, 0, 0, .28); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+  .marker-box[hidden] { display: none; }
+  .marker-box[data-kind="discover"] { --kind: #D9961A; }
+  .marker-box[data-kind="interact"] { --kind: #2F7FD1; }
+  .marker-box[data-kind="trap"] { --kind: #C43A2F; }
+  .marker-head { display: flex; align-items: center; gap: 8px; }
+  .marker-head strong { flex: 1; font-size: 13px; }
+  .marker-icon { width: 26px; height: 26px; flex: none; }
+  .marker-close { border: 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 2px; }
+  .marker-text { margin: 0; width: 100%; min-height: 3.2em; font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; resize: vertical; white-space: pre-wrap; }
+  p.marker-text { border-color: transparent; padding: 0; }
+  .marker-box.done .marker-text { text-decoration: line-through; color: var(--muted); }
+  .marker-box.done .marker-head strong { text-decoration: line-through; }
+  .marker-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+  .marker-foot label { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); cursor: pointer; }
+  .marker-kinds { display: grid; gap: 5px; }
+  .marker-kinds button { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink); font: 13px system-ui, sans-serif; cursor: pointer; text-align: left; }
+  .marker-kinds button[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .kind-dot { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 12px; box-shadow: 0 0 0 2px #fff inset; }
+  .marker-kinds [data-kind="discover"] .kind-dot { background: #D9961A; }
+  .marker-kinds [data-kind="interact"] .kind-dot { background: #2F7FD1; }
+  .marker-kinds [data-kind="trap"] .kind-dot { background: #C43A2F; }
 </style>
 </head>
 <body>

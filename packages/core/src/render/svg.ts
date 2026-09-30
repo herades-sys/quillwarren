@@ -1,6 +1,7 @@
 // sceneToSvg: a scene (in grid squares) as a standalone SVG string. The
 // viewBox is in squares; width/height are pixels at `ppg` (pixels per grid square).
 import { recolor, type Palette } from '../assets/svg.ts';
+import { markerGlyph } from '../markers.ts';
 import type { Polygon } from '../geometry/shapes.ts';
 import type { Polyline } from '../geometry/walls.ts';
 import type { AssetItem, Layer, Scene } from './scene.ts';
@@ -116,6 +117,15 @@ function layerSvg(layer: Layer, prefix: string): string {
       const tile = layer.body ? `<path d="${d}" fill="url(#${patternId(prefix, layer.tile, layer.palette)})" fill-rule="evenodd"/>` : '';
       return g(`<path d="${d}" fill="${layer.tint}" fill-rule="evenodd"/>${tile}`);
     }
+    case 'markers':
+      return g(
+        layer.items
+          .map(
+            (m) =>
+              `<g class="marker" data-marker="${esc(m.id)}" data-kind="${m.kind}"${m.done ? ' data-done=""' : ''} transform="translate(${n(m.at[0])} ${n(m.at[1])}) scale(${n(layer.radius)})">${markerGlyph(m.kind, m.done)}</g>`,
+          )
+          .join(''),
+      );
   }
 }
 

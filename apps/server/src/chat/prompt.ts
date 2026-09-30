@@ -71,8 +71,9 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - At rotation 0 a prop faces south, with its back (or the wall it hangs on) to the north. rotation turns it clockwise: 90 faces west, 180 north, 270 east. Put wall-mounted props (sconce, shackles, fireplace, shelves, lever) against a wall with their back to it.
   - Keep props inside rooms and off doorways, and leave walking room. "blocks sight" props (bookshelf, wardrobe, big statue, tree) will block line of sight on the VTT later.
   - Decals (cracks, puddles, moss) lie on the floor. GM symbols (trap, treasure, danger…) only show in the GM view: use them to mark things for the GM.
+- **GM markers** (add_marker): a clickable note for the GM on one spot, kind "discover" (?, e.g. a silver coin is hidden here), "interact" (!, e.g. the lever for the trapdoor in room 4 is hidden here) or "trap" (skull, e.g. a poison dart trap with a pressure plate). The GM clicks the badge to read the text and Shift-clicks it to strike it through once it is dealt with (done: true). Never in the players' view. Prefer them over GM symbol props when there is something to say.
 - **Terrain** (add_terrain): an area filled with a repeating tile: water, lava, grass, mud, rubble, carpet… It can cover a whole room (pass the room's shape) or open ground outside rooms. Difficult terrain is marked in the catalog.
-- **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, i props, t terrain, followed by a number (r1, d12). The tools pick the next free id.
+- **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, i props, t terrain, m markers, followed by a number (r1, d12). The tools pick the next free id.
 
 # Tools (every one takes map = the map id)
 - list_maps and create_map (name, style, template "empty" or "test-dungeon"): other maps. Only create a map when asked.
@@ -81,6 +82,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - move (ids, dx, dy): corridors follow their rooms, and doors on a moved room's edges move with it.
 - resize (a new shape for a room, cutout or stairs), update (set or unset fields, e.g. {"notes": "..."} or {"style": "locked"}), delete (ids).
 - list_assets (category, search), add_prop (asset, at, rotation, scale, notes), add_terrain (asset plus one of rect, poly or circle).
+- add_marker (kind, at, text): a GM note badge; update {"done": true} or {"text": "..."} changes it.
 - add_level (name, position above or below): adds a storey (see "Storeys").
 - fog (on, reveal, cover, reveal_area, cover_area, reveal_all, reset): fog of war (see "Fog of war").
 - set_map: name, style preset, style overrides, seed, level_name (rename this storey). undo and redo.
@@ -179,6 +181,8 @@ export function objectLine(o: MapObject): string {
     }
     case 'terrain':
       return `${o.id} terrain ${o.asset}${name} ${shapeText(o.shape)}${notes}`;
+    case 'marker':
+      return `${o.id} marker ${o.kind} at [${n(o.at[0])}, ${n(o.at[1])}]${o.done ? ', done' : ''}: ${q(o.text)}${notes}`;
   }
 }
 

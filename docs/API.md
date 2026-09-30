@@ -82,6 +82,11 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
 - **Terrain** is `{ type: "terrain", asset, shape }`, drawn over the floor and under the grid, as a tint plus a repeating 2×2-square tile.
 - **Drawing order:** decals lie under the walls, props sit on top of walls and doors, and GM symbols come last. GM symbols appear in the GM view only.
 - **Recolouring:** every style recolours the three asset inks (`props` in the style preset).
+- **GM markers** are `{ type: "marker", kind: "discover" | "interact" | "trap", at, text, done? }`. They are notes pinned to a spot: "?" is something to discover, "!" something to interact with, and a skull a trap.
+  - They are drawn last, in the GM view only. The players' view, the players' screen and the players' 3D view never contain them, and neither do Dungeon Scrawl exports. They don't change the picture's size.
+  - In the viewer, clicking a marker opens its note in a small box, which editors can edit. Shift-click toggles `done`, which fades the badge and strikes it through, and strikes the note's text through.
+  - The editor's Marker tool (M) places them at square centres (Alt for half squares) and opens the box for typing.
+  - The SVG tags each badge `data-marker="<id>" data-kind="<kind>"`, plus `data-done` when done. Code: core `markers.ts`, web `markers.ts`.
 - **Where the art comes from:** `delve-props-design-system/assets`. `npm run assets` rebuilds `packages/core/src/assets/catalog.json` and the full `manifest.json` from the batch generators' metadata, and reports files that are listed but missing. Every SVG goes through a whitelist (`parseAssetSvg`) before it reaches a page or a PNG.
 
 ## Changes
@@ -174,6 +179,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `connect` (`from`, `to`, `width?`=2, `doors?` none/from/to/both, `door_style?`) | Auto-routed corridor that follows its rooms, with doors across its mouths |
 | `add_cutout`, `add_door`, `add_stairs`, `add_label` | Details |
 | `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
+| `add_marker` (`kind` discover/interact/trap, `at`, `text`) | A GM note badge (GM view only); `update` with `{"done": true}` strikes it through |
 | `add_level` (`name`, `position?` above/below, `current_name?`) | Adds a storey (a new map in the same group) |
 | `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, level_name) | Changes |
 | `undo`, `redo` | History |

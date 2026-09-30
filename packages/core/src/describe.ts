@@ -5,7 +5,8 @@ import { containsPoint, shapeArea, shapeBounds } from './geometry/shapes.ts';
 import { boundarySegments, collinearOverlap, doorSegment } from './geometry/walls.ts';
 import { assetInfo } from './assets/catalog.ts';
 import { fogSummary } from './fog.ts';
-import type { Corridor, Cutout, DelveMap, Door, Point, Prop, Room, Terrain } from './schema.ts';
+import { MARKERS } from './markers.ts';
+import type { Corridor, Cutout, DelveMap, Door, Marker, Point, Prop, Room, Terrain } from './schema.ts';
 
 const fmt = (n: number): string => String(Math.round(n * 100) / 100);
 
@@ -23,7 +24,8 @@ export function describeMap(map: DelveMap): string {
   const corridors = map.objects.filter((o): o is Corridor => o.type === 'corridor');
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
   const cutouts = map.objects.filter((o): o is Cutout => o.type === 'cutout');
-  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain'].includes(o.type));
+  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain', 'marker'].includes(o.type));
+  const markers = map.objects.filter((o): o is Marker => o.type === 'marker');
   const props = map.objects.filter((o): o is Prop => o.type === 'prop');
   const terrain = map.objects.filter((o): o is Terrain => o.type === 'terrain');
   const byId = roomsById(map);
@@ -125,6 +127,12 @@ export function describeMap(map: DelveMap): string {
         })
         .join('; ')}`,
     );
+  }
+  if (markers.length) {
+    lines.push('GM markers (GM view only):');
+    for (const m of markers) {
+      lines.push(`  ${MARKERS[m.kind].symbol} ${m.id} at ${fmt(m.at[0])},${fmt(m.at[1])} ${roomAt(m.at)}${m.done ? ' (done)' : ''}: ${m.text ? JSON.stringify(m.text) : '(no text)'}`);
+    }
   }
   if (others.length) {
     const counts = new Map<string, number>();

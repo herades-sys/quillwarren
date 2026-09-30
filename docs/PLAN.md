@@ -64,6 +64,8 @@ See `fixtures/test-map-4p.delve.json` for the test dungeon. The top level looks 
 | `stairs` | `shape`, `direction` | |
 | `label` | `text`, `at`, `size` | Room numbers come from the room's own `label` |
 | `prop` | `asset`, `at`, `rotation`, `scale` | Phase 7 |
+| `terrain` | `shape`, `asset` | An area filled with a repeating tile (water, grass, lava…) |
+| `marker` | `kind` (`discover`, `interact`, `trap`), `at`, `text`, `done` | GM note badges ("?", "!", skull), GM view only. Click to read, Shift-click to strike through |
 
 ### 2. Operations (the only way to change a map)
 

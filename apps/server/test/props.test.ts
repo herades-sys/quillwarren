@@ -85,6 +85,21 @@ describe('props and terrain over MCP', () => {
   });
 });
 
+describe('GM markers over MCP', () => {
+  it('pins a note, strikes it through, and keeps it out of the players view', async () => {
+    const id = await newMapId();
+    const added = await call('add_marker', { map: id, kind: 'trap', at: [10.5, 27.5], text: 'Poison dart trap with a pressure plate.' });
+    expect(added.text).toContain('Added trap marker m1 at [10.5, 27.5].');
+    expect((await call('add_marker', { map: id, kind: 'secret', at: [1, 1], text: '' })).isError).toBe(true);
+    await call('update', { map: id, id: 'm1', set: { done: true } });
+    expect((await getMap(id)).map.objects.find((o) => o.id === 'm1')).toMatchObject({ type: 'marker', kind: 'trap', done: true });
+    expect((await call('describe_map', { map: id })).text).toContain('trap m1 at 10.5,27.5 in 1 Entrance hall (done): "Poison dart trap with a pressure plate."');
+    expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg` })).body).toContain('data-marker="m1" data-kind="trap" data-done=""');
+    expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=players` })).body).not.toContain('data-marker');
+    expect(CHAT_SYSTEM_PROMPT).toContain('add_marker (kind, at, text)');
+  });
+});
+
 describe('storeys', () => {
   it('adds storeys over MCP and REST, lists them top first, and renames one', async () => {
     const id = await newMapId();

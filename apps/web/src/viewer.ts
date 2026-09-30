@@ -6,6 +6,7 @@ import { artLoader } from './art.ts';
 import { initChat } from './chat.ts';
 import { SVG_NS } from './ctx.ts';
 import { initEditor } from './editor.ts';
+import { initMarkers } from './markers.ts';
 import { ago, changedIds, countOps, easeInOut, lerpBounds, objectBounds, pad, unionBounds, zoomAt } from './logic.ts';
 
 interface Initial {
@@ -424,9 +425,31 @@ drawHighlights();
 showActivity();
 connect();
 
-let editor: { selection(): string[] } | null = null;
+let editor: { selection(): string[]; tool(): string | null } | null = null;
+// before the editor: its capture listeners must see marker clicks first
+const markers = initMarkers({
+  stage,
+  handled,
+  map: () => map,
+  view: () => view,
+  toMap,
+  toScreen: ([x, y]) => {
+    const ctm = svg?.getScreenCTM();
+    if (!ctm) return null;
+    const p = new DOMPoint(x, y).matrixTransform(ctm);
+    return { x: p.x, y: p.y };
+  },
+  squaresPerPx,
+  canEdit: initial.edit.loggedIn,
+  send,
+  toast,
+  onRender: (cb) => renderHooks.push(cb),
+  onView: (cb) => viewHooks.push(cb),
+  editorTool: () => editor?.tool() ?? null,
+});
 if (initial.edit.loggedIn) {
   editor = initEditor({
+    openMarker: (id) => markers.open(id, true),
     mapId,
     stage,
     overlay,

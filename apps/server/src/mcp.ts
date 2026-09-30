@@ -12,6 +12,7 @@ import {
   connectOps,
   describeMap,
   DOOR_STYLES,
+  MARKER_KINDS,
   fogSummary,
   nextId,
   nextLabel,
@@ -45,7 +46,8 @@ Each tool call is one undoable step. Check your work with render (returns a pict
 Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.
 Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
 A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.
-Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.`;
+Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
+GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.`;
 
 const presetNames = Object.keys(PRESETS) as [string, ...string[]];
 
@@ -297,6 +299,30 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const map = store.get(a.map).map;
         const id = a.id ?? nextId(map, 'l');
         return addObject(a.map, { id, type: 'label', text: a.text, at: a.at, ...(a.size ? { size: a.size } : {}) }, `Added label ${id} "${a.text}".`);
+      }),
+  );
+
+  server.registerTool(
+    'add_marker',
+    {
+      title: 'Add GM marker',
+      description:
+        'Pin a GM note to a spot, shown only in the GM view as a coloured badge the GM clicks to read: ' +
+        'kind "discover" (?, something to find, e.g. a hidden silver coin), "interact" (!, something to use, e.g. the lever for the trapdoor in room 4) or "trap" (skull, e.g. a poison dart trap with a pressure plate). ' +
+        'Mark one done with update {"done": true}; the GM view then strikes it through.',
+      inputSchema: {
+        map: mapId,
+        kind: z.enum(MARKER_KINDS),
+        at: point.describe('Where the badge sits [x, y], usually a square centre like [3.5, 5.5]'),
+        text: z.string().max(2000).describe('The note the GM reads'),
+        id: z.string().optional().describe('Defaults to the next m<n>'),
+      },
+    },
+    (a) =>
+      guarded(() => {
+        const map = store.get(a.map).map;
+        const id = a.id ?? nextId(map, 'm');
+        return addObject(a.map, { id, type: 'marker', kind: a.kind, at: a.at, text: a.text }, `Added ${a.kind} marker ${id} at [${a.at.join(', ')}].`);
       }),
   );
 

@@ -90,9 +90,24 @@ export const Terrain = z.strictObject({
   asset: z.string().min(1).max(100),
 });
 
-export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain'] as const;
+export const MARKER_KINDS = ['discover', 'interact', 'trap'] as const;
 
-export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain]);
+/**
+ * A GM note pinned to a spot: something to discover ("?"), something to
+ * interact with ("!") or a trap (skull). Only in the GM view; `done` strikes it through.
+ */
+export const Marker = z.strictObject({
+  type: z.literal('marker'),
+  ...common,
+  kind: z.enum(MARKER_KINDS),
+  at: Point,
+  text: z.string().max(2000),
+  done: z.boolean().optional(),
+});
+
+export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker'] as const;
+
+export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker]);
 
 /**
  * Fog of war for the players' screen. With it on, players see only the revealed
@@ -144,6 +159,8 @@ export type Stairs = z.infer<typeof Stairs>;
 export type Label = z.infer<typeof Label>;
 export type Prop = z.infer<typeof Prop>;
 export type Terrain = z.infer<typeof Terrain>;
+export type Marker = z.infer<typeof Marker>;
+export type MarkerKind = (typeof MARKER_KINDS)[number];
 export type Level = z.infer<typeof Level>;
 export type Fog = z.infer<typeof Fog>;
 export type MapObject = z.infer<typeof MapObject>;
