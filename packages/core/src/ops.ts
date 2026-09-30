@@ -15,7 +15,7 @@ export type Op =
   | { op: 'batch'; ops: Op[] };
 
 /** Top-level map fields that update_map may change. */
-export const MAP_FIELDS = ['name', 'grid', 'style', 'seed', 'level', 'fog'] as const;
+export const MAP_FIELDS = ['name', 'grid', 'style', 'seed', 'level', 'fog', 'roughness'] as const;
 
 export const OpSchema: z.ZodType<Op> = z.lazy(() =>
   z.discriminatedUnion('op', [

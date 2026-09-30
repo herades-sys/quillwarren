@@ -79,6 +79,21 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
 | `GET /assets/icons/<name>.svg`, `/assets/brand/<name>.svg`, `/favicon.svg` | Editor icons and the Delve logo |
 
 - **Props** are `{ type: "prop", asset, at, rotation?, scale? }`. `at` is the centre of the footprint. At rotation 0 a prop faces south, and rotation turns it clockwise in degrees.
+- **Prop brush:** in the editor's Prop tool, Shift + drag paints copies of the picked prop along the path.
+  - **Regular** puts one every N squares, snapped to the grid like a click.
+  - **Irregular** varies the gaps and strays up to `spread` squares to the sides, turning each copy at random and sizing it 0.8–1.2×.
+  - The dashed stroke and a ghost of every copy show while dragging. No copy lands within 0.6 × spacing of the same prop already on the map, and a stroke is one undo step.
+  - Selecting a prop on the map and switching to the Prop tool picks that prop (and its turn).
+  - Over MCP: `add_props_along` (`asset`, `path`, `spacing?`=3, `placement?`, `spread?`, `rotation?`), up to 500 per call.
+  - Core: `scatterAlong` in `scatter.ts`.
+- **Wall roughness** runs from 1 (smooth: straight walls, no hand wobble) to 10 (extremely rough: caves).
+  - Set it for the whole map (`roughness` on the map, via `update_map` or MCP `set_map roughness`, `null` resets) and override it per room, corridor or cutout (`roughness` on the object).
+  - It reshapes the floor outline itself with smooth noise, so the floor, walls, shading and hatching all follow the rough edge. Each point of the outline takes the level of the nearest object edge.
+  - Doors stay on straight wall (no roughness within about a square of a door), and bulges outward are kept smaller than dents inward.
+  - Fog of war widens what players see by the largest possible bulge.
+  - Unset keeps the style's own look.
+  - Exports to Dungeon Scrawl keep the plain outline.
+  - Core: `geometry/rough.ts`.
 - **Terrain** is `{ type: "terrain", asset, shape }`, drawn over the floor and under the grid, as a tint plus a repeating 2×2-square tile.
 - **Drawing order:** decals lie under the walls, props sit on top of walls and doors, and GM symbols come last. GM symbols appear in the GM view only.
 - **Recolouring:** every style recolours the three asset inks (`props` in the style preset).
@@ -202,10 +217,10 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `add_room` (`rect` \| `poly` \| `circle`, `name?`, `label?`, `notes?`) | The room number defaults to the next free one |
 | `connect` (`from`, `to`, `width?`=2, `doors?` none/from/to/both, `door_style?`) | Auto-routed corridor that follows its rooms, with doors across its mouths |
 | `add_cutout`, `add_door`, `add_stairs`, `add_label` | Details |
-| `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
+| `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_props_along` (`asset`, `path`, `spacing?`, `placement?`, `spread?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
 | `add_marker` (`kind` discover/interact/trap, `at`, `text`) | A GM note badge (GM view only); `update` with `{"done": true}` strikes it through |
 | `add_level` (`name`, `position?` above/below, `current_name?`) | Adds a storey (a new map in the same group) |
-| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, level_name) | Changes |
+| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, roughness 1–10, level_name) | Changes; `add_room` also takes `roughness` |
 | `undo`, `redo` | History |
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
 | `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70) | A download link for the user; `handout` links the parchment handout page |

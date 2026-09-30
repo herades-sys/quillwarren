@@ -52,6 +52,8 @@ export {
 } from './assets/catalog.ts';
 export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset } from './assets/svg.ts';
 export { objectBounds, insidePolygons, clipPolylines } from './geometry/objects.ts';
+export { roughFloor, hasRoughness, amplitudeOf, ROUGHNESS_AMPLITUDE } from './geometry/rough.ts';
+export { scatterAlong, type ScatterOptions, type Placement } from './scatter.ts';
 export { visiblePaths, visiblePolygons, visibleFloor, fogShade, revealedBounds, updateFog, fogSummary, type FogChange } from './fog.ts';
 export { levelSiblings, connectorsOf, stairLinks, type LevelEntry, type Connector, type ConnectorKind, type StairPlan, type StoreyInput } from './levels.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';

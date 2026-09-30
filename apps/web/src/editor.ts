@@ -16,6 +16,7 @@ import {
   PRESETS,
   propBounds,
   propCentre,
+  scatterAlong,
   updateFog,
   withAttachedDoors,
   type AssetInfo,
@@ -24,6 +25,7 @@ import {
   type FogChange,
   type MapObject,
   type Op,
+  type Placement,
   type Point,
   type Shape,
 } from '@delve/core';
@@ -65,7 +67,7 @@ const TOOLS: { id: Tool; name: string; key: string; hint: string }[] = [
   { id: 'cutout', name: 'Pillar', key: 'P', hint: 'Drag to cut floor away: pillars, pits.' },
   { id: 'stairs', name: 'Stairs', key: 'S', hint: 'Drag to draw stairs; the direction is the way up.' },
   { id: 'label', name: 'Label', key: 'L', hint: 'Click to place text, then type it in the panel.' },
-  { id: 'prop', name: 'Prop', key: 'A', hint: 'Pick a prop below, then click the map to place it (again and again). Q and E turn it.' },
+  { id: 'prop', name: 'Prop', key: 'A', hint: 'Pick a prop below (or select one on the map first), then click to place it, again and again. Shift-drag paints a row of them. Q and E turn it.' },
   { id: 'terrain', name: 'Terrain', key: 'T', hint: 'Pick a tile below, then drag an area: water, grass, rubble…' },
   { id: 'marker', name: 'Marker', key: 'M', hint: 'GM notes: pick ?, ! or trap below, click to pin one and type its note. Click a marker to read it, Shift-click to strike it through. Players never see them.' },
   { id: 'reveal', name: 'Reveal', key: 'G', hint: 'Fog of war: click a room or corridor to show or hide it for the players. Drag to reveal an area, Shift-drag to cover one.' },
@@ -124,6 +126,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   let hoverRaw: Point | null = null;
   let hoverStep = 1;
   let corridorFrom: string | null = null;
+  /** A Shift-drag with the Prop tool: the path so far, a seed so the preview and the result agree, and the snap step. */
+  let stroke: { path: Point[]; seed: number; step: number } | null = null;
   let focusField: string | null = null;
   const settings = {
     snap: 1,
@@ -137,6 +141,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     propSearch: '',
     tile: TILES[0]?.id ?? '',
     markerKind: 'discover' as (typeof MARKER_KINDS)[number],
+    brushSpacing: 3,
+    brushPlacement: 'regular' as 'regular' | 'irregular',
+    brushSpread: 1,
   };
 
   const map = () => ctx.map();
@@ -203,9 +210,16 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   }
 
   function setTool(t: Tool): void {
+    // a prop selected on the map becomes the one the Prop tool (and its brush) places
+    const picked = selection.length === 1 ? byId(selection[0]!) : undefined;
+    if (t === 'prop' && tool !== 'prop' && picked?.type === 'prop' && assetInfo(picked.asset)) {
+      settings.prop = picked.asset;
+      settings.propRotation = quarter(picked.rotation ?? 0);
+    }
     tool = t;
     poly = [];
     corridorFrom = null;
+    stroke = null;
     ctx.stage.dataset.tool = editing ? t : '';
     renderTools();
     draw();
@@ -258,7 +272,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         break;
       case 'prop':
         ctx.handled.add(e);
-        placeProp(p, step(e));
+        if (e.shiftKey && assetInfo(settings.prop)) {
+          // the brush: copies along the drag, placed when the button comes up
+          stroke = { path: [propAt(p, step(e))], seed: Math.floor(Math.random() * 2 ** 31), step: step(e) };
+          ctx.stage.setPointerCapture(e.pointerId);
+        } else placeProp(p, step(e));
         break;
       case 'reveal':
         start('create', { raw: p, cover: e.shiftKey });
@@ -305,6 +323,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     hover = snapPoint(p, step(e));
     hoverRaw = p;
     hoverStep = step(e);
+    if (stroke) {
+      const last = stroke.path.at(-1)!;
+      if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 0.1) stroke.path.push(p);
+      ctx.handled.add(e);
+    }
     if (drag) {
       drag.cur = drag.kind === 'move' ? p : snapPoint(p, step(e));
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 3) drag.moved = true;
@@ -314,6 +337,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   }
 
   function onUp(e: PointerEvent): void {
+    if (editing && stroke) {
+      ctx.handled.add(e);
+      return finishStroke();
+    }
     if (!editing || !drag) return;
     const d = drag;
     drag = null;
@@ -452,6 +479,43 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     void apply([{ op: 'add', object: { id, type: 'prop', asset: settings.prop, at, ...(settings.propRotation ? { rotation: settings.propRotation } : {}) } }], [id]);
   }
 
+  /**
+   * Where a brush stroke puts its copies: regular ones snap to the grid like a
+   * click would, irregular ones stay where the scatter put them. Never on top of
+   * the same prop already there.
+   */
+  function brushSpots(): Placement[] {
+    if (!stroke) return [];
+    const avoid = map().objects.flatMap((o) => (o.type === 'prop' && o.asset === settings.prop ? [o.at] : []));
+    const regular = settings.brushPlacement === 'regular';
+    const spots = scatterAlong(stroke.path, {
+      spacing: settings.brushSpacing,
+      placement: settings.brushPlacement,
+      spread: settings.brushSpread,
+      seed: stroke.seed,
+      rotation: settings.propRotation,
+      avoid,
+    });
+    const seen = new Set(avoid.map((a) => a.join(',')));
+    return spots
+      .map((s) => (regular ? { ...s, at: propAt(s.at, stroke!.step) } : s))
+      .filter((s) => !seen.has(s.at.join(',')) && Boolean(seen.add(s.at.join(','))))
+      .slice(0, 500);
+  }
+
+  function finishStroke(): void {
+    const spots = brushSpots();
+    stroke = null;
+    if (!spots.length) return draw();
+    const m = map();
+    const ops: Op[] = spots.map((s, k) => ({
+      op: 'add',
+      object: { id: nextId(m, 'i', k), type: 'prop', asset: settings.prop, at: s.at, ...(s.rotation ? { rotation: s.rotation } : {}), ...(s.scale !== 1 ? { scale: s.scale } : {}) },
+    }));
+    void apply(ops); // one stroke, one undo step
+    draw();
+  }
+
   /** Q / E: turn the prop about to be placed, or the selected props, a quarter turn. */
   function turn(by: number): void {
     const props = selection.map(byId).filter((o): o is Extract<MapObject, { type: 'prop' }> => o?.type === 'prop');
@@ -547,7 +611,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const t = TOOLS.find((x) => x.key.toLowerCase() === key);
     if (t) return setTool(t.id);
     if (e.key === 'Escape') {
-      if (drag) drag = null;
+      if (stroke) stroke = null;
+      else if (drag) drag = null;
       else if (poly.length) poly = [];
       else if (corridorFrom) corridorFrom = null;
       else if (selection.length) selection = [];
@@ -636,14 +701,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       layer.appendChild(svgEl('path', { d: `M${hover[0] - s} ${hover[1]}H${hover[0] + s}M${hover[0]} ${hover[1] - s}V${hover[1] + s}`, class: 'cross' }));
     }
     const info = tool === 'prop' ? assetInfo(settings.prop) : undefined;
-    if (info && hoverRaw && !drag) {
-      // the prop as it would land: its footprint and the art, turned
-      const at = propAt(hoverRaw, hoverStep);
-      layer.appendChild(rectEl(propBounds({ asset: info.id, at, rotation: settings.propRotation }), 'ghost'));
+    // the props as they would land: footprints and art, turned and sized; a brush stroke shows every copy
+    const ghost = (at: Point, rotation: number, scale: number) => {
+      if (!info) return;
+      layer.appendChild(rectEl(propBounds({ asset: info.id, at, rotation, scale }), 'ghost'));
       layer.appendChild(
-        svgEl('image', { href: thumb(info.id), x: -info.w / 2, y: -info.h / 2, width: info.w, height: info.h, transform: `translate(${at[0]} ${at[1]}) rotate(${settings.propRotation})`, class: 'ghost-prop' }),
+        svgEl('image', { href: thumb(info.id), x: -info.w / 2, y: -info.h / 2, width: info.w, height: info.h, transform: `translate(${at[0]} ${at[1]}) rotate(${rotation}) scale(${scale})`, class: 'ghost-prop' }),
       );
-    }
+    };
+    if (info && stroke) {
+      layer.appendChild(svgEl('polyline', { points: stroke.path.map((q) => q.join(',')).join(' '), class: 'ghost-line brush-path' }));
+      for (const s of brushSpots()) ghost(s.at, s.rotation, s.scale);
+    } else if (info && hoverRaw && !drag) ghost(propAt(hoverRaw, hoverStep), settings.propRotation, 1);
   }
 
   // ---------- panel ----------
@@ -684,7 +753,31 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         ),
       );
     }
-    if (tool === 'prop') opts.push(propPicker());
+    if (tool === 'prop') {
+      opts.push(
+        h(
+          'div',
+          { class: 'brush' },
+          h('strong', {}, 'Brush: Shift + drag'),
+          h('label', {}, 'One every ', num(settings.brushSpacing, 0.5, 0.5, (v) => (settings.brushSpacing = Math.min(20, Math.max(0.5, v)))), ' squares'),
+          h(
+            'label',
+            {},
+            'Placement ',
+            choose(
+              [
+                ['regular', 'regular'],
+                ['irregular', 'irregular (natural)'],
+              ],
+              settings.brushPlacement,
+              (v) => ((settings.brushPlacement = v), renderTools()),
+            ),
+          ),
+          ...(settings.brushPlacement === 'irregular' ? [h('label', {}, 'Spread ', num(settings.brushSpread, 0.5, 0, (v) => (settings.brushSpread = Math.min(10, Math.max(0, v)))), ' squares to the sides')] : []),
+        ),
+      );
+      opts.push(propPicker());
+    }
     if (tool === 'terrain') opts.push(tilePicker());
     if (tool === 'reveal') opts.push(...fogControls());
     toolbox.replaceChildren(
@@ -829,10 +922,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     if (o.type !== 'label' && o.type !== 'marker') out.push(field('Name', text(id, 'name', o.name)));
     switch (o.type) {
       case 'room':
-        out.push(field('Room number', text(id, 'label', o.label)), field('GM notes (never drawn)', text(id, 'notes', o.notes, { area: true })), ...shapeFields(o));
+        out.push(field('Room number', text(id, 'label', o.label)), field('GM notes (never drawn)', text(id, 'notes', o.notes, { area: true })), roughnessPick(o), ...shapeFields(o));
         break;
       case 'cutout':
-        out.push(...shapeFields(o));
+        out.push(roughnessPick(o), ...shapeFields(o));
         break;
       case 'stairs':
         out.push(
@@ -843,6 +936,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       case 'corridor':
         out.push(
           field('Width', number(o.width, 0.5, (v) => v > 0 && upd({ width: v }))),
+          roughnessPick(o),
           h('p', { class: 'hint' }, `Connects ${o.from ?? '?'} and ${o.to ?? '?'}. ${o.path ? `Custom path, ${o.path.length} points.` : 'Routed automatically; it follows its rooms.'}`),
         );
         if (o.path && o.from && o.to) out.push(h('button', { type: 'button', onclick: () => void apply([{ op: 'update', id, unset: ['path'] }]) }, 'Route automatically'));
@@ -904,6 +998,45 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     return out;
   }
 
+  /** 1 smooth … 10 caves, as words for the slider and the pickers. */
+  const roughWord = (v: number) => (v <= 1 ? 'smooth' : v <= 3 ? 'worn' : v <= 5 ? 'rough-hewn' : v <= 7 ? 'rough' : v <= 9 ? 'cave' : 'extremely rough');
+
+  /** The map's wall roughness: a slider from 1 to 10, or the style's own look. */
+  function roughnessSlider(value: number | undefined): HTMLElement {
+    const out = h('output', {}, value ? `${value} · ${roughWord(value)}` : 'style default');
+    const range = h('input', {
+      type: 'range',
+      min: 1,
+      max: 10,
+      step: 1,
+      value: value ?? 1,
+      'aria-label': 'Wall roughness, 1 smooth to 10 caves',
+      oninput: (e: Event) => {
+        const v = Number((e.target as HTMLInputElement).value);
+        out.textContent = `${v} · ${roughWord(v)}`;
+      },
+      onchange: (e: Event) => void apply([{ op: 'update_map', set: { roughness: Number((e.target as HTMLInputElement).value) } }]),
+    });
+    return h(
+      'div',
+      { class: 'field rough' },
+      h('span', {}, 'Wall roughness ', out),
+      h('div', { class: 'row' }, range, ...(value ? [h('button', { type: 'button', title: "Back to the style's own walls", onclick: () => void apply([{ op: 'update_map', unset: ['roughness'] }]) }, 'Default')] : [])),
+    );
+  }
+
+  /** A room's, corridor's or cutout's own roughness, or the map's. */
+  function roughnessPick(o: MapObject & { roughness?: number }): HTMLElement {
+    const pick = (e: Event) => {
+      const v = Number((e.target as HTMLSelectElement).value);
+      void apply([v ? { op: 'update', id: o.id, set: { roughness: v } } : { op: 'update', id: o.id, unset: ['roughness'] }]);
+    };
+    return field(
+      'Wall roughness',
+      h('select', { onchange: pick }, h('option', { value: '0', selected: !o.roughness }, "the map's"), ...Array.from({ length: 10 }, (_, i) => h('option', { value: String(i + 1), selected: o.roughness === i + 1 }, `${i + 1} · ${roughWord(i + 1)}`))),
+    );
+  }
+
   function mapFields(): HTMLElement[] {
     const m = map();
     const style = m.style ?? { preset: 'classic-hatching' };
@@ -912,6 +1045,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       h('h3', {}, 'Map'),
       field('Name', h('input', { type: 'text', value: m.name, onchange: (e: Event) => { const v = (e.target as HTMLInputElement).value.trim(); if (v && v !== m.name) setMap({ name: v }); } })),
       field('Style', h('select', { onchange: (e: Event) => setMap({ style: { ...style, preset: (e.target as HTMLSelectElement).value } }) }, ...Object.entries(PRESETS).map(([k, s]) => h('option', { value: k, selected: k === style.preset }, s.name)))),
+      roughnessSlider(m.roughness),
       pair(
         field('Seed', number(m.seed, 1, (v) => Number.isInteger(v) && setMap({ seed: v }))),
         h('button', { type: 'button', class: 'align', title: 'New random hatching and wall wobble', onclick: () => setMap({ seed: Math.floor(Math.random() * 2 ** 31) }) }, 'Reroll'),

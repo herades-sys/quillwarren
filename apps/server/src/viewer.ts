@@ -156,6 +156,13 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   .brand img { display: block; border-radius: 4px; }
   #storey-select[hidden] { display: none; }
   .picker { display: grid; gap: 8px; }
+  .brush { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+  .brush strong { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .brush input[type="number"] { width: 4.5em; }
+  .field.rough .row { align-items: center; }
+  .field.rough input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .field.rough output { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ed .brush-path { fill: none; stroke-dasharray: 2 4; }
   .picker .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; max-height: 46vh; overflow-y: auto; padding: 2px; }
   .picker-grid button { display: grid; justify-items: center; align-content: start; gap: 3px; padding: 5px 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: #F0ECE0; color: #1B1F24; font: 11px/1.2 system-ui, sans-serif; text-align: center; cursor: pointer; }
@@ -364,7 +371,7 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
   });
 
   // viewer.js: the viewer and editor; stack.js: the 3D view (with three.js, so only that page loads it).
-  for (const name of ['viewer.js', 'stack.js', 'screen.js', 'trace.js', 'trace-worker.js']) {
+  for (const name of ['viewer.js', 'stack.js', 'screen.js', 'trace.js', 'trace-worker.js', 'table.js']) {
     app.get(`/assets/${name}`, async (_req, reply) => {
       let script = scripts.get(name);
       if (script === undefined) {

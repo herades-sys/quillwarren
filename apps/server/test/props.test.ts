@@ -100,6 +100,26 @@ describe('GM markers over MCP', () => {
   });
 });
 
+describe('brush and roughness over MCP', () => {
+  it('places a row of props in one step and sets the wall roughness', async () => {
+    const id = await newMapId();
+    const row = await call('add_props_along', { map: id, asset: 'barrel', path: [[1.5, 1.5], [13.5, 1.5]], spacing: 3 });
+    expect(row.text).toMatch(/^Added 5 × Barrel \(i1–i5\) along the path\./);
+    expect((await call('add_props_along', { map: id, asset: 'barrel', path: [[1.5, 1.5], [13.5, 1.5]], spacing: 3 })).text).toContain('Nothing placed');
+    const { map, rev } = await getMap(id);
+    expect(map.objects.filter((o) => o.type === 'prop').map((o) => (o.type === 'prop' ? o.at : null))).toEqual([[1.5, 1.5], [4.5, 1.5], [7.5, 1.5], [10.5, 1.5], [13.5, 1.5]]);
+    await call('undo', { map: id });
+    expect((await getMap(id)).map.objects.some((o) => o.type === 'prop')).toBe(false); // one undo step
+    expect(rev).toBeGreaterThan(1);
+    await call('set_map', { map: id, roughness: 9 });
+    expect((await getMap(id)).map.roughness).toBe(9);
+    expect((await call('describe_map', { map: id })).text).toContain('Walls: roughness 9 of 10 (cave-like).');
+    await call('set_map', { map: id, roughness: null });
+    expect((await getMap(id)).map).not.toHaveProperty('roughness');
+    expect((await call('set_map', { map: id, roughness: 12 })).isError).toBe(true);
+  });
+});
+
 describe('parchment handout', () => {
   it('renders the players map on a sheet, as PNG and SVG, with a page to print it', async () => {
     const id = await newMapId();

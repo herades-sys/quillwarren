@@ -1,6 +1,7 @@
 // MCP endpoint (Streamable HTTP, stateless) at /mcp, protected by the API
 // token. The tools are thin wrappers over the same ops the REST API uses, so
 // every change is one undoable revision and shows up live in open viewers.
+import { randomInt } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -22,6 +23,7 @@ import {
   shapeBounds,
   updateFog,
   ValidationError,
+  scatterAlong,
   withAttachedDoors,
   type AssetInfo,
   type MapObject,
@@ -47,6 +49,7 @@ Room labels are room numbers: shown in the GM view, hidden in the players' view,
 Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
 A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.
 Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
+Wall roughness: set_map roughness 1 (smooth) to 10 (caves); rooms, corridors and cutouts can have their own (update {"roughness": 9}). Rows of props (trees along a road): add_props_along.
 GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.`;
 
 const presetNames = Object.keys(PRESETS) as [string, ...string[]];
@@ -175,6 +178,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         name: z.string().max(200).optional().describe('e.g. "Guard room"'),
         label: z.string().max(20).optional(),
         notes: z.string().max(10_000).optional().describe('GM notes (never drawn)'),
+        roughness: z.number().int().min(1).max(10).optional().describe("This room's walls, 1 smooth to 10 extremely rough (a cave); default: the map's"),
         id: z.string().optional().describe('Object id; defaults to the next r<n>'),
       },
     },
@@ -190,6 +194,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           ...(label ? { label } : {}),
           ...(a.name ? { name: a.name } : {}),
           ...(a.notes ? { notes: a.notes } : {}),
+          ...(a.roughness ? { roughness: a.roughness } : {}),
         };
         return addObject(a.map, room, `Added room ${room.id}${a.name ? ` "${a.name}"` : ''}${label ? ` (label ${label})` : ''}: ${where(shape)}.`);
       }),
@@ -387,6 +392,47 @@ export function buildMcpServer(service: MapService, base: string, version: strin
   );
 
   server.registerTool(
+    'add_props_along',
+    {
+      title: 'Add props along a path',
+      description:
+        'Place copies of one prop along a path, like painting with a brush: trees along a road, rocks along a cave wall, pillars down a hall. ' +
+        'placement "regular" puts one exactly every `spacing` squares (the first at the path\'s start); "irregular" varies the gaps, strays up to `spread` squares to either side, and turns and sizes each copy a little. ' +
+        'Spots within 0.6 × spacing of the same prop already on the map are skipped. One undo step.',
+      inputSchema: {
+        map: mapId,
+        asset: z.string().describe('Prop id, e.g. "tree-oak" (see list_assets)'),
+        path: z.array(point).min(1).max(200).describe('Points the brush passes through, [[x, y], ...]'),
+        spacing: z.number().min(0.5).max(20).optional().describe('Squares between copies (default 3)'),
+        placement: z.enum(['regular', 'irregular']).optional().describe('default regular'),
+        spread: z.number().min(0).max(10).optional().describe('Irregular: how far copies stray to the sides, in squares (default a third of the spacing)'),
+        rotation: z.number().optional().describe('Regular: the rotation of every copy'),
+      },
+    },
+    (a) =>
+      guarded(() => {
+        const info = assetInfo(a.asset);
+        if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets)`]);
+        const map = store.get(a.map).map;
+        const avoid = map.objects.flatMap((o) => (o.type === 'prop' && o.asset === a.asset ? [o.at] : []));
+        const spots = scatterAlong(a.path, {
+          spacing: a.spacing ?? 3,
+          placement: a.placement ?? 'regular',
+          ...(a.spread !== undefined ? { spread: a.spread } : {}),
+          ...(a.rotation ? { rotation: a.rotation } : {}),
+          seed: randomInt(1, 2 ** 31),
+          avoid,
+        }).slice(0, 500);
+        if (!spots.length) return text('Nothing placed: every spot along the path already has one nearby.');
+        const ops = spots.map((s, k) => ({
+          op: 'add' as const,
+          object: { id: nextId(map, 'i', k), type: 'prop' as const, asset: a.asset, at: s.at, ...(s.rotation ? { rotation: s.rotation } : {}), ...(s.scale !== 1 ? { scale: s.scale } : {}) },
+        }));
+        return change(a.map, ops, `Added ${spots.length} × ${info.name} (${ops[0]!.object.id}–${ops.at(-1)!.object.id}) along the path.`);
+      }),
+  );
+
+  server.registerTool(
     'add_terrain',
     {
       title: 'Add terrain',
@@ -515,13 +561,14 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'set_map',
     {
       title: 'Map settings',
-      description: 'Rename the map, change its style preset, style overrides (e.g. {"walls.width": 0.2}; null clears them) or its random seed.',
+      description: 'Rename the map, change its style preset, style overrides (e.g. {"walls.width": 0.2}; null clears them), its random seed, or its wall roughness (1 smooth to 10 caves; null goes back to the style).',
       inputSchema: {
         map: mapId,
         name: z.string().min(1).max(200).optional(),
         style: z.enum(presetNames).optional(),
         overrides: z.record(z.string(), z.unknown()).nullable().optional(),
         seed: z.number().int().optional().describe('Changes the hatching and wall wobble'),
+        roughness: z.number().int().min(1).max(10).nullable().optional().describe('Wall roughness for the whole map: 1 smooth, 10 extremely rough (caves); null resets'),
         level_name: z.string().min(1).max(60).optional().describe('Rename this storey (only for maps that are storeys, see add_level)'),
       },
     },
@@ -531,6 +578,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const set: Record<string, unknown> = {};
         if (a.name) set.name = a.name;
         if (a.seed !== undefined) set.seed = a.seed;
+        const unset = a.roughness === null ? ['roughness'] : [];
+        if (a.roughness) set.roughness = a.roughness;
         if (a.level_name) {
           if (!map.level) throw new ValidationError(['level_name: this map is not a storey; use add_level to make one']);
           set.level = { ...map.level, name: a.level_name };
@@ -540,8 +589,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           const overrides = a.overrides === undefined ? cur.overrides : (a.overrides ?? undefined);
           set.style = { preset: a.style ?? cur.preset, ...(overrides ? { overrides } : {}) };
         }
-        if (!Object.keys(set).length) throw new ValidationError(['nothing to change: give name, style, overrides, seed or level_name']);
-        return change(a.map, [{ op: 'update_map', set }], `Updated map settings (${Object.keys(set).join(', ')}).`);
+        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, overrides, seed, roughness or level_name']);
+        return change(a.map, [{ op: 'update_map', set, ...(unset.length ? { unset } : {}) }], `Updated map settings (${[...Object.keys(set), ...unset].join(', ')}).`);
       }),
   );
 

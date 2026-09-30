@@ -5,6 +5,7 @@ import { differenceD, EndType, FillRule, inflatePathsD, intersectD, JoinType, un
 import { propBounds } from './assets/catalog.ts';
 import { corridorOutline, corridorPath, roomsById } from './geometry/corridors.ts';
 import { floorPaths, polygonsOf } from './geometry/floor.ts';
+import { maxBulge } from './geometry/rough.ts';
 import { PRECISION, shapeBounds, shapePath, type Bounds, type Polygon } from './geometry/shapes.ts';
 import type { DelveMap, Fog, MapObject, Shape } from './schema.ts';
 import { ValidationError } from './validate.ts';
@@ -33,7 +34,7 @@ export function visiblePaths(map: DelveMap): PathsD {
   }
   for (const s of fog.show ?? []) add.push(shapePath(s));
   if (!add.length) return [];
-  const grown = inflatePathsD(unionD(add, [], FillRule.NonZero, PRECISION), MARGIN, JoinType.Round, EndType.Polygon, 2, PRECISION);
+  const grown = inflatePathsD(unionD(add, [], FillRule.NonZero, PRECISION), MARGIN + maxBulge(map), JoinType.Round, EndType.Polygon, 2, PRECISION);
   const hide = (fog.hide ?? []).map(shapePath);
   return hide.length ? differenceD(grown, hide, FillRule.NonZero, PRECISION) : grown;
 }

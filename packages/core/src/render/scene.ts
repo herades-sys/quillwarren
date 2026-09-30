@@ -6,6 +6,7 @@ import { fogShade, visiblePaths } from '../fog.ts';
 import { clipPolylines, insidePolygons } from '../geometry/objects.ts';
 import type { Palette } from '../assets/svg.ts';
 import { computeFloor, floorPaths, polygonsOf } from '../geometry/floor.ts';
+import { roughFloor } from '../geometry/rough.ts';
 import { fromPath, PRECISION, shapeBounds, shapePath, toPath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
 import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
 import { MARKER_RADIUS } from '../markers.ts';
@@ -187,8 +188,10 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const seenPaths = fogged ? visiblePaths(map) : null;
   const seenPolys = seenPaths ? polygonsOf(seenPaths) : null;
   const seen = (p: Point) => !seenPolys || insidePolygons(seenPolys, p);
-  const fullFloor = computeFloor(map);
-  const fullFlat = floorPaths(map);
+  // Wall roughness (1–10) reshapes the floor itself, so walls and hatching follow the rough edge.
+  const rough = roughFloor(map, computeFloor(map), seed);
+  const fullFloor = rough ?? computeFloor(map);
+  const fullFlat = rough ? rough.flatMap((p) => [p.outer, ...p.holes].map(toPath)) : floorPaths(map);
   const flat = seenPaths ? intersectD(fullFlat, seenPaths, FillRule.NonZero, PRECISION) : fullFlat;
   const floor = seenPaths ? polygonsOf(flat) : fullFloor;
   // Where the floor carries on unseen past the edge of what's revealed, leave
@@ -334,11 +337,13 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const cut = (lines: Polyline[]) => (seenPolys ? clipPolylines(lines, seenPolys) : lines);
   const wallLines = cut(wallPolylines(map, fullFloor, (d) => !hidden(d)));
   const shut = cut(doors.filter(hidden).map((d) => open(doorSegment(d))));
-  const walls = [...wallLines.map((l) => roughen(l, style.walls.roughness, seed)), ...shut];
+  // roughness 1 means smooth: no hand wobble either
+  const wobble = map.roughness === 1 ? 0 : style.walls.roughness;
+  const walls = [...wallLines.map((l) => roughen(l, wobble, seed)), ...shut];
   layers.push({ name: 'walls', kind: 'stroke', lines: walls, color: style.walls.color, width: style.walls.width, cap: 'square', join: 'miter' });
   // hand-drawn: a couple of thinner passes over each wall, each wobbling its own way
   for (let k = 1; k <= (style.walls.sketch ?? 0); k++) {
-    const pass = [...wallLines, ...shut].map((l) => roughen(l, style.walls.roughness * 1.8, seed + k * 7919));
+    const pass = [...wallLines, ...shut].map((l) => roughen(l, wobble * 1.8, seed + k * 7919));
     layers.push({ name: `walls-sketch-${k}`, kind: 'stroke', lines: pass, color: style.walls.color, width: style.walls.width * 0.4, cap: 'round', join: 'round', opacity: 0.6 });
   }
 

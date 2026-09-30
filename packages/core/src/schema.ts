@@ -7,6 +7,9 @@ export const FORMAT_VERSION = 1;
 
 const positive = z.number().positive('must be greater than 0');
 
+/** Wall roughness: 1 is smooth, 10 extremely rough (caves). */
+export const Roughness = z.number().int().min(1, 'from 1 (smooth) to 10 (caves)').max(10, 'from 1 (smooth) to 10 (caves)');
+
 export const Id = z
   .string()
   .regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/, 'must start with a letter and use only letters, digits, _ or - (max 64)');
@@ -29,6 +32,7 @@ export const Room = z.strictObject({
   ...common,
   shape: Shape,
   label: z.string().max(20).optional(),
+  roughness: Roughness.optional(),
 });
 
 export const Corridor = z.strictObject({
@@ -38,12 +42,14 @@ export const Corridor = z.strictObject({
   to: Id.optional(),
   width: positive,
   path: z.array(Point).min(2, 'needs at least 2 points').optional(),
+  roughness: Roughness.optional(),
 });
 
 export const Cutout = z.strictObject({
   type: z.literal('cutout'),
   ...common,
   shape: Shape,
+  roughness: Roughness.optional(),
 });
 
 export const DOOR_STYLES = ['normal', 'double', 'locked', 'secret', 'portcullis', 'archway'] as const;
@@ -146,6 +152,8 @@ export const MapDoc = z.strictObject({
   seed: z.number().int().optional(),
   level: Level.optional(),
   fog: Fog.optional(),
+  /** Wall roughness for the whole map (rooms, corridors and cutouts can set their own). Unset: the style's own look. */
+  roughness: Roughness.optional(),
   objects: z.array(MapObject),
 });
 

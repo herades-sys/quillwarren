@@ -73,6 +73,8 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - Decals (cracks, puddles, moss) lie on the floor. GM symbols (trap, treasure, danger…) only show in the GM view: use them to mark things for the GM.
 - **GM markers** (add_marker): a clickable note for the GM on one spot, kind "discover" (?, e.g. a silver coin is hidden here), "interact" (!, e.g. the lever for the trapdoor in room 4 is hidden here) or "trap" (skull, e.g. a poison dart trap with a pressure plate). The GM clicks the badge to read the text and Shift-clicks it to strike it through once it is dealt with (done: true). Never in the players' view. Prefer them over GM symbol props when there is something to say.
 - **Terrain** (add_terrain): an area filled with a repeating tile: water, lava, grass, mud, rubble, carpet… It can cover a whole room (pass the room's shape) or open ground outside rooms. Difficult terrain is marked in the catalog.
+- **Wall roughness** from 1 (smooth, cut stone) to 10 (extremely rough, caves): set_map roughness for the whole map, and a room, corridor or cutout can have its own (update {"roughness": 9}), so a natural cave can sit beside a built keep. High levels reshape the floor outline itself; doors stay on straight wall. Unset means the style's own look.
+- **Rows and scatters of props** (add_props_along): trees along a road, rocks along a cave wall, pillars down a hall. Give a path of points and a spacing in squares; placement "regular" puts one exactly every spacing squares, "irregular" varies the gaps, strays up to spread squares to the sides and turns and sizes each one a little.
 - **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, i props, t terrain, m markers, followed by a number (r1, d12). The tools pick the next free id.
 
 # Tools (every one takes map = the map id)
@@ -81,11 +83,11 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - add_room (one of rect, poly or circle; plus name, label, notes), connect (from, to, width, doors, door_style), add_door, add_cutout, add_stairs, add_label.
 - move (ids, dx, dy): corridors follow their rooms, and doors on a moved room's edges move with it.
 - resize (a new shape for a room, cutout or stairs), update (set or unset fields, e.g. {"notes": "..."} or {"style": "locked"}), delete (ids).
-- list_assets (category, search), add_prop (asset, at, rotation, scale, notes), add_terrain (asset plus one of rect, poly or circle).
+- list_assets (category, search), add_prop (asset, at, rotation, scale, notes), add_props_along (asset, path, spacing, placement, spread), add_terrain (asset plus one of rect, poly or circle).
 - add_marker (kind, at, text): a GM note badge; update {"done": true} or {"text": "..."} changes it.
 - add_level (name, position above or below): adds a storey (see "Storeys").
 - fog (on, reveal, cover, reveal_area, cover_area, reveal_all, reset): fog of war (see "Fog of war").
-- set_map: name, style preset, style overrides, seed, level_name (rename this storey). undo and redo.
+- set_map: name, style preset, style overrides, seed, roughness (1–10, null resets), level_name (rename this storey). undo and redo.
 - render: returns a picture of the map for you to look at (view gm or players; ppg is pixels per square, default 24, use 12–16 for big maps).
 - export: a download link for the user.
 - focus (ids): pans and highlights the user's view.
@@ -112,7 +114,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 # Looks and exports
 - **Styles:** ${presetList}. set_map changes the style for everyone; render's style only previews one.
 - **Style overrides** (set_map overrides, dotted keys; null clears them all):
-  - walls.width (default about 0.14 squares), walls.roughness (0 straight, 1 hand-drawn), walls.color
+  - walls.width (default about 0.14 squares), walls.roughness (the pen's wobble: 0 straight, 1 hand-drawn; for rough or cave walls use set_map roughness instead), walls.color
   - floor.color, background
   - grid.style (lines, dots or none), grid.opacity
   - hatching (null turns it off), shading (null turns it off)
@@ -158,19 +160,21 @@ function shapeText(s: Shape): string {
   return `poly [${s.poly.map((p) => `[${n(p[0])}, ${n(p[1])}]`).join(', ')}]`;
 }
 
+const rough = (o: { roughness?: number }): string => (o.roughness ? `, roughness ${o.roughness}` : '');
+
 /** One line per object with its exact geometry. */
 export function objectLine(o: MapObject): string {
   const name = 'name' in o && o.name ? ` ${q(o.name)}` : '';
   const notes = o.notes ? `; notes: ${q(o.notes.length > 120 ? `${o.notes.slice(0, 120)}…` : o.notes)}` : '';
   switch (o.type) {
     case 'room':
-      return `${o.id} room${name}${o.label ? ` label ${q(o.label)}` : ''} ${shapeText(o.shape)}${notes}`;
+      return `${o.id} room${name}${o.label ? ` label ${q(o.label)}` : ''} ${shapeText(o.shape)}${rough(o)}${notes}`;
     case 'corridor':
-      return `${o.id} corridor${name} ${o.path ? `path ${JSON.stringify(o.path)}` : `${o.from ?? '?'} → ${o.to ?? '?'}, auto-routed`}, width ${n(o.width)}${notes}`;
+      return `${o.id} corridor${name} ${o.path ? `path ${JSON.stringify(o.path)}` : `${o.from ?? '?'} → ${o.to ?? '?'}, auto-routed`}, width ${n(o.width)}${rough(o)}${notes}`;
     case 'door':
       return `${o.id} door${name} at [${n(o.at[0])}, ${n(o.at[1])}] along ${o.along}, width ${n(o.width)}, ${o.style ?? 'normal'}${o.open ? ', open' : ''}${notes}`;
     case 'cutout':
-      return `${o.id} cutout${name} ${shapeText(o.shape)}${notes}`;
+      return `${o.id} cutout${name} ${shapeText(o.shape)}${rough(o)}${notes}`;
     case 'stairs':
       return `${o.id} stairs${name} ${shapeText(o.shape)}, up ${o.direction}${notes}`;
     case 'label':

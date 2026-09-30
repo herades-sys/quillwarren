@@ -36,6 +36,7 @@ export function describeMap(map: DelveMap): string {
       `${cutouts.length} cutouts. 1 square = ${unit.size} ${unit.name}.`,
   );
 
+  if (map.roughness) lines.push(`Walls: roughness ${map.roughness} of 10${map.roughness >= 8 ? ' (cave-like)' : map.roughness === 1 ? ' (smooth)' : ''}.`);
   lines.push('Rooms:');
   for (const r of rooms) {
     const b = shapeBounds(r.shape);
@@ -47,7 +48,7 @@ export function describeMap(map: DelveMap): string {
         : 'circle' in r.shape
           ? `circle, radius ${fmt(r.shape.circle[2])} sq`
           : `polygon, ${fmt(shapeArea(r.shape))} sq²`;
-    lines.push(`  ${roomName(r)} [${r.id}]: ${size} at ${fmt(b.x0)},${fmt(b.y0)}`);
+    lines.push(`  ${roomName(r)} [${r.id}]: ${size} at ${fmt(b.x0)},${fmt(b.y0)}${r.roughness ? `, walls roughness ${r.roughness}` : ''}`);
   }
 
   // Which room or corridor areas a door's midpoint touches.
