@@ -44,6 +44,8 @@ export interface BoardHost {
   open(id: string): void;
   /** The pointer was held still: ping here (world cells). */
   ping(x: number, y: number): void;
+  /** Which picture of a Delve page to draw: the GM's (everything, fog dimmed) or the players'. */
+  backgroundView?(): 'gm' | 'players';
 }
 
 export interface Board {
@@ -217,7 +219,7 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
   let bgTexture: Texture | null = null;
   function loadBackground(reload: boolean): void {
     const serial = ++bgSerial;
-    const url = page ? backgroundUrl(page, reload ? Date.now() : 0) : null;
+    const url = page ? backgroundUrl(page, reload ? Date.now() : 0, host.backgroundView?.() ?? 'players') : null;
     // another picture: drop the old one now; the same one again: keep it until the new copy is in
     if (!reload) bgSprite.visible = false;
     drawPageFill();

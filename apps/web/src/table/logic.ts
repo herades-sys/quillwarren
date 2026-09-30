@@ -60,12 +60,17 @@ export const pageBox = (p: Pick<Page, 'origin' | 'width' | 'height'>): Box => ({
   y1: p.origin[1] + p.height,
 });
 
-/** The background picture's URL, or null for a page without one. `bust` forces a reload (the Delve map changed). */
-export function backgroundUrl(p: Page, bust = 0): string | null {
+/**
+ * The background picture's URL, or null for a page without one. `bust` forces a
+ * reload (the Delve map changed). A Delve page is drawn in the players' view with
+ * only what they've seen, or for the GM the whole map with the unseen parts dimmed
+ * and the GM's notes; both exactly in the page's frame, so they line up.
+ */
+export function backgroundUrl(p: Page, bust = 0, view: 'gm' | 'players' = 'players'): string | null {
   const bg = p.background;
   if (bg.kind === 'delve') {
-    // bounds=full: fogged parts stay in the picture (blank), so it keeps the map's size and lines up with the page
-    const q = `view=players&ppg=${p.cellPx || 70}&fog=1&grid=0&bounds=full${bust ? `&v=${bust}` : ''}`;
+    const b = pageBox(p);
+    const q = `view=${view}&ppg=${p.cellPx || 70}&fog=1&grid=0&frame=${b.x0},${b.y0},${b.x1},${b.y1}${bust ? `&v=${bust}` : ''}`;
     return `/api/v1/maps/${encodeURIComponent(bg.mapId)}/render.png?${q}`;
   }
   if (bg.kind === 'image') return bg.url;

@@ -101,3 +101,12 @@ describe('a fogged picture at full size', () => {
     expect(area(buildScene(fogged, { view: 'players', fog: 'hide', fullBounds: true }).clips.floor!)).toBeLessThan(floorArea(testMap()) / 2);
   });
 });
+
+describe('a picture in a fixed frame', () => {
+  it('draws exactly the frame it is given, in both views', () => {
+    const frame = { x0: -3, y0: -3, x1: 23, y1: 35 };
+    const fogged = withFog({ on: true, revealed: ['r1'] });
+    expect(buildScene(fogged, { view: 'gm', fog: 'dim', frame }).bounds).toEqual(frame);
+    expect(buildScene(fogged, { view: 'players', fog: 'hide', frame }).bounds).toEqual(frame);
+  });
+});

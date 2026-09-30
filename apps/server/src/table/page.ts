@@ -68,6 +68,8 @@ const CSS = `
   #page-banner { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 24px); z-index: 2; pointer-events: none; }
   #page-banner span { padding: 4px 9px; border-radius: 7px; background: color-mix(in srgb, var(--bar) 90%, transparent); border: 1px solid var(--line); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   #page-banner .players { border-color: color-mix(in srgb, var(--warn) 60%, var(--line)); }
+  #page-banner .see-as { pointer-events: auto; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--accent); background: color-mix(in srgb, var(--bar) 90%, transparent); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+  #page-banner .see-as:hover { background: var(--soft); }
   #toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); max-width: min(560px, 90%); padding: 8px 12px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 13px; z-index: 5; }
   #toast[data-kind="info"] { background: var(--accent); color: var(--accent-ink); }
 

@@ -51,6 +51,8 @@ export function startTable(initial: Initial): void {
   const page = () => (state ? (state.view.pages.find((p) => p.id === state!.view.pageId) ?? null) : null);
   const tokens = (): Token[] => (state ? withOptimistic(state.view.tokens, opt) : []);
   const gm = isGm(initial.me);
+  /** The GM can look at a Delve page as the players see it. */
+  let seeAs: 'gm' | 'players' = gm ? 'gm' : 'players';
 
   function select(ids: string[]): void {
     selection = new Set(ids);
@@ -184,6 +186,22 @@ export function startTable(initial: Initial): void {
     const p = page();
     const kids: HTMLElement[] = [];
     if (p) kids.push(Object.assign(document.createElement('span'), { textContent: p.name }));
+    if (gm && p?.background.kind === 'delve') {
+      // the GM sees the whole map (fog dimmed, room numbers, notes); one click shows it as the players do
+      const b = Object.assign(document.createElement('button'), {
+        type: 'button',
+        className: 'see-as',
+        textContent: seeAs === 'gm' ? 'GM view' : "Players' view",
+        title: seeAs === 'gm' ? "Showing the whole map, unrevealed parts dimmed. Click to see what the players see." : 'Showing what the players see. Click for the whole map.',
+      });
+      b.addEventListener('click', () => {
+        seeAs = seeAs === 'gm' ? 'players' : 'gm';
+        board?.setPage(page(), false);
+        board?.update();
+        showBanner();
+      });
+      kids.push(b);
+    }
     if (v && gm && v.playerPageId !== v.pageId) {
       const other = v.pages.find((x) => x.id === v.playerPageId);
       kids.push(Object.assign(document.createElement('span'), { className: 'players', textContent: `Players are on: ${other?.name ?? '?'}` }));
@@ -317,7 +335,8 @@ export function startTable(initial: Initial): void {
   createBoard($('stage'), {
     me,
     page,
-    tokens,
+    // looking as the players do: GM-layer tokens are left out too
+    tokens: () => (seeAs === 'players' ? tokens().filter((t) => t.layer !== 'gm') : tokens()),
     selection: () => selection,
     setSelection: select,
     activeLayer: () => ctx.layer(),
@@ -329,6 +348,7 @@ export function startTable(initial: Initial): void {
       conn.ping(p.id, x, y);
       board?.showPing(x, y, me().color);
     },
+    backgroundView: () => seeAs,
   })
     .then((b) => {
       board = b;

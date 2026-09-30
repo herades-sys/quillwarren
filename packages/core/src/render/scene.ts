@@ -39,6 +39,8 @@ export interface RenderOptions {
   fog?: 'hide' | 'dim';
   /** With fog 'hide': size the picture as if nothing were fogged (a VTT page keeps its frame as the players explore). */
   fullBounds?: boolean;
+  /** Exactly this part of the map, in squares (a tabletop page: GM and players pictures line up with it and each other). */
+  frame?: Bounds;
   /** false: no floor number in the GM view's top-left corner (the viewer shows it as a badge instead). */
   floorNumber?: boolean;
 }
@@ -264,7 +266,9 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
         y1: Math.max(...parts.map((b) => b.y1)),
       }
     : null;
-  const bounds: Bounds = content
+  const bounds: Bounds = opts.frame
+    ? { ...opts.frame }
+    : content
     ? {
         x0: Math.floor(content.x0 - reach - margin),
         y0: Math.floor(content.y0 - reach - margin),

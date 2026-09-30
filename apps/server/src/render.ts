@@ -16,6 +16,8 @@ export interface RenderQuery {
   fog?: string;
   /** "full": with fog, keep the picture at the unfogged size (Delve Table page backgrounds). */
   bounds?: string;
+  /** "x0,y0,x1,y1" in squares: draw exactly this part (Delve Table pages, so the GM and players pictures line up). */
+  frame?: string;
 }
 
 export class RenderQueryError extends Error {}
@@ -28,6 +30,17 @@ export function parsePpg(v: string | undefined): number {
   return ppg;
 }
 
+/** The frame query as bounds: four numbers, at most 1000 squares each way. */
+export function parseFrame(v: string | undefined): { x0: number; y0: number; x1: number; y1: number } | undefined {
+  if (v === undefined) return undefined;
+  const n = v.split(',').map(Number);
+  const [x0, y0, x1, y1] = n;
+  if (n.length !== 4 || n.some((x) => !Number.isFinite(x) || Math.abs(x) > 100_000) || x0 === undefined || y0 === undefined || x1 === undefined || y1 === undefined || x1 <= x0 || y1 <= y0 || x1 - x0 > 1000 || y1 - y0 > 1000) {
+    throw new RenderQueryError('frame must be x0,y0,x1,y1 in squares (at most 1000 squares each way)');
+  }
+  return { x0, y0, x1, y1 };
+}
+
 export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
   const m = q.style ? { ...map, style: { ...map.style, preset: q.style } } : map;
   let style: Style;
@@ -38,7 +51,7 @@ export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
   }
   const view = asView(q.view);
   const fog = q.fog === '1' ? (view === 'players' ? 'hide' : 'dim') : undefined;
-  return buildScene(m, { view, grid: q.grid !== '0', background: q.background !== '0', assets: assets.body, ...(fog ? { fog } : {}), ...(q.bounds === 'full' ? { fullBounds: true } : {}) }, style);
+  return buildScene(m, { view, grid: q.grid !== '0', background: q.background !== '0', assets: assets.body, ...(fog ? { fog } : {}), ...(q.bounds === 'full' ? { fullBounds: true } : {}), ...(q.frame !== undefined ? { frame: parseFrame(q.frame) } : {}) }, style);
 }
 
 export function sizeInSquares(scene: Scene): { w: number; h: number } {
