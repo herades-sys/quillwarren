@@ -1,5 +1,5 @@
 // Shared by the preview page and the map API: query -> scene -> SVG or PNG.
-import { buildScene, resolveStyle, sceneToSvg, type DelveMap, type Scene, type Style, type View } from '@delve/core';
+import { buildScene, handoutSvg, resolveStyle, sceneToSvg, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
 import { assets } from './assets.ts';
 import { svgToPng } from './png.ts';
 
@@ -59,4 +59,57 @@ export async function render(map: DelveMap, q: RenderQuery, ext: 'svg' | 'png') 
   return ext === 'svg'
     ? { type: 'image/svg+xml', name, body: svg as string | Buffer }
     : { type: 'image/png', name, body: (await svgToPng(svg)) as string | Buffer };
+}
+
+export interface HandoutQuery {
+  paper?: string;
+  orientation?: string;
+  /** "1": only what the players have seen. */
+  revealed?: string;
+  /** "1": room names on the map. */
+  names?: string;
+  /** The title; missing means the map's name, empty means none. */
+  title?: string;
+  /** "0" leaves each of these out. */
+  compass?: string;
+  scale?: string;
+  frame?: string;
+  stains?: string;
+  /** PNG pixels per inch, 50–400 (default 200, good for printing). */
+  dpi?: string;
+  /** "1": as an attachment, not shown in the browser. */
+  download?: string;
+}
+
+export function handoutOptions(q: HandoutQuery, ext: 'svg' | 'png'): HandoutOptions {
+  const paper = q.paper ?? 'a4';
+  if (!['a4', 'a3', 'letter', 'fit'].includes(paper)) throw new RenderQueryError('paper must be a4, a3, letter or fit');
+  const orientation = q.orientation ?? 'auto';
+  if (!['auto', 'portrait', 'landscape'].includes(orientation)) throw new RenderQueryError('orientation must be auto, portrait or landscape');
+  const dpi = q.dpi === undefined ? (ext === 'png' ? 200 : 96) : Number(q.dpi);
+  if (!Number.isInteger(dpi) || dpi < 50 || dpi > 400) throw new RenderQueryError('dpi must be a whole number from 50 to 400');
+  if (q.title !== undefined && q.title.length > 120) throw new RenderQueryError('title: at most 120 characters');
+  return {
+    paper: paper as HandoutOptions['paper'],
+    orientation: orientation as HandoutOptions['orientation'],
+    revealedOnly: q.revealed === '1',
+    names: q.names === '1',
+    ...(q.title !== undefined ? { title: q.title } : {}),
+    compass: q.compass !== '0',
+    scaleBar: q.scale !== '0',
+    frame: q.frame !== '0',
+    stains: q.stains !== '0',
+    dpi,
+    assets: assets.body,
+  };
+}
+
+/** The players' parchment handout as SVG or PNG, e.g. crypt_handout_a4.png. */
+export async function renderHandout(map: DelveMap, q: HandoutQuery, ext: 'svg' | 'png') {
+  const opts = handoutOptions(q, ext);
+  const h = handoutSvg(map, opts);
+  const name = `${slug(map.name)}_handout_${h.paper}${h.paper === 'fit' ? '' : h.landscape ? '-landscape' : ''}.${ext}`;
+  return ext === 'svg'
+    ? { type: 'image/svg+xml', name, body: h.svg as string | Buffer, handout: h }
+    : { type: 'image/png', name, body: (await svgToPng(h.svg)) as string | Buffer, handout: h };
 }

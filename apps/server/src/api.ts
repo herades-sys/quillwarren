@@ -23,7 +23,7 @@ import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 
 import { bearer, checkToken, readCookie, sameOrigin, SESSION_COOKIE, type Sessions } from './auth.ts';
 import { addLevel, levelsOf } from './levels.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
-import { render, RenderQueryError, type RenderQuery } from './render.ts';
+import { render, renderHandout, RenderQueryError, type HandoutQuery, type RenderQuery } from './render.ts';
 import type { MapService } from './service.ts';
 import { ConflictError, newMapId, NotFoundError, StaleError } from './store.ts';
 import { unzipEntry, zipOne, ZipError } from './zip.ts';
@@ -284,6 +284,24 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
       return fail(reply, e);
     }
   });
+
+  // The players' map on an old parchment sheet, to print or hand out.
+  for (const ext of ['png', 'svg'] as const) {
+    app.get(`/api/v1/maps/:id/handout.${ext}`, async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const q = req.query as HandoutQuery;
+      try {
+        const out = await renderHandout(store.get(id).map, q, ext);
+        return reply
+          .type(out.type)
+          .header('content-disposition', `${q.download === '1' ? 'attachment' : 'inline'}; filename="${out.name}"`)
+          .header('x-handout-size', `${Math.round(out.handout.width)}x${Math.round(out.handout.height)}pt`)
+          .send(out.body);
+      } catch (e) {
+        return fail(reply, e);
+      }
+    });
+  }
 
   for (const ext of ['png', 'svg'] as const) {
     app.get(`/api/v1/maps/:id/render.${ext}`, async (req, reply) => {

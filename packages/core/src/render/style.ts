@@ -18,8 +18,10 @@ export interface Style {
   name: string;
   background: string;
   backgroundGrid: { color: string; width: number } | null;
-  floor: { color: string };
-  walls: { color: string; width: number; roughness: number };
+  /** opacity below 1 lets the paper show through (parchment). */
+  floor: { color: string; opacity?: number };
+  /** sketch: extra thin, differently wobbled passes over each wall, as if drawn by hand. */
+  walls: { color: string; width: number; roughness: number; sketch?: number };
   shading: { color: string; width: number } | null;
   hatching: HatchStyle | null;
   shadow: { color: string; offset: [number, number]; opacity: number } | null;
@@ -30,8 +32,8 @@ export interface Style {
   labels: { font: string; numberFont: string; size: number; color: string };
   /** Props and terrain tiles: the three asset inks become these colours. */
   props: { ink: string; paper: string; shade: string };
-  /** Terrain tint: 1 = the tile's own tint, lower mixes it toward the floor colour; gray drops the hue (print). */
-  terrain: { mix: number; gray: boolean };
+  /** Terrain tint: 1 = the tile's own tint, lower mixes it toward the floor colour; gray drops the hue (print), and tone then colours the gray (sepia). */
+  terrain: { mix: number; gray: boolean; tone?: string };
   /** Fog of war: its colour, and how strongly the GM view dims fogged areas (0..1). */
   fog: { color: string; dim: number };
 }
@@ -124,6 +126,32 @@ export const PRESETS: Record<string, Style> = {
     props: { ink: '#000000', paper: '#FFFFFF', shade: '#BDBDBD' },
     terrain: { mix: 0.45, gray: true },
     fog: { color: '#FFFFFF', dim: 0.7 },
+  },
+  // Brown ink on old paper, drawn by hand: the players' handout (handout.ts) puts it on a parchment sheet.
+  parchment: {
+    name: 'Parchment',
+    background: '#E4CE9C',
+    backgroundGrid: null,
+    floor: { color: '#F3E6C4', opacity: 0.45 },
+    walls: { color: '#2E1F11', width: 0.11, roughness: 2.4, sketch: 2 },
+    shading: { color: '#B89865', width: 0.2 },
+    hatching: {
+      color: '#3B2814',
+      width: 0.75,
+      spacing: 0.32,
+      strokesPerCluster: 3,
+      length: 0.4,
+      gap: 0.09,
+      strokeWidth: 0.026,
+    },
+    shadow: null,
+    grid: { style: 'none', color: '#3B2814', width: 0.02, opacity: 0.3 },
+    doors: { fill: '#EEDDB6', stroke: '#2E1F11', strokeWidth: 0.045 },
+    stairs: { color: '#2E1F11', width: 0.035 },
+    labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#2E1F11' },
+    props: { ink: '#2E1F11', paper: '#EEDDB6', shade: '#B89A6A' },
+    terrain: { mix: 0.55, gray: true, tone: '#8C6A3C' },
+    fog: { color: '#2E1F11', dim: 0.45 },
   },
 };
 

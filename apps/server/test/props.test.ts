@@ -100,6 +100,31 @@ describe('GM markers over MCP', () => {
   });
 });
 
+describe('parchment handout', () => {
+  it('renders the players map on a sheet, as PNG and SVG, with a page to print it', async () => {
+    const id = await newMapId();
+    await call('add_marker', { map: id, kind: 'trap', at: [10.5, 27.5], text: 'Poison darts' });
+    const png = await app.inject({ url: `/api/v1/maps/${id}/handout.png?dpi=60&paper=a3&download=1` });
+    expect(png.statusCode).toBe(200);
+    expect(png.headers['content-type']).toBe('image/png');
+    expect(png.headers['content-disposition']).toMatch(/^attachment; filename="keep_handout_a3(-landscape)?\.png"$/);
+    expect(png.headers['x-handout-size']).toBe('842x1191pt');
+    expect(png.rawPayload.readUInt32BE(16)).toBe(Math.round((841.89 * 60) / 72)); // A3 at 60 dpi
+    const svg = await app.inject({ url: `/api/v1/maps/${id}/handout.svg?title=Old%20crypt&compass=0` });
+    expect(svg.body).toContain('>Old crypt</text>');
+    expect(svg.body).not.toContain('>N</text>');
+    expect(svg.body).not.toContain('Poison darts');
+    for (const bad of ['paper=b5', 'orientation=sideways', 'dpi=2000']) {
+      expect((await app.inject({ url: `/api/v1/maps/${id}/handout.png?${bad}` })).statusCode).toBe(400);
+    }
+    const page = (await app.inject({ url: `/maps/${id}/handout` })).body;
+    expect(page).toContain('<h1>Parchment handout</h1>');
+    expect(page).toContain('Print or save as PDF');
+    expect((await app.inject({ url: `/maps/${id}` })).body).toContain(`href="/maps/${id}/handout"`);
+    expect((await call('export', { map: id, format: 'handout' })).text).toContain(`/maps/${id}/handout`);
+  });
+});
+
 describe('storeys', () => {
   it('adds storeys over MCP and REST, lists them top first, and renames one', async () => {
     const id = await newMapId();

@@ -45,10 +45,10 @@ describe('server', () => {
 describe('preview page', () => {
   const app = buildApp({ version: 'test-1', started: 'now' });
 
-  it('shows all four styles inline, each with its own clip ids', async () => {
+  it('shows every style inline, each with its own clip ids', async () => {
     const body = (await app.inject({ url: '/' })).body;
-    expect(body.match(/<svg /g)).toHaveLength(4);
-    for (const p of ['classic-hatching', 'clean', 'old-school-blue', 'print']) {
+    expect(body.match(/<svg /g)).toHaveLength(5);
+    for (const p of ['classic-hatching', 'clean', 'old-school-blue', 'print', 'parchment']) {
       expect(body).toContain(`id="${p}-clip-floor"`);
       expect(body).toContain(`href="/preview/${p}.png?view=gm"`);
     }

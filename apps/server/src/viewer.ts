@@ -230,6 +230,7 @@ function page(info: AppInfo, id: string, rev: number, map: DelveMap, o: PageOpts
   <select id="style-select">${options}</select>
   <button class="btn" id="fit" title="Fit the map (F or double-click)">Fit</button>
   <a class="btn" id="view-3d" href="/maps/${encodeURIComponent(id)}/3d" title="All storeys stacked in 3D, with the stairs that connect them">3D</a>
+  <a class="btn" id="view-handout" href="/maps/${encodeURIComponent(id)}/handout" title="The players' map, hand-drawn on old parchment: print it or hand it out">Handout</a>
   <a class="btn primary" id="png-link" href="/api/v1/maps/${encodeURIComponent(id)}/render.png?view=${view}">PNG for Roll20</a>
   ${editControl}
   ${chatControl}

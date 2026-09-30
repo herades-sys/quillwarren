@@ -55,6 +55,7 @@ export { objectBounds, insidePolygons, clipPolylines } from './geometry/objects.
 export { visiblePaths, visiblePolygons, visibleFloor, fogShade, revealedBounds, updateFog, fogSummary, type FogChange } from './fog.ts';
 export { levelSiblings, connectorsOf, stairLinks, type LevelEntry, type Connector, type ConnectorKind, type StairPlan, type StoreyInput } from './levels.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
+export { handoutSvg, PAPERS, type Paper, type HandoutOptions, type Handout } from './render/handout.ts';
 export { MARKERS, MARKER_RADIUS, markerGlyph, markerAt, type MarkerInfo } from './markers.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
 

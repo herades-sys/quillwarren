@@ -587,10 +587,12 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'export',
     {
       title: 'Export link',
-      description: 'A download link for the user: PNG (default 70 px per square, Roll20\'s grid), SVG, or ds (opens in Dungeon Scrawl).',
+      description:
+        'A download link for the user: PNG (default 70 px per square, Roll20\'s grid), SVG, ds (opens in Dungeon Scrawl), ' +
+        'or handout: the players\' map drawn by hand on an old parchment sheet, to print or hand out (the link opens a page with print and download buttons).',
       inputSchema: {
         map: mapId,
-        format: z.enum(['png', 'svg', 'ds']).optional(),
+        format: z.enum(['png', 'svg', 'ds', 'handout']).optional(),
         view: z.enum(['gm', 'players']).optional().describe('default players'),
         style: z.enum(presetNames).optional(),
         ppg: z.number().int().min(10).max(300).optional(),
@@ -602,6 +604,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         store.get(a.map);
         const view = a.view ?? 'players';
         if (a.format === 'ds') return text(`${base}/api/v1/maps/${encodeURIComponent(a.map)}/export.ds?view=${view}`);
+        if (a.format === 'handout') return text(`${base}/maps/${encodeURIComponent(a.map)}/handout`);
         const q = new URLSearchParams({ view, ...(a.style ? { style: a.style } : {}), ...(a.ppg ? { ppg: String(a.ppg) } : {}) });
         return text(`${base}/api/v1/maps/${encodeURIComponent(a.map)}/render.${a.format ?? 'png'}?${q}`);
       }),

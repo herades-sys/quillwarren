@@ -112,7 +112,31 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
 | `/maps/:id/describe` | | Plain text: rooms, sizes, connections, doors |
 | `/maps/:id/export.ds` | `view` (`gm` or `players`) | A Dungeon Scrawl save file, e.g. `crypt.ds` or `crypt_players.ds`. Open it in Dungeon Scrawl with File → Open save file |
 
-The players' view hides room numbers and draws secret doors as solid wall. Styles are `classic-hatching`, `clean`, `old-school-blue` and `print`.
+The players' view hides room numbers and draws secret doors as solid wall. Styles are `classic-hatching`, `clean`, `old-school-blue`, `print` and `parchment`. Parchment is brown ink on old paper, with sketched walls; the handout below puts it on a whole parchment sheet.
+
+### Parchment handout (to print or hand out)
+
+- **What it is:** the players' view of the map, drawn in the parchment style on an aged sheet.
+  - **The map:** no room numbers, secret doors shut, and no GM markers or GM symbols. It shows the whole map, unless "only what the players have seen" is on.
+  - **The sheet:** paper texture and stains, a torn and burnt edge, and a hand-ruled frame.
+  - **Extras:** a title with a flourish, a compass rose and a scale bar in the map's own unit.
+- **Page:** `/maps/:id/handout`, with a "Handout" button in the viewer and "Parchment handout" on the start page.
+  - It has a live preview on a table and the options.
+  - Print or save as PDF: the 200 dpi PNG goes on a page of the right paper size.
+  - Downloads: PNG at 200 or 300 dpi, and SVG.
+- **Images:** `GET /api/v1/maps/:id/handout.png` and `handout.svg`. The query parameters are:
+  - `paper`: `a4` (the default), `a3`, `letter`, or `fit` (the sheet is sized to the map).
+  - `orientation`: `auto` (whichever way round draws the map bigger), `portrait` or `landscape`.
+  - `title`: missing means the map's name; empty means no title.
+  - `compass=0`, `scale=0`, `frame=0`, `stains=0` leave each of those out.
+  - `names=1` writes the room names on the map.
+  - `revealed=1` draws only what the players have seen.
+  - `dpi`: 50–400; PNG defaults to 200, SVG to 96.
+  - `download=1` sends the file as an attachment.
+- **Response:** the header `x-handout-size: <w>x<h>pt` gives the sheet size, and the PNG corners outside the torn edge are transparent.
+- **Big maps:** past 1500 squares of wall (a city), the hatching is left out. It would take seconds and only look busy.
+- **Code:** core `render/handout.ts`, server `handout-page.ts`.
+- **Don't use `feDisplacementMap`** in anything resvg renders. It panics on uneven region rounding (e.g. A3 at 60 dpi), and the panic aborts the whole server.
 
 ### Dungeon Scrawl `.ds`
 
@@ -184,7 +208,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, level_name) | Changes |
 | `undo`, `redo` | History |
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
-| `export` (`format?` png/svg/ds, `view?`=players, `ppg?`=70) | A download link for the user |
+| `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70) | A download link for the user; `handout` links the parchment handout page |
 | `focus` (`ids`) | Pans and highlights every open viewer |
 | `apply_ops` | Raw ops, one undoable step |
 

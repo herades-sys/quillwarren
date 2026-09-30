@@ -11,6 +11,7 @@ import { registerLogin, type EditorAuth } from './login.ts';
 import { registerMcp } from './mcp.ts';
 import { registerPreview } from './preview.ts';
 import { registerTracePage } from './trace-page.ts';
+import { registerHandoutPage } from './handout-page.ts';
 import { registerStack } from './stack.ts';
 import { MapService } from './service.ts';
 import { MapStore } from './store.ts';
@@ -83,6 +84,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerStack(scoped, info, store);
     registerPreview(scoped, info, store, auth);
     registerTracePage(scoped, info, auth);
+    registerHandoutPage(scoped, store);
   });
   return app;
 }

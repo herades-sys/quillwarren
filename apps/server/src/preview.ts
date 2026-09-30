@@ -68,6 +68,7 @@ function savedMaps(store: MapStore, loggedIn: boolean): string {
     <a class="button" href="${base}/render.png?view=players">Roll20 PNG · players</a>
     <a class="button" href="${base}/render.png">PNG · GM</a> <a class="button" href="${base}/render.svg">SVG</a>
     <a class="button" href="${base}/export.ds" title="Open this map in Dungeon Scrawl">Dungeon Scrawl</a>
+    <a class="button" href="/maps/${encodeURIComponent(m.id)}/handout" title="The players' map on old parchment, to print or hand out">Parchment handout</a>
     <a class="button" href="${base}/describe">Text</a>${del}</td>
 </tr>`;
     })

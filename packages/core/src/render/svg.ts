@@ -9,6 +9,8 @@ import type { AssetItem, Layer, Scene } from './scene.ts';
 export interface SvgOptions {
   /** Pixels per grid square. Roll20's default grid is 70. */
   ppg?: number;
+  /** Place the map in a box of a larger SVG (in its units) instead of sizing it in pixels: the handout sheet. */
+  frame?: { x: number; y: number; width: number; height: number };
   /** Prefix for element ids, so several maps can sit inline on one HTML page. */
   idPrefix?: string;
 }
@@ -154,8 +156,10 @@ export function sceneToSvg(scene: Scene, opts: SvgOptions = {}): string {
         `<clipPath id="${esc(prefix)}clip-${esc(id)}"><path d="${polygonsD(polys)}" clip-rule="evenodd"/></clipPath>`,
     )
     .join('');
+  const f = opts.frame;
+  const size = f ? `x="${n(f.x)}" y="${n(f.y)}" width="${n(f.width)}" height="${n(f.height)}"` : `width="${Math.round(w * ppg)}" height="${Math.round(h * ppg)}"`;
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w * ppg)}" height="${Math.round(h * ppg)}" ` +
+    `<svg xmlns="http://www.w3.org/2000/svg" ${size} ` +
     `viewBox="${n(x0)} ${n(y0)} ${n(w)} ${n(h)}">` +
     `<defs>${clips}${patternDefs(scene, prefix)}</defs>` +
     scene.layers.map((l) => layerSvg(l, prefix)).join('') +

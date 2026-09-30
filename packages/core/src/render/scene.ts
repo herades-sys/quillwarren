@@ -144,7 +144,8 @@ export function terrainTint(tint: string | undefined, style: Style): string {
   let rgb = hex(tint ?? '#CCCCCC');
   if (style.terrain.gray) {
     const l = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-    rgb = [l, l, l];
+    // a tone colours the gray: light tiles stay light, dark ones take on the tone
+    rgb = style.terrain.tone ? hex(style.terrain.tone).map((t) => t * (0.45 + (0.75 * l) / 255)) as [number, number, number] : [l, l, l];
   }
   const floor = hex(style.floor.color);
   const k = style.terrain.mix;
@@ -282,7 +283,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     layers.push({ name: 'shadow', kind: 'fill', polygons: shifted, color: style.shadow.color, opacity: style.shadow.opacity });
   }
 
-  layers.push({ name: 'floor', kind: 'fill', polygons: floor, color: style.floor.color });
+  layers.push({ name: 'floor', kind: 'fill', polygons: floor, color: style.floor.color, ...(style.floor.opacity !== undefined ? { opacity: style.floor.opacity } : {}) });
 
   // Terrain goes over the floor (and over open ground outside it), under the grid.
   for (const { t, polygons } of terrain) {
@@ -331,9 +332,15 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
   const hidden = (d: Door) => view === 'players' && d.style === 'secret';
   const cut = (lines: Polyline[]) => (seenPolys ? clipPolylines(lines, seenPolys) : lines);
-  const walls = cut(wallPolylines(map, fullFloor, (d) => !hidden(d))).map((l) => roughen(l, style.walls.roughness, seed));
-  walls.push(...cut(doors.filter(hidden).map((d) => open(doorSegment(d)))));
+  const wallLines = cut(wallPolylines(map, fullFloor, (d) => !hidden(d)));
+  const shut = cut(doors.filter(hidden).map((d) => open(doorSegment(d))));
+  const walls = [...wallLines.map((l) => roughen(l, style.walls.roughness, seed)), ...shut];
   layers.push({ name: 'walls', kind: 'stroke', lines: walls, color: style.walls.color, width: style.walls.width, cap: 'square', join: 'miter' });
+  // hand-drawn: a couple of thinner passes over each wall, each wobbling its own way
+  for (let k = 1; k <= (style.walls.sketch ?? 0); k++) {
+    const pass = [...wallLines, ...shut].map((l) => roughen(l, style.walls.roughness * 1.8, seed + k * 7919));
+    layers.push({ name: `walls-sketch-${k}`, kind: 'stroke', lines: pass, color: style.walls.color, width: style.walls.width * 0.4, cap: 'round', join: 'round', opacity: 0.6 });
+  }
 
   // Doors
   const leaves: Polygon[] = [];
