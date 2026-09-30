@@ -103,8 +103,8 @@ export function loginPage(o: { next: string; error?: string; name?: string }): s
 <form method="post" action="/login"><input type="hidden" name="next" value="${esc(o.next)}">
 <label>Name <input type="text" name="name" value="${esc(o.name ?? '')}" autocomplete="username" autocapitalize="none" spellcheck="false" required${o.name ? '' : ' autofocus'}></label>
 <label>Password <input type="password" name="password" autocomplete="current-password" required${o.name ? ' autofocus' : ''}></label>
-<label>Code from your authenticator app <input type="text" class="code" name="code" inputmode="numeric" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required maxlength="24"></label>
-<p class="hint">Lost your phone? Enter one of your recovery codes instead.</p>
+<label>Code from your authenticator app <input type="text" class="code" name="code" inputmode="numeric" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="24"></label>
+<p class="hint">Lost your phone? Enter one of your recovery codes instead. Leave it empty if your account has no authenticator.</p>
 <label class="check"><input type="checkbox" name="remember" value="1"> Keep me logged in on this device</label>
 <button class="primary" type="submit">Log in</button></form></div></main>`,
   );
@@ -151,26 +151,36 @@ ${passwordFields(Boolean(o.name))}
   );
 }
 
-export function setupPasswordPage(o: { token: string; name: string; reset: boolean; error?: string }): string {
+export function setupPasswordPage(o: { token: string; name: string; reset: boolean; passwordOnly?: boolean; error?: string }): string {
+  const next = o.passwordOnly
+    ? `${o.reset ? 'Choose a new password.' : 'Choose a password.'} Your account logs in with name and password only, so make it long: anyone who knows it can log in as you.`
+    : o.reset
+      ? 'Choose a new password, then set up your authenticator app again.'
+      : 'Choose a password, then set up an authenticator app on your phone.';
   return shell(
     'Set up your account',
     `<main class="page narrow"><div class="card">
 <h1>${o.reset ? 'Set up your login again' : 'Welcome to Delve'}</h1>
-<p>Your account name is <strong>${esc(o.name)}</strong>. ${o.reset ? 'Choose a new password, then set up your authenticator app again.' : 'Choose a password, then set up an authenticator app on your phone.'}</p>
+<p>Your account name is <strong>${esc(o.name)}</strong>. ${next}</p>
 ${errorLine(o.error)}
 <form method="post" action="/account/setup"><input type="hidden" name="token" value="${esc(o.token)}"><input type="hidden" name="step" value="password">
 <input type="text" name="username" value="${esc(o.name)}" autocomplete="username" hidden>
 ${passwordFields(true)}
-<button class="primary" type="submit">Next: authenticator app</button></form></div></main>`,
+${o.passwordOnly ? '<label class="check"><input type="checkbox" name="remember" value="1"> Keep me logged in on this device</label>\n<button class="primary" type="submit">Save password and log in</button>' : '<button class="primary" type="submit">Next: authenticator app</button>'}</form></div></main>`,
   );
 }
 
-export function setupCodePage(o: { token: string; name: string; qr: string; secret: string; error?: string; authenticatorOnly: boolean }): string {
+export function setupCodePage(o: { token: string; name: string; qr: string; secret: string; error?: string; authenticatorOnly: boolean; turningOn?: boolean }): string {
+  const about = o.turningOn
+    ? '. Once it is confirmed, you log in with your password and a code from the app.'
+    : o.authenticatorOnly
+      ? '. Your old authenticator keeps working until this one is confirmed.'
+      : '.';
   return shell(
     'Set up your authenticator',
     `<main class="page narrow"><div class="card">
 <h1>Set up your authenticator</h1>
-<p>Account <strong>${esc(o.name)}</strong>${o.authenticatorOnly ? '. Your old authenticator keeps working until this one is confirmed.' : '.'}</p>
+<p>Account <strong>${esc(o.name)}</strong>${about}</p>
 <ol>
 <li>Open an authenticator app on your phone, for example Google Authenticator, Microsoft Authenticator, Aegis or 2FAS.</li>
 <li>Add an account and scan this code.</li>
@@ -187,7 +197,9 @@ ${o.authenticatorOnly ? '' : '<label class="check"><input type="checkbox" name="
   );
 }
 
-export function recoveryCodesPage(o: { codes: string[]; next: string; first: boolean }): string {
+/** `replaced`: there were codes before, which stop working (default: when it isn't the first setup). */
+export function recoveryCodesPage(o: { codes: string[]; next: string; first: boolean; replaced?: boolean }): string {
+  const replaced = o.replaced ?? !o.first;
   const text = o.codes.join('\n');
   const file = `data:text/plain;charset=utf-8,${encodeURIComponent(`Delve recovery codes. Each one works once.\n\n${text}\n`)}`;
   return shell(
@@ -196,7 +208,7 @@ export function recoveryCodesPage(o: { codes: string[]; next: string; first: boo
 <h1>Your recovery codes</h1>
 ${o.first ? '<p class="notice" role="status">Your account is ready and you are logged in.</p>' : ''}
 <p>If you lose your phone, each of these codes lets you log in once in place of a code from the app. Save them somewhere safe now, for example in a password manager or on paper.</p>
-<p><strong>Delve shows them only this once.</strong>${o.first ? '' : ' Your old recovery codes no longer work.'}</p>
+<p><strong>Delve shows them only this once.</strong>${replaced ? ' Your old recovery codes no longer work.' : ''}</p>
 <pre class="codes" id="codes">${esc(text)}</pre>
 <p class="row"><button type="button" id="copy">Copy</button><a class="button" href="${esc(file)}" download="delve-recovery-codes.txt">Download as a text file</a></p>
 <p><a class="button primary" href="${esc(o.next)}">I saved them, continue</a></p></div></main>
@@ -229,12 +241,19 @@ const topBar = (links: string): string =>
 export function accountPage(o: { user: User; session: Session; sessions: Session[]; notice?: string; error?: string }): string {
   const u = o.user;
   const admin = u.role === 'admin' ? '<a class="button" href="/admin">Admin</a>' : '';
+  const facts = u.passwordOnly ? 'password only, no authenticator' : `${u.recoveryLeft} recovery code${u.recoveryLeft === 1 ? '' : 's'} left`;
+  const turnOn = `<div class="card"><h2>Authenticator app</h2>
+<p>Your account logs in with name and password only. With an authenticator app on your phone, a stolen password alone is no longer enough.</p>
+<form method="post" action="/account"><input type="hidden" name="action" value="authenticator">
+<input type="text" name="username" value="${esc(u.name)}" autocomplete="username" hidden>
+<label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+<button type="submit">Set up an authenticator</button></form></div>`;
   return shell(
     'Your account',
     `<main class="page">
 ${topBar(`<a class="button" href="/">Maps</a>${admin}`)}
 <div class="card"><h2>${esc(u.name)}</h2>
-<p class="muted">${u.role === 'admin' ? 'Admin' : 'GM'} · last login ${esc(when(u.lastLogin))} · ${u.recoveryLeft} recovery code${u.recoveryLeft === 1 ? '' : 's'} left</p>
+<p class="muted">${u.role === 'admin' ? 'Admin' : 'GM'} · last login ${esc(when(u.lastLogin))} · ${facts}</p>
 ${noticeLine(o.notice)}${o.error ? noticeLine(o.error, true) : ''}</div>
 <div class="grid2">
 <div class="card"><h2>Change password</h2>
@@ -243,10 +262,12 @@ ${noticeLine(o.notice)}${o.error ? noticeLine(o.error, true) : ''}</div>
 <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
 <label>New password <input type="password" name="password" autocomplete="new-password" minlength="${MIN_PASSWORD}" required></label>
 <label>New password again <input type="password" name="password2" autocomplete="new-password" minlength="${MIN_PASSWORD}" required></label>
-<label>Code from your authenticator app <input type="text" class="code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="24"></label>
-<p class="hint">Your other devices are logged out afterwards.</p>
+${u.passwordOnly ? '' : '<label>Code from your authenticator app <input type="text" class="code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="24"></label>\n'}<p class="hint">Your other devices are logged out afterwards.</p>
 <button class="primary" type="submit">Change password</button></form></div>
-<div class="card"><h2>Recovery codes</h2>
+${
+  u.passwordOnly
+    ? turnOn
+    : `<div class="card"><h2>Recovery codes</h2>
 <p>Make 10 new codes. The old ones stop working.</p>
 <form method="post" action="/account"><input type="hidden" name="action" value="recovery">
 <label>Code from your authenticator app <input type="text" class="code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="24"></label>
@@ -257,7 +278,8 @@ ${noticeLine(o.notice)}${o.error ? noticeLine(o.error, true) : ''}</div>
 <input type="text" name="username" value="${esc(u.name)}" autocomplete="username" hidden>
 <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
 <label>Code from your authenticator app, or a recovery code <input type="text" class="code" name="code" autocomplete="one-time-code" required maxlength="24"></label>
-<button type="submit">Set up a new authenticator</button></form></div>
+<button type="submit">Set up a new authenticator</button></form></div>`
+}
 </div>
 <div class="card"><h2>Where you are logged in</h2>
 ${sessionRows(o.sessions, o.session.id, '/account', false)}
@@ -284,12 +306,14 @@ function accountRows(users: User[], me: User, now: number): string {
       const actions = self
         ? '<a class="button small" href="/account">Your account</a>'
         : [
-            `<form class="inline" method="post" action="/admin">${hidden}<input type="hidden" name="action" value="role"><input type="hidden" name="role" value="${other}"><button class="small" type="submit">Make ${other === 'admin' ? 'admin' : 'GM'}</button></form>`,
+            u.passwordOnly
+              ? `<form class="inline" method="post" action="/admin" data-confirm="Require an authenticator app for ${esc(u.name)}? Their login is reset: they are logged out and set up a new password and the app with the new setup link.">${hidden}<input type="hidden" name="action" value="require-authenticator"><button class="small" type="submit">Require authenticator</button></form>`
+              : `<form class="inline" method="post" action="/admin">${hidden}<input type="hidden" name="action" value="role"><input type="hidden" name="role" value="${other}"><button class="small" type="submit">Make ${other === 'admin' ? 'admin' : 'GM'}</button></form>`,
             `<form class="inline" method="post" action="/admin"${u.active ? ` data-confirm="Reset the login of ${esc(u.name)}? They are logged out and can only log in again with the new setup link."` : ''}>${hidden}<input type="hidden" name="action" value="link"><button class="small" type="submit">${u.active ? 'Reset login' : 'New setup link'}</button></form>`,
             `<form class="inline" method="post" action="/admin">${hidden}<input type="hidden" name="action" value="end-user-sessions"><button class="small" type="submit">Log out everywhere</button></form>`,
             `<form class="inline" method="post" action="/admin" data-confirm="Remove the account ${esc(u.name)}?">${hidden}<input type="hidden" name="action" value="remove"><button class="small danger" type="submit">Remove</button></form>`,
           ].join('');
-      return `<tr><td><strong>${esc(u.name)}</strong>${self ? ' <span class="tag ok">you</span>' : ''}</td><td>${u.role === 'admin' ? 'Admin' : 'GM'}</td><td>${status(u, now)}</td><td>${esc(when(u.lastLogin))}</td><td class="actions">${actions}</td></tr>`;
+      return `<tr><td><strong>${esc(u.name)}</strong>${self ? ' <span class="tag ok">you</span>' : ''}</td><td>${u.role === 'admin' ? 'Admin' : 'GM'}${u.passwordOnly ? ' <span class="tag">password only</span>' : ''}</td><td>${status(u, now)}</td><td>${esc(when(u.lastLogin))}</td><td class="actions">${actions}</td></tr>`;
     })
     .join('');
 }
@@ -299,12 +323,13 @@ export interface NewLink {
   url: string;
   expires: number;
   reset: boolean;
+  passwordOnly?: boolean;
 }
 
 export function adminPage(o: { me: User; session: Session; users: User[]; sessions: Session[]; now: number; newLink?: NewLink; notice?: string; error?: string }): string {
   const link = o.newLink
     ? `<div class="card link-box"><h2>Setup link for ${esc(o.newLink.name)}</h2>
-<p>Send this link to ${esc(o.newLink.name)}, for example in a private message. It works once, until ${esc(when(o.newLink.expires))}. With it they choose their own password and set up their authenticator app.${o.newLink.reset ? ' Their old login no longer works.' : ''}</p>
+<p>Send this link to ${esc(o.newLink.name)}, for example in a private message. It works once, until ${esc(when(o.newLink.expires))}. With it they choose their own password${o.newLink.passwordOnly ? '' : ' and set up their authenticator app'}.${o.newLink.reset ? ' Their old login no longer works.' : ''}</p>
 <input type="text" readonly value="${esc(o.newLink.url)}" onfocus="this.select()" aria-label="Setup link">
 <p class="row"><button type="button" class="primary" id="copy-link">Copy link</button><span class="hint">Delve shows this link only now. If it gets lost, make a new one.</span></p>
 <script>document.getElementById('copy-link').addEventListener('click', async (e) => { try { await navigator.clipboard.writeText(${JSON.stringify(o.newLink.url).replace(/</g, '\\u003c')}); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Select the link and copy it'; } });</script></div>`
@@ -322,8 +347,9 @@ ${link}
 <form method="post" action="/admin" class="row"><input type="hidden" name="action" value="create">
 <label>Name <input type="text" name="name" maxlength="32" required autocomplete="off"></label>
 <label>Role <select name="role"><option value="gm" selected>GM</option><option value="admin">Admin</option></select></label>
+<label class="check" style="align-self:end"><input type="checkbox" name="password_only" value="1"> Password only (GMs, no authenticator app)</label>
 <button class="primary" type="submit" style="align-self:end">Add account</button></form>
-<p class="hint">Adding an account makes a setup link that is valid for ${LINK_MS / 3_600_000} hours.</p></div>
+<p class="hint">Adding an account makes a setup link that is valid for ${LINK_MS / 3_600_000} hours. A password-only account is less safe: anyone who learns its password can log in, from anywhere. Admin accounts always need the app.</p></div>
 <div class="card"><h2>Sessions</h2>
 ${sessionRows(o.sessions, o.session.id, '/admin', true)}
 ${o.sessions.length > 1 ? `<form method="post" action="/admin" data-confirm="Log out everyone except you?"><input type="hidden" name="action" value="end-all"><p><button type="submit">Log out everyone except me</button></p></form>` : ''}

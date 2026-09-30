@@ -292,4 +292,93 @@ describe('account store', () => {
     expect(s.legacyOff()).toBe(true);
     expect(() => s.startBootstrap('Bo', 'a long enough password', T0)).toThrow(/exists already/);
   });
+
+  describe('password-only GM accounts', () => {
+    const PW = 'hive password, long enough';
+
+    it('are GMs only, set up by the password alone, and log in without a code', () => {
+      const s = open();
+      expect(() => s.createUser('Boss', 'admin', T0, { passwordOnly: true })).toThrow(/always use an authenticator/);
+      const hive = s.createUser('Hive', 'gm', T0, { passwordOnly: true });
+      expect(hive.passwordOnly).toBe(true);
+      expect(hive.active).toBe(false);
+      const token = s.createLink(hive.id, 'new', T0);
+      expect(s.link(token, T0)!.passwordOnly).toBe(true);
+      // the authenticator step can't be taken instead
+      s.chooseLinkPassword(token, PW, T0);
+      const secret = s.link(token, T0)!.secret;
+      expect(() => s.completeLink(token, totp(base32Decode(secret), T0), T0)).toThrow(/password only/);
+      const user = s.completePasswordLink(token, PW, T0);
+      expect(user.active).toBe(true);
+      expect(user.recoveryLeft).toBe(0);
+      expect(s.link(token, T0)).toBeNull();
+
+      expect(s.verifyLogin('hive', PW, '', T0)?.factor).toBe('password');
+      expect(s.verifyLogin('hive', PW, undefined, T0)?.factor).toBe('password');
+      expect(s.verifyLogin('hive', PW, '123456', T0)?.factor).toBe('password'); // a code is ignored
+      expect(s.verifyLogin('hive', 'not the password', '', T0)).toBeNull();
+      expect(s.useSecondFactor(hive.id, totp(base32Decode(secret), T0), T0)).toBeNull();
+    });
+
+    it('never become admins, and other accounts still need their code', () => {
+      const s = open();
+      activate(s, 'Ana', 'admin', T0);
+      const hive = s.createUser('Hive', 'gm', T0, { passwordOnly: true });
+      s.completePasswordLink(s.createLink(hive.id, 'new', T0), PW, T0);
+      expect(() => s.setRole(hive.id, 'admin')).toThrow(/can't be an admin/);
+      expect(s.user(hive.id)!.role).toBe('gm');
+      expect(s.verifyLogin('Ana', 'a long enough password', '', T0)).toBeNull();
+      // a two-factor account's link can't be finished by the password alone
+      const gm = s.createUser('Gm', 'gm', T0);
+      expect(() => s.completePasswordLink(s.createLink(gm.id, 'new', T0), PW, T0)).toThrow(/needs an authenticator/);
+      expect(s.user(gm.id)!.active).toBe(false);
+    });
+
+    it('keep their mode on a reset, and turning the authenticator on brings recovery codes', () => {
+      const s = open();
+      const hive = s.createUser('Hive', 'gm', T0, { passwordOnly: true });
+      s.completePasswordLink(s.createLink(hive.id, 'new', T0), PW, T0);
+      const session = s.createSession(hive.id, {}, T0);
+
+      const reset = s.resetLogin(hive.id, T0);
+      expect(s.sessionUser(session, T0)).toBeNull();
+      expect(s.verifyLogin('Hive', PW, '', T0)).toBeNull();
+      expect(s.link(reset, T0)!.passwordOnly).toBe(true);
+      s.completePasswordLink(reset, 'a new hive password here', T0);
+      expect(s.verifyLogin('Hive', 'a new hive password here', '', T0)).not.toBeNull();
+
+      const on = s.createLink(hive.id, 'authenticator', T0);
+      const secret = s.link(on, T0)!.secret;
+      const done = s.completeLink(on, totp(base32Decode(secret), T0), T0)!;
+      expect(done.recoveryCodes).toHaveLength(10);
+      expect(done.user.passwordOnly).toBe(false);
+      const later = T0 + 30_000;
+      expect(s.verifyLogin('Hive', 'a new hive password here', '', later)).toBeNull();
+      expect(s.verifyLogin('Hive', 'a new hive password here', totp(base32Decode(secret), later), later)?.factor).toBe('code');
+    });
+
+    it('can be switched to need the authenticator by a reset', () => {
+      const s = open();
+      const hive = s.createUser('Hive', 'gm', T0, { passwordOnly: true });
+      s.completePasswordLink(s.createLink(hive.id, 'new', T0), PW, T0);
+      const token = s.resetLogin(hive.id, T0, { passwordOnly: false });
+      expect(s.user(hive.id)!.passwordOnly).toBe(false);
+      expect(() => s.completePasswordLink(token, PW, T0)).toThrow(/needs an authenticator/);
+      const admin = activate(s, 'Ana', 'admin', T0);
+      expect(() => s.resetLogin(admin.id, T0, { passwordOnly: true })).toThrow();
+    });
+
+    it('adds the column to an accounts.db from before', () => {
+      const file = tempFile();
+      const old = new DatabaseSync(file);
+      old.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE, role TEXT NOT NULL CHECK (role IN ('admin', 'gm')),
+        password_hash TEXT, totp_secret TEXT, totp_confirmed INTEGER NOT NULL DEFAULT 0, totp_last_step INTEGER NOT NULL DEFAULT -1,
+        recovery_hashes TEXT NOT NULL DEFAULT '[]', created INTEGER NOT NULL, last_login INTEGER)`);
+      old.prepare(`INSERT INTO users (name, name_key, role, created, totp_confirmed) VALUES ('Ana', 'ana', 'admin', ?, 1)`).run(T0);
+      old.close();
+      const s = open(file);
+      expect(s.users()[0]).toMatchObject({ name: 'Ana', active: true, passwordOnly: false });
+      expect(s.createUser('Hive', 'gm', T0, { passwordOnly: true }).passwordOnly).toBe(true);
+    });
+  });
 });

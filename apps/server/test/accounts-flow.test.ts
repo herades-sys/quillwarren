@@ -395,6 +395,104 @@ describe('the account page', () => {
   });
 });
 
+describe('password-only GM accounts', () => {
+  const HIVE_PW = 'hive password, long enough';
+
+  /** "Hive", added as password only and set up from its link. */
+  async function addHive(adminCookie: string) {
+    const made = await post('/admin', { action: 'create', name: 'Hive', role: 'gm', password_only: '1' }, adminCookie);
+    expect(made.statusCode).toBe(200);
+    expect(made.body).toContain('With it they choose their own password.');
+    const link = linkOf(made.body);
+    const page = await get(link);
+    expect(page.body).toContain('Save password and log in');
+    expect(page.body).not.toContain('<svg');
+    const done = await post('/account/setup', { token: link.split('=')[1]!, step: 'password', password: HIVE_PW, password2: HIVE_PW });
+    expect(done.statusCode).toBe(303);
+    expect(done.headers.location).toBe('/');
+    expect((await get(link)).statusCode).toBe(404);
+    return { link, cookie: cookieOf(done) };
+  }
+
+  it('are added by the admin, set up with a password alone, and log in without a code, also through the tunnel', async () => {
+    const admin = await bootstrap();
+    const hive = await addHive(admin.cookie);
+    expect(await loggedIn(hive.cookie)).toBe(true);
+    expect((await get('/admin', admin.cookie)).body).toMatch(/Hive<\/strong>.*?GM <span class="tag">password only<\/span>.*?active/s);
+    expect((await login('hive', HIVE_PW, '')).statusCode).toBe(303);
+    expect((await login('hive', 'not the password', '')).statusCode).toBe(401);
+    const tunnel = { headers: { host: 'delve.example', 'cf-connecting-ip': '203.0.113.9', 'x-forwarded-proto': 'https', origin: 'https://delve.example' } };
+    const remote = await login('Hive', HIVE_PW, '', tunnel);
+    expect(remote.statusCode).toBe(303);
+    expect(setCookie(remote)).toContain('Secure');
+    expect((await app.inject({ url: '/api/v1/maps', headers: { cookie: cookieOf(remote), ...tunnel.headers } })).statusCode).toBe(200);
+    // the admin still needs the code
+    expect((await login('Ana', ADMIN_PW, '')).statusCode).toBe(401);
+  });
+
+  it('are GMs only', async () => {
+    const admin = await bootstrap();
+    const refused = await post('/admin', { action: 'create', name: 'Boss', role: 'admin', password_only: '1' }, admin.cookie);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toContain('always use an authenticator');
+    await addHive(admin.cookie);
+    expect((await post('/admin', { action: 'role', user: '2', role: 'admin' }, admin.cookie)).statusCode).toBe(400);
+  });
+
+  it('change the password with the current one alone, and have no recovery codes', async () => {
+    const admin = await bootstrap();
+    const hive = await addHive(admin.cookie);
+    const page = (await get('/account', hive.cookie)).body;
+    expect(page).toContain('password only, no authenticator');
+    expect(page).not.toContain('name="code"');
+    expect(page).toContain('Set up an authenticator');
+    const NEW = 'a brand new hive password';
+    expect((await post('/account', { action: 'password', current: 'wrong password here', password: NEW, password2: NEW }, hive.cookie)).statusCode).toBe(401);
+    expect((await post('/account', { action: 'password', current: HIVE_PW, password: NEW, password2: NEW }, hive.cookie)).headers.location).toBe('/account?done=password');
+    expect((await login('Hive', NEW, '')).statusCode).toBe(303);
+    expect((await post('/account', { action: 'recovery' }, hive.cookie)).statusCode).toBe(400);
+  });
+
+  it('can turn the authenticator on themselves, which then gives recovery codes and needs the code', async () => {
+    const admin = await bootstrap();
+    const hive = await addHive(admin.cookie);
+    const start = await post('/account', { action: 'authenticator', current: HIVE_PW }, hive.cookie);
+    const location = String(start.headers.location);
+    expect(location).toMatch(/^\/account\/setup\?token=/);
+    const page = await get(location);
+    expect(page.body).toContain('Once it is confirmed');
+    const secret = secretOf(page.body);
+    const done = await post('/account/setup', { token: location.split('=')[1]!, step: 'code', code: code(secret) });
+    expect(done.statusCode).toBe(200);
+    expect(codesOf(done.body)).toHaveLength(10);
+    expect(done.body).not.toContain('old recovery codes');
+    expect(await loggedIn(hive.cookie)).toBe(true);
+    tick();
+    expect((await login('Hive', HIVE_PW, '')).statusCode).toBe(401);
+    expect((await login('Hive', HIVE_PW, code(secret))).statusCode).toBe(303);
+  });
+
+  it('keep their mode on a reset, and the admin can require the authenticator', async () => {
+    const admin = await bootstrap();
+    const hive = await addHive(admin.cookie);
+    const reset = await post('/admin', { action: 'link', user: '2' }, admin.cookie);
+    expect(await loggedIn(hive.cookie)).toBe(false);
+    expect((await get(linkOf(reset.body))).body).toContain('Save password and log in');
+    const again = await post('/account/setup', { token: linkOf(reset.body).split('=')[1]!, step: 'password', password: HIVE_PW, password2: HIVE_PW });
+    expect(again.headers.location).toBe('/');
+
+    const required = await post('/admin', { action: 'require-authenticator', user: '2' }, admin.cookie);
+    expect(required.statusCode).toBe(200);
+    expect(required.body).toContain('now needs an authenticator app');
+    expect(await loggedIn(cookieOf(again))).toBe(false);
+    expect((await login('Hive', HIVE_PW, '')).statusCode).toBe(401);
+    const link = linkOf(required.body);
+    expect((await get(link)).body).toContain('Next: authenticator app');
+    // an account with the app already can't be "required" again
+    expect((await post('/admin', { action: 'require-authenticator', user: '2' }, admin.cookie)).statusCode).toBe(400);
+  });
+});
+
 describe('development open-edit servers', () => {
   it('keep every browser an editor, with no admin page', async () => {
     const open = buildApp({ version: 't', started: 'now' }, { openEdit: true });

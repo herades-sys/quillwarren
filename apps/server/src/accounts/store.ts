@@ -1,6 +1,7 @@
 // Accounts for the admin and the GMs, in their own node:sqlite file
 // (${DELVE_DATA}/accounts.db): users with a scrypt password and an
-// authenticator secret, server-side sessions, one-time setup links and login
+// authenticator secret (GM accounts may be password-only, if the admin says
+// so), server-side sessions, one-time setup links and login
 // lockouts. Session and link tokens are stored only as SHA-256 hashes, and
 // authenticator secrets are sealed with AES-256-GCM when there's an API token.
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -15,8 +16,10 @@ export interface User {
   id: number;
   name: string;
   role: Role;
-  /** Password and authenticator are set up, so the account can log in. */
+  /** Password and authenticator (or just the password) are set up, so the account can log in. */
   active: boolean;
+  /** A GM account that logs in with name and password only, no authenticator. */
+  passwordOnly: boolean;
   created: number;
   lastLogin: number | null;
   recoveryLeft: number;
@@ -45,6 +48,8 @@ export interface SetupLink {
   secret: string;
   /** A new password was chosen already (it applies once the code confirms). */
   passwordChosen: boolean;
+  /** The account logs in without an authenticator (so the password alone finishes a new or reset link). */
+  passwordOnly: boolean;
 }
 
 /** Something the person can fix; the message is shown as it is. */
@@ -78,11 +83,14 @@ CREATE TABLE IF NOT EXISTS users (
   role            TEXT NOT NULL CHECK (role IN ('admin', 'gm')),
   password_hash   TEXT,
   totp_secret     TEXT,
+  -- 1 once the login is set up (for password-only accounts: once the password is chosen)
   totp_confirmed  INTEGER NOT NULL DEFAULT 0,
   totp_last_step  INTEGER NOT NULL DEFAULT -1,
   recovery_hashes TEXT NOT NULL DEFAULT '[]',
   created         INTEGER NOT NULL,
-  last_login      INTEGER
+  last_login      INTEGER,
+  -- 0: a password-only GM account
+  two_factor      INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
@@ -175,7 +183,7 @@ class SecretBox {
 
 export interface LoginResult {
   user: User;
-  factor: 'code' | 'recovery';
+  factor: 'code' | 'recovery' | 'password';
 }
 
 export class AccountStore {
@@ -188,6 +196,10 @@ export class AccountStore {
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
+    // accounts.db files from before password-only accounts
+    if (!(this.db.prepare('PRAGMA table_info(users)').all() as Row[]).some((c) => c.name === 'two_factor')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN two_factor INTEGER NOT NULL DEFAULT 1');
+    }
     this.box = new SecretBox(apiToken);
   }
 
@@ -229,6 +241,7 @@ export class AccountStore {
       name: String(r.name),
       role: r.role as Role,
       active: r.totp_confirmed === 1,
+      passwordOnly: r.two_factor === 0,
       created: Number(r.created),
       lastLogin: r.last_login === null ? null : Number(r.last_login),
       recoveryLeft: (JSON.parse(String(r.recovery_hashes)) as string[]).length,
@@ -249,12 +262,15 @@ export class AccountStore {
     return (this.db.prepare('SELECT * FROM users ORDER BY role, name_key').all() as Row[]).map((r) => this.toUser(r));
   }
 
-  /** A new account that can't log in until its setup link is used. */
-  createUser(name: unknown, role: Role, now = Date.now()): User {
+  /** A new account that can't log in until its setup link is used. Only GMs can be password-only. */
+  createUser(name: unknown, role: Role, now = Date.now(), opts: { passwordOnly?: boolean } = {}): User {
     const clean = cleanName(name);
     if (!clean) throw new AccountError('A name has 1 to 32 letters, digits, spaces or . _ \' - and starts with a letter or digit.');
+    if (opts.passwordOnly && role === 'admin') throw new AccountError('Admin accounts always use an authenticator app. Only GM accounts can be password only.');
     if (this.db.prepare('SELECT 1 FROM users WHERE name_key = ?').get(nameKey(clean))) throw new AccountError(`The name "${clean}" is taken.`);
-    const r = this.db.prepare('INSERT INTO users (name, name_key, role, created) VALUES (?, ?, ?, ?)').run(clean, nameKey(clean), role, now);
+    const r = this.db
+      .prepare('INSERT INTO users (name, name_key, role, created, two_factor) VALUES (?, ?, ?, ?, ?)')
+      .run(clean, nameKey(clean), role, now, opts.passwordOnly ? 0 : 1);
     return this.user(Number(r.lastInsertRowid))!;
   }
 
@@ -272,16 +288,23 @@ export class AccountStore {
 
   setRole(id: number, role: Role): void {
     if (role !== 'admin') this.guardLastAdmin(id, 'made a GM');
+    else if (this.row(id)?.two_factor === 0) throw new AccountError('A password-only account can\'t be an admin. Require the authenticator first.');
     this.db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
   }
 
-  /** Locks the account (password, authenticator, recovery codes and sessions all go) and returns a new setup link. */
-  resetLogin(id: number, now = Date.now()): string {
+  /**
+   * Locks the account (password, authenticator, recovery codes and sessions all
+   * go) and returns a new setup link. `passwordOnly` switches the account's
+   * mode (GMs only); left out, it stays as it is.
+   */
+  resetLogin(id: number, now = Date.now(), opts: { passwordOnly?: boolean } = {}): string {
     this.guardLastAdmin(id, 'reset');
+    if (opts.passwordOnly && this.row(id)?.role === 'admin') throw new AccountError('Admin accounts always use an authenticator app.');
     return this.tx(() => {
       this.db
         .prepare(`UPDATE users SET password_hash = NULL, totp_secret = NULL, totp_confirmed = 0, totp_last_step = -1, recovery_hashes = '[]' WHERE id = ?`)
         .run(id);
+      if (opts.passwordOnly !== undefined) this.db.prepare('UPDATE users SET two_factor = ? WHERE id = ?').run(opts.passwordOnly ? 0 : 1, id);
       this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
       return this.createLink(id, 'reset', now);
     });
@@ -316,7 +339,7 @@ export class AccountStore {
   private linkRow(token: unknown, now: number): Row | null {
     if (typeof token !== 'string' || !LINK_TOKEN.test(token)) return null;
     const r = this.db
-      .prepare('SELECT l.*, u.name, u.role FROM setup_links l JOIN users u ON u.id = l.user_id WHERE l.token_hash = ?')
+      .prepare('SELECT l.*, u.name, u.role, u.two_factor FROM setup_links l JOIN users u ON u.id = l.user_id WHERE l.token_hash = ?')
       .get(sha256(token)) as Row | undefined;
     if (!r) return null;
     if (Number(r.expires) <= now) {
@@ -339,6 +362,7 @@ export class AccountStore {
       expires: Number(r.expires),
       secret,
       passwordChosen: r.password_hash !== null,
+      passwordOnly: r.two_factor === 0,
     };
   }
 
@@ -350,24 +374,46 @@ export class AccountStore {
   }
 
   /**
+   * The only step of a password-only account's new or reset link: the password
+   * is set, the link is used up and the account becomes active.
+   */
+  completePasswordLink(token: string, password: string, now = Date.now()): User {
+    const r = this.linkRow(token, now);
+    if (!r) throw new AccountError('This setup link is not valid any more.');
+    if (r.two_factor !== 0 || r.purpose === 'authenticator' || r.purpose === 'bootstrap') throw new AccountError('This account also needs an authenticator app.');
+    const userId = Number(r.user_id);
+    return this.tx(() => {
+      this.db
+        .prepare(`UPDATE users SET password_hash = ?, totp_secret = NULL, totp_confirmed = 1, totp_last_step = -1, recovery_hashes = '[]', last_login = ? WHERE id = ?`)
+        .run(hashPassword(password), now, userId);
+      this.db.prepare('DELETE FROM setup_links WHERE user_id = ?').run(userId);
+      this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+      return this.user(userId)!;
+    });
+  }
+
+  /**
    * Step 2: a code from the authenticator proves it's set up. The link is used
    * up, the account becomes active, and new-account links return fresh recovery
-   * codes (shown once). Null when the code is wrong.
+   * codes (shown once). So does a password-only account that turns the
+   * authenticator on, which then needs codes to log in. Null when the code is wrong.
    */
   completeLink(token: string, code: string, now = Date.now()): { user: User; recoveryCodes: string[] | null } | null {
     const r = this.linkRow(token, now);
     if (!r) throw new AccountError('This setup link is not valid any more.');
     const purpose = r.purpose as LinkPurpose;
     const userId = Number(r.user_id);
+    const turningOn = r.two_factor === 0;
+    if (turningOn && purpose !== 'authenticator') throw new AccountError('This account logs in with a password only.');
     if (purpose !== 'authenticator' && r.password_hash === null) throw new AccountError('Choose a password first.');
     if (purpose === 'bootstrap' && this.legacyOff()) throw new AccountError('An admin account exists already. Ask the admin for a setup link.');
     const secret = this.box.open(r.totp_secret as string, userId);
     const step = secret ? matchTotp(base32Decode(secret), code.replace(/\s/g, ''), now) : null;
     if (step === null) return null;
     return this.tx(() => {
-      const codes = purpose === 'authenticator' ? null : Array.from({ length: RECOVERY_CODES }, newRecoveryCode);
+      const codes = purpose === 'authenticator' && !turningOn ? null : Array.from({ length: RECOVERY_CODES }, newRecoveryCode);
       this.db
-        .prepare('UPDATE users SET totp_secret = ?, totp_confirmed = 1, totp_last_step = ? WHERE id = ?')
+        .prepare('UPDATE users SET totp_secret = ?, totp_confirmed = 1, totp_last_step = ?, two_factor = 1 WHERE id = ?')
         .run(this.box.seal(secret!, userId), step, userId);
       // finishing a new or reset account logs it in
       if (purpose !== 'authenticator') this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now, userId);
@@ -432,14 +478,17 @@ export class AccountStore {
     return 'recovery';
   }
 
-  /** Name + password + code. The password is always hashed, so a missing account takes as long as a wrong password. */
+  /**
+   * Name + password + code (password-only accounts ignore the code). The
+   * password is always hashed, so a missing account takes as long as a wrong password.
+   */
   verifyLogin(name: unknown, password: unknown, code: unknown, now = Date.now()): LoginResult | null {
-    if (typeof password !== 'string' || password.length > MAX_PASSWORD || typeof code !== 'string') return null;
+    if (typeof password !== 'string' || password.length > MAX_PASSWORD) return null;
     const r = typeof name === 'string' ? (this.db.prepare('SELECT * FROM users WHERE name_key = ?').get(nameKey(name)) as Row | undefined) : undefined;
     const stored = r?.password_hash as string | null | undefined;
     const passwordOk = verifyPassword(password, stored ?? (this.dummyHash ??= hashPassword(newToken())));
     if (!r || !stored || !passwordOk || r.totp_confirmed !== 1) return null;
-    const factor = this.useSecondFactor(Number(r.id), code, now);
+    const factor = r.two_factor === 0 ? 'password' : typeof code === 'string' ? this.useSecondFactor(Number(r.id), code, now) : null;
     if (!factor) return null;
     this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now, Number(r.id));
     return { user: this.user(Number(r.id))!, factor };

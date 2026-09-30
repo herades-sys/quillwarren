@@ -11,7 +11,7 @@ Base URL on the LAN: `http://192.168.1.9:8790/api/v1`. Everything is JSON unless
 
 ### Browser editor login: admin and GM accounts
 
-The browser editor has two kinds of account, **admin** and **GM**. Both can edit maps, make REST and WebSocket changes, and are the GM at Delve Table. Only admins can open `/admin`. Every login needs a name, a password and a code from an authenticator app (TOTP). The code lives in `apps/server/src/accounts/`, and the data in `${DELVE_DATA}/accounts.db` (in memory without `DELVE_DATA`).
+The browser editor has two kinds of account, **admin** and **GM**. Both can edit maps, make REST and WebSocket changes, and are the GM at Delve Table. Only admins can open `/admin`. Every login needs a name, a password and a code from an authenticator app (TOTP), except for GM accounts the admin made **password only** (see below). The code lives in `apps/server/src/accounts/`, and the data in `${DELVE_DATA}/accounts.db` (in memory without `DELVE_DATA`).
 
 **Getting started (bootstrap).**
 - Until the first admin account exists, the old shared password works as before. `sudo delve-passwd` on the container sets it, and only its scrypt hash goes into `/etc/delve/delve.env`. `/login` then gives a signed 30-day cookie.
@@ -25,7 +25,9 @@ The browser editor has two kinds of account, **admin** and **GM**. Both can edit
 **Admin page `/admin` (admins only).**
 - List the accounts, with their role, status and last login.
 - **Add account:** a name and a role (GM or admin). This gives a one-time **setup link** (`/account/setup?token=…`), valid for 72 hours and shown only once. The admin passes it on, and the new person chooses their own password and sets up their authenticator with it. A new link replaces the old one.
-- **Reset login:** locks the account (password, authenticator, recovery codes and sessions all go) and makes a new setup link. For accounts not yet set up, the same button just makes a new link.
+- **Password only** (a checkbox when adding a GM): the account logs in with name and password alone, from home and through the tunnel alike. Its setup link only asks for the password (at least 12 characters), which finishes the setup and logs in. It has no recovery codes. Lockouts work as for every account. Admin accounts can't be password only, and a password-only account can't be made admin. The admin list tags these accounts "password only".
+- **Reset login:** locks the account (password, authenticator, recovery codes and sessions all go) and makes a new setup link. The account keeps its mode. For accounts not yet set up, the same button just makes a new link.
+- **Require authenticator** (password-only accounts): resets the login, and the new setup link asks for a password and an authenticator.
 - Make admin / make GM, remove an account, and see and end sessions ("Log out everywhere" per account, or "Log out everyone except me").
 - The last active admin can't be removed, demoted or reset. Admins can't remove, demote or reset themselves here (their own login is on `/account`).
 
@@ -34,6 +36,7 @@ The browser editor has two kinds of account, **admin** and **GM**. Both can edit
 - Make 10 new recovery codes (needs a code; the old ones stop working).
 - Set up a new authenticator for a new phone (needs the password and a code or recovery code; the old one keeps working until the new one is confirmed).
 - See where you are logged in and end those sessions.
+- Password-only accounts change their password with the current one alone. Instead of recovery codes they get "Set up an authenticator" (needs the password), which turns the code on for good and gives 10 recovery codes.
 
 **Codes.**
 - TOTP per RFC 6238: HMAC-SHA1, 30-second steps, 6 digits, one step of clock drift either way.

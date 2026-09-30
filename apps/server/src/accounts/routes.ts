@@ -17,6 +17,8 @@ type Body = Record<string, unknown>;
 
 const NOTICES = new Map<string, string>([
   ['password', 'Your password is changed. Your other devices are logged out.'],
+  ['authenticator-on', 'Your authenticator is set up. From now on you log in with your password and a code from the app.'],
+  ['authenticator-required', 'The account now needs an authenticator app. Send them the new setup link.'],
   ['ended-others', 'Your other devices are logged out.'],
   ['ended', 'The session is ended.'],
   ['role', 'The role is changed.'],
@@ -50,11 +52,15 @@ export function registerAccounts(app: FastifyInstance, auth: EditorAuth, account
       return sendPage(reply, 404, messagePage('Setup link not valid', ['This setup link was used already, or it ran out. Ask your admin for a new one.']));
     }
     const code = error ? 400 : 200;
-    if (link.purpose !== 'authenticator' && !link.passwordChosen) {
-      return sendPage(reply, code, setupPasswordPage({ token, name: link.userName, reset: link.purpose === 'reset', error }));
+    if (link.purpose !== 'authenticator' && (!link.passwordChosen || link.passwordOnly)) {
+      return sendPage(reply, code, setupPasswordPage({ token, name: link.userName, reset: link.purpose === 'reset', passwordOnly: link.passwordOnly, error }));
     }
     const qr = qrSvg(otpauthUri(link.userName, link.secret), { title: 'QR code for your authenticator app' });
-    return sendPage(reply, code, setupCodePage({ token, name: link.userName, qr, secret: groupSecret(link.secret), error, authenticatorOnly: link.purpose === 'authenticator' }));
+    return sendPage(
+      reply,
+      code,
+      setupCodePage({ token, name: link.userName, qr, secret: groupSecret(link.secret), error, authenticatorOnly: link.purpose === 'authenticator', turningOn: link.passwordOnly }),
+    );
   };
 
   app.get('/account/setup', async (req, reply) => {
@@ -88,20 +94,29 @@ export function registerAccounts(app: FastifyInstance, auth: EditorAuth, account
   });
 
   async function setupStep(req: FastifyRequest, reply: FastifyReply, token: string, body: Body): Promise<FastifyReply> {
+    const link = accounts.link(token);
+    if (!link) return showLink(reply, token);
+    const remember = body.remember === '1';
+    const logIn = (userId: number) => reply.header('set-cookie', accountCookie(accounts.createSession(userId, { remember, userAgent: userAgent(req) }), isHttps(req), remember));
     if (body.step === 'password') {
       const problem = passwordProblem(body.password, body.password2);
       if (problem) return showLink(reply, token, problem);
+      if (link.passwordOnly && link.purpose !== 'authenticator') {
+        // no authenticator: the password finishes the setup
+        const user = accounts.completePasswordLink(token, body.password as string);
+        return logIn(user.id).redirect('/', 303);
+      }
       accounts.chooseLinkPassword(token, body.password as string);
       return reply.redirect(`/account/setup?token=${encodeURIComponent(token)}`, 303);
     }
-    const link = accounts.link(token);
-    if (!link) return showLink(reply, token);
     const done = accounts.completeLink(token, typeof body.code === 'string' ? body.code : '');
     if (!done) return showLink(reply, token, 'That code is not right. Check that the time on your phone is right, then try the newest code.');
-    if (link.purpose === 'authenticator') return reply.redirect('/account?done=authenticator', 303);
-    const remember = body.remember === '1';
-    const value = accounts.createSession(done.user.id, { remember, userAgent: userAgent(req) });
-    reply.header('set-cookie', accountCookie(value, isHttps(req), remember));
+    if (link.purpose === 'authenticator') {
+      // a password-only account that turned the authenticator on gets its first recovery codes
+      if (done.recoveryCodes) return sendPage(reply, 200, recoveryCodesPage({ codes: done.recoveryCodes, next: '/account?done=authenticator-on', first: false, replaced: false }));
+      return reply.redirect('/account?done=authenticator', 303);
+    }
+    logIn(done.user.id);
     return sendPage(reply, 200, recoveryCodesPage({ codes: done.recoveryCodes ?? [], next: '/', first: true }));
   }
 
@@ -135,11 +150,14 @@ export function registerAccounts(app: FastifyInstance, auth: EditorAuth, account
       if (accounts.locked(keys)) return show({ error: LOCKED }, 429);
       const current = body.current;
       const passwordOk = !needPassword || (typeof current === 'string' && current.length <= MAX_PASSWORD && accounts.checkPassword(user.id, current));
-      if (passwordOk && accounts.useSecondFactor(user.id, typeof body.code === 'string' ? body.code : '')) {
+      // a password-only account has nothing but the password to check
+      const secondOk = user.passwordOnly ? needPassword : accounts.useSecondFactor(user.id, typeof body.code === 'string' ? body.code : '') !== null;
+      if (passwordOk && secondOk) {
         accounts.clearFails(keys);
         return null;
       }
       accounts.fail(keys);
+      if (user.passwordOnly) return show({ error: 'The current password is not right.' }, 401);
       return show({ error: needPassword ? 'The current password or the code is not right.' : 'That code is not right.' }, 401);
     };
 
@@ -154,6 +172,7 @@ export function registerAccounts(app: FastifyInstance, auth: EditorAuth, account
         return reply.redirect('/account?done=password', 303);
       }
       case 'recovery': {
+        if (user.passwordOnly) return show({ error: 'Your account has no recovery codes. Set up an authenticator first.' }, 400);
         const refused = verify(false);
         if (refused) return refused;
         return sendPage(reply, 200, recoveryCodesPage({ codes: accounts.newRecoveryCodes(user.id), next: '/account', first: false }));
@@ -196,18 +215,28 @@ export function registerAccounts(app: FastifyInstance, auth: EditorAuth, account
     const me = cur.user;
     const id = Number(body.user);
     const target = Number.isInteger(id) ? accounts.user(id) : null;
-    const linkFor = (u: User, token: string, reset: boolean): NewLink => ({
-      name: u.name,
-      url: `${isHttps(req) ? 'https' : 'http'}://${req.headers.host ?? 'localhost'}/account/setup?token=${encodeURIComponent(token)}`,
-      expires: accounts.user(u.id)?.linkExpires ?? Date.now(),
-      reset,
-    });
+    const linkFor = (u: User, token: string, reset: boolean): NewLink => {
+      const fresh = accounts.user(u.id);
+      return {
+        name: u.name,
+        url: `${isHttps(req) ? 'https' : 'http'}://${req.headers.host ?? 'localhost'}/account/setup?token=${encodeURIComponent(token)}`,
+        expires: fresh?.linkExpires ?? Date.now(),
+        reset,
+        passwordOnly: fresh?.passwordOnly ?? false,
+      };
+    };
     try {
       switch (body.action) {
         case 'create': {
-          const created = accounts.createUser(body.name, body.role === 'admin' ? 'admin' : 'gm');
+          const created = accounts.createUser(body.name, body.role === 'admin' ? 'admin' : 'gm', Date.now(), { passwordOnly: body.password_only === '1' });
           const token = accounts.createLink(created.id, 'new');
           return adminView(reply, cur, { newLink: linkFor(created, token, false), notice: `${created.name} is added. Send them the setup link below.` });
+        }
+        case 'require-authenticator': {
+          if (!target) return adminView(reply, cur, { error: 'There is no such account.' }, 404);
+          if (!target.passwordOnly) return adminView(reply, cur, { error: `${target.name} uses an authenticator already.` }, 400);
+          const token = accounts.resetLogin(target.id, Date.now(), { passwordOnly: false });
+          return adminView(reply, cur, { newLink: linkFor(target, token, target.active), notice: NOTICES.get('authenticator-required') });
         }
         case 'link': {
           if (!target) return adminView(reply, cur, { error: 'There is no such account.' }, 404);
