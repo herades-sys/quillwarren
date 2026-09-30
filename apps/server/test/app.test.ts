@@ -52,6 +52,7 @@ describe('preview page', () => {
       expect(body).toContain(`id="${p}-clip-floor"`);
       expect(body).toContain(`href="/preview/${p}.png?view=gm"`);
     }
+    expect(body).toContain('href="/play"'); // the Play button, for everyone
     expect(body).toContain('>S</text>'); // GM sees the secret door
     expect(body).toContain('1 Entrance hall [r1]'); // describeMap text
   });

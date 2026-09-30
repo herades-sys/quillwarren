@@ -102,8 +102,7 @@ interface Access {
 function accountBar(a: Access): string {
   const logout = `<form method="post" action="/logout" class="inline"><button class="button" type="submit">Log out</button></form>`;
   if (a.account) {
-    const admin = a.account.role === 'admin' ? ` <a class="button" href="/admin">Admin</a>` : '';
-    return `<span class="who"><a class="button" href="/account" title="Your account">${esc(a.account.name)}</a>${admin} ${logout}</span>`;
+    return `<span class="who"><a class="button" href="/account" title="Your account">${esc(a.account.name)}</a> ${logout}</span>`;
   }
   if (a.loggedIn) return logout;
   return a.passwordSet ? `<a class="button" href="/login">Log in to edit</a>` : `<span class="note">Editing: set a password with <code>delve-passwd</code> on the container</span>`;
@@ -225,6 +224,8 @@ function page(info: AppInfo, view: View, store: MapStore, access: Access): strin
   .card footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
   .button { display: inline-block; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-weight: 500; font-size: .88rem; white-space: nowrap; }
   .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .main-nav { display: flex; gap: 8px; align-items: center; }
+  .button.big { padding: 8px 16px; font-size: 1rem; }
   .button.danger { color: #B03A2E; border-color: color-mix(in srgb, #B03A2E 45%, var(--line)); background: transparent; cursor: pointer; font: inherit; font-weight: 500; font-size: .88rem; }
   .tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: .78rem; font-weight: 500; vertical-align: 1px; }
   tr.storey + tr.storey td:first-child { padding-left: 22px; }
@@ -264,6 +265,10 @@ function page(info: AppInfo, view: View, store: MapStore, access: Access): strin
       <a href="/health">/health</a> <a href="/api/v1/maps">/api/v1/maps</a>
     </div>
     <span class="spacer"></span>
+    <nav class="main-nav" aria-label="Delve">
+      <a class="button primary big" href="/play" title="Delve Table: your games, invite players, play">▶ Play</a>
+      ${access.account?.role === 'admin' ? `<a class="button big" href="/admin" title="Accounts, GMs and logins">Admin</a>` : ''}
+    </nav>
     ${accountBar(access)}
   </div>
   ${access.bootstrap ? secureBanner() : ''}
