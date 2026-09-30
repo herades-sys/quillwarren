@@ -2,13 +2,15 @@ import { join } from 'node:path';
 import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { FORMAT, FORMAT_VERSION } from '@delve/core';
+import { AccountStore } from './accounts/store.ts';
 import { registerApi } from './api.ts';
 import { registerAssets } from './assets.ts';
 import { Sessions } from './auth.ts';
 import { registerChat, type ChatConfig } from './chat/route.ts';
 import { ChatTokens } from './chat/tokens.ts';
 import { LiveHub } from './live.ts';
-import { registerLogin, type EditorAuth } from './login.ts';
+import { isLoggedIn, registerLogin, useAccounts, type EditorAuth } from './login.ts';
+import { publicHostOf, registerPublicGate } from './public.ts';
 import { registerMcp } from './mcp.ts';
 import { registerPreview } from './preview.ts';
 import { registerSegments } from './segments.ts';
@@ -16,6 +18,7 @@ import { registerTracePage } from './trace-page.ts';
 import { registerHandoutPage } from './handout-page.ts';
 import { ImageLibrary, registerImages } from './images.ts';
 import { registerStack } from './stack.ts';
+import type { DiscordConfig } from './table/discord.ts';
 import { registerTable } from './table/routes.ts';
 import { MapService } from './service.ts';
 import { MapStore } from './store.ts';
@@ -40,14 +43,21 @@ export interface AppOptions {
   dataDir?: string;
   /** DELVE_CHAT_URL: the chat bridge that runs Claude Code. Without it, there's no chat panel. */
   chat?: ChatConfig;
+  /** DELVE_DISCORD_CLIENT_ID/SECRET (+ DELVE_PUBLIC_URL, DELVE_GM_DISCORD_IDS, DELVE_DISCORD_API): players log in with Discord. */
+  discord?: DiscordConfig;
+  /** DELVE_PUBLIC_URL: the address the Cloudflare tunnel publishes, e.g. https://delve.example.com. */
+  publicUrl?: string;
 }
 
-/** Never let the WebSocket token reach the log. */
-const redact = (url: string): string => url.replace(/([?&]token=)[^&]*/g, '$1***');
+/** Never let the WebSocket token or a Discord login's code and state reach the log. */
+const redact = (url: string): string => url.replace(/([?&](?:token|code|state)=)[^&]*/g, '$1***');
 
 export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance {
   const app = Fastify({
     bodyLimit: 5 * 1024 * 1024,
+    // cloudflared (the Cloudflare tunnel) connects from loopback: believe its X-Forwarded-* headers
+    // (https, the client address), and nobody else's
+    trustProxy: ['127.0.0.1', '::1'],
     logger: opts.logger
       ? {
           serializers: {
@@ -63,6 +73,12 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   const images = new ImageLibrary(opts.dataDir ? join(opts.dataDir, 'images') : undefined);
   app.addHook('onClose', async () => images.close());
   const auth: EditorAuth = { sessions: new Sessions(opts.token, opts.openEdit ?? false), passwordHash: opts.passwordHash };
+  // Admin and GM accounts: <DELVE_DATA>/accounts.db (in memory without one).
+  const accounts = new AccountStore(opts.dataDir ? join(opts.dataDir, 'accounts.db') : ':memory:', opts.token);
+  app.addHook('onClose', async () => accounts.close());
+  useAccounts(auth, accounts);
+  // Through the Cloudflare tunnel: no API token, no MCP, and nothing but the table and the login without logging in.
+  registerPublicGate(app, { publicHost: publicHostOf(opts.publicUrl), loggedIn: (req) => isLoggedIn(auth, req) });
   if (opts.openEdit) app.log.warn('DELVE_INSECURE_OPEN_EDIT is on: every browser can edit. Never use this on the live server.');
 
   // HTML forms (the login page) post urlencoded bodies; file imports post raw bytes.
@@ -96,7 +112,15 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerPreview(scoped, info, store, auth);
     registerTracePage(scoped, info, auth);
     registerHandoutPage(scoped, store);
-    registerTable(scoped, { maps: store, auth, token: opts.token, version: info.version, dataDir: opts.dataDir, onMapChange: (cb) => service.onChange(cb) });
+    registerTable(scoped, {
+      maps: store,
+      auth,
+      token: opts.token,
+      version: info.version,
+      dataDir: opts.dataDir,
+      onMapChange: (cb) => service.onChange(cb),
+      ...(opts.discord ? { discord: opts.discord } : {}),
+    });
   });
   return app;
 }

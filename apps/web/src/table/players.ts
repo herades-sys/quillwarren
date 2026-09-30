@@ -1,8 +1,9 @@
-// The players tab. Everyone sees who is in the game, in their colours. The GM
-// also makes invite links (players join without an account) and removes
+// The players tab. Everyone sees who is in the game, in their colours (or
+// Discord pictures). The GM also makes invite links (players join with a
+// Discord login or just a name), can make invites Discord-only, and removes
 // members, which ends their access at once.
 import type { TableCtx } from './ctx.ts';
-import { $, api, button, copyText, h, postJson, toast } from './dom.ts';
+import { $, api, button, copyText, h, memberMark, postJson, toast } from './dom.ts';
 import { isGm } from './logic.ts';
 
 interface InviteRow {
@@ -18,6 +19,9 @@ const absolute = (url: string): string => new URL(url, location.origin).toString
 export function initPlayers(ctx: TableCtx): void {
   const panel = $('panel-players');
   const gm = isGm(ctx.me());
+  // set by the page: Discord login is set up / this seat belongs to the browser's Discord login
+  const discord = panel.dataset.discord === '1';
+  const linked = panel.dataset.linked === '1';
   const inviteName = h('input', { type: 'text', placeholder: 'Who is it for? (optional)', maxLength: 40, 'aria-label': 'Invite for' });
   let link: { url: string; expires: number } | null = null;
   let invites: InviteRow[] = [];
@@ -41,6 +45,19 @@ export function initPlayers(ctx: TableCtx): void {
       draw();
     } catch (e) {
       toast((e as Error).message);
+    }
+  }
+
+  async function setRequireDiscord(on: boolean, box: HTMLInputElement): Promise<void> {
+    box.disabled = true;
+    try {
+      await api(`/api/v1/games/${encodeURIComponent(ctx.gameId)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requireDiscord: on }) });
+      toast(on ? 'New players now join with Discord only' : 'New players may join with just a name', 'info');
+    } catch (e) {
+      box.checked = !on;
+      toast((e as Error).message);
+    } finally {
+      box.disabled = false;
     }
   }
 
@@ -69,7 +86,17 @@ export function initPlayers(ctx: TableCtx): void {
           h('div', { class: 'row' }, field, button('Copy', () => void copyText(l.url, field).then((ok) => toast(ok ? 'Link copied' : 'Select the link and copy it', ok ? 'info' : 'error')))),
           h('p', { class: 'hint' }, `Anyone with this link can join until ${new Date(l.expires).toLocaleString()}. Send it to one player; they pick a name when they open it.`),
         );
-      } else box.append(h('p', { class: 'hint' }, 'Players join through a link, without an account. Each link works for 3 days.'));
+      } else {
+        const how = !discord ? 'without an account' : view.requireDiscord ? 'with their Discord login' : 'with their Discord login or just a name';
+        box.append(h('p', { class: 'hint' }, `Players join through a link, ${how}. Each link works for 3 days.`));
+      }
+      if (discord) {
+        const check = h('input', { type: 'checkbox', checked: view.requireDiscord === true });
+        check.addEventListener('change', () => void setRequireDiscord(check.checked, check));
+        box.append(
+          h('label', { class: 'check', title: 'Players who are at the table already stay' }, check, 'Players must log in with Discord'),
+        );
+      }
       kids.push(h('h3', {}, 'Invite'), box);
       const open = invites.filter((i) => !i.expired);
       if (open.length) {
@@ -90,13 +117,11 @@ export function initPlayers(ctx: TableCtx): void {
     }
     const list = h('ul', { class: 'list' });
     for (const m of view.members) {
-      const sw = h('span', { class: 'swatch' });
-      sw.style.setProperty('--c', m.color);
       list.append(
         h(
           'li',
           {},
-          sw,
+          memberMark(m),
           h('span', { class: 'grow' }, m.name, m.id === view.you.id ? h('span', { class: 'muted' }, ' (you)') : null),
           h('span', { class: 'tag' }, m.role === 'gm' ? 'GM' : 'Player'),
           gm && m.role !== 'gm'
@@ -108,7 +133,8 @@ export function initPlayers(ctx: TableCtx): void {
       );
     }
     kids.push(h('h3', {}, 'At the table'), list);
-    if (!gm) kids.push(h('p', { class: 'hint' }, h('a', { href: `/play/${encodeURIComponent(ctx.gameId)}/leave` }, 'Leave this game on this device')));
+    if (!gm && linked) kids.push(h('p', { class: 'hint' }, 'Your seat follows your Discord login: log in on another device to play there. Log out (top right) to leave this device.'));
+    else if (!gm) kids.push(h('p', { class: 'hint' }, h('a', { href: `/play/${encodeURIComponent(ctx.gameId)}/leave` }, 'Leave this game on this device')));
     const focused = document.activeElement;
     panel.replaceChildren(...kids.filter((k): k is HTMLElement => k !== null));
     if (focused === inviteName) inviteName.focus();

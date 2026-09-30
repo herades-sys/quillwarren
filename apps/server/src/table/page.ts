@@ -6,6 +6,12 @@ export interface TablePageOptions {
   gameName: string;
   version: string;
   me: { id: string; name: string; role: 'gm' | 'player' };
+  /** Discord login is set up on this server (the GM gets the "needs Discord" switch). */
+  discord?: boolean;
+  /** The Discord login of this browser, if any: shown as "Logged in as … · Log out". */
+  account?: { name: string };
+  /** This member's seat belongs to that Discord login (so "leave on this device" means logging out). */
+  linked?: boolean;
 }
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -48,6 +54,11 @@ const CSS = `
   #conn-dot[data-state="offline"], #conn-dot[data-state="closed"] { background: var(--bad); }
   .me { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
   .me .dot, .swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
+  .avatar { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; flex: none; background: var(--c, var(--muted)); }
+  .cm-head .avatar { width: 18px; height: 18px; align-self: center; }
+  .account { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; font-size: 13px; }
+  .account form { display: inline; margin: 0; }
+  .account button { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 13px; }
   .layer { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
   .layer select { padding: 4px 6px; }
   .badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 700; }
@@ -179,7 +190,7 @@ const CSS = `
     body:not(.sheet-open) #side { display: none; }
     body.sheet-open .zoom { bottom: calc(min(62vh, 560px) + 10px); }
     #game-name { max-width: 40vw; }
-    .layer span, #conn-text, .me .role, .brand .word { display: none; }
+    .layer span, #conn-text, .me .role, .brand .word, .account .who { display: none; }
     header { gap: 8px; padding: 6px 10px; }
   }
   @media (max-width: 420px) {
@@ -208,6 +219,10 @@ const CSS = `
 export function tablePage(o: TablePageOptions): string {
   const gm = o.me.role === 'gm';
   const initial = JSON.stringify({ gameId: o.gameId, gameName: o.gameName, me: o.me, version: o.version }).replace(/</g, '\\u003c');
+  // a POST form, so no other site can log anyone out
+  const account = o.account
+    ? `<span class="account"><span class="who">Logged in as ${esc(o.account.name)} ·</span><form method="post" action="/auth/logout"><input type="hidden" name="next" value="/play"><button type="submit" title="Log out of Discord on this device">Log out</button></form></span>`
+    : '';
   const tab = (id: string, label: string, selected = false) =>
     `<button type="button" role="tab" id="tab-${id}" data-tab="${id}" aria-controls="panel-${id}" aria-selected="${selected}">${label}</button>`;
   const brand = `<img src="/assets/brand/mark.svg" alt="" width="22" height="22"><span class="word">Delve Table</span>`;
@@ -228,6 +243,7 @@ export function tablePage(o: TablePageOptions): string {
   <span class="spacer"></span>
   ${gm ? `<label class="layer" title="The layer you select and move tokens on"><span>Layer</span><select id="layer-select"><option value="map">Map</option><option value="tokens" selected>Tokens</option><option value="gm">GM only</option></select></label>` : ''}
   <span class="me" id="me"><span class="dot" id="me-dot"></span><span id="me-name">${esc(o.me.name)}</span><span class="role muted">· ${gm ? 'GM' : 'Player'}</span></span>
+  ${account}
   <button type="button" class="btn" id="side-toggle" aria-pressed="true" aria-controls="side" title="Show or hide the panel">Panel<span class="badge" id="side-badge" hidden></span></button>
 </header>
 <div id="main">
@@ -257,7 +273,7 @@ export function tablePage(o: TablePageOptions): string {
     <section class="panel" id="panel-turn" data-panel="turn" role="tabpanel" aria-labelledby="tab-turn" hidden></section>
     ${gm ? `<section class="panel" id="panel-pages" data-panel="pages" role="tabpanel" aria-labelledby="tab-pages" hidden></section>
     <section class="panel" id="panel-tokens" data-panel="tokens" role="tabpanel" aria-labelledby="tab-tokens" hidden></section>` : ''}
-    <section class="panel" id="panel-players" data-panel="players" role="tabpanel" aria-labelledby="tab-players" hidden></section>
+    <section class="panel" id="panel-players" data-panel="players" role="tabpanel" aria-labelledby="tab-players"${o.discord ? ' data-discord="1"' : ''}${o.linked ? ' data-linked="1"' : ''} hidden></section>
   </aside>
 </div>
 <script id="table-initial" type="application/json">${initial}</script>

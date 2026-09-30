@@ -66,6 +66,23 @@ describe('viewFor', () => {
     expect(mine && mine.type === 'page.upsert' && 'walls' in mine.page).toBe(false);
   });
 
+  it('never sends account links, to players or the GM; pictures and the GM-only requireDiscord do go out', () => {
+    const base = table();
+    const s: GameState = {
+      ...base,
+      requireDiscord: true,
+      members: base.members.map((m) => (m.id === 'p1' ? { ...m, accountId: 'acc_0123456789ab', avatar: '/api/v1/games/g1/assets/x.png' } : m)),
+    };
+    for (const who of ['gm', 'p1', 'p2']) {
+      const v = viewFor(s, who);
+      expect(JSON.stringify(v)).not.toMatch(/acc_|accountId/);
+      expect(v.members.find((m) => m.id === 'p1')?.avatar).toBe('/api/v1/games/g1/assets/x.png');
+      expect(v.requireDiscord).toBe(who === 'gm' ? true : undefined);
+      expect(JSON.stringify(eventFor(s, who, { type: 'members', members: s.members }))).not.toMatch(/acc_|accountId/);
+    }
+    expect(viewFor(s, 'p1').you).toEqual({ id: 'p1', name: 'Ann', role: 'player', color: expect.any(String), avatar: '/api/v1/games/g1/assets/x.png' });
+  });
+
   it('refuses strangers', () => {
     expect(() => viewFor(table(), 'p9')).toThrow("You aren't in this game");
   });

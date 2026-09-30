@@ -2,7 +2,9 @@
 // JSON row, kept in memory and written back at most every 300 ms (and on
 // close); chat is an append-only log. "Seats" hold a random nonce per player,
 // so a player cookie dies with its member even if a later player gets the same id.
-import { randomBytes } from 'node:crypto';
+// Accounts are players who logged in with Discord; their sessions are random
+// tokens of which only the SHA-256 is stored.
+import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import type { ChatMessage, GameState } from '@delve/table';
 
@@ -29,6 +31,23 @@ CREATE TABLE IF NOT EXISTS seats (
   nonce     TEXT NOT NULL,
   PRIMARY KEY (game_id, member_id)
 );
+CREATE TABLE IF NOT EXISTS accounts (
+  id          TEXT PRIMARY KEY,
+  discord_id  TEXT NOT NULL UNIQUE,
+  username    TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  avatar      TEXT,
+  avatar_file TEXT,
+  created     INTEGER NOT NULL,
+  seen        INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS account_sessions (
+  token_hash TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  created    INTEGER NOT NULL,
+  expires    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS account_sessions_account ON account_sessions (account_id);
 `;
 
 export interface GameSummary {
@@ -37,6 +56,41 @@ export interface GameSummary {
   created: string;
   players: number;
 }
+
+/** A player who logged in with Discord. Only what the table needs is kept: no tokens, no email. */
+export interface Account {
+  id: string;
+  discordId: string;
+  username: string;
+  /** Their Discord display name (global_name, else the username). */
+  name: string;
+  /** Discord's avatar hash, or null. */
+  avatar: string | null;
+  /** The avatar picture in the table assets ("<sha>.png"), or null. */
+  avatarFile: string | null;
+  created: number;
+  seen: number;
+}
+
+export const ACCOUNT_SESSION_DAYS = 30;
+/** Older sessions of one account beyond this many are dropped (someone logging in over and over). */
+const MAX_SESSIONS_PER_ACCOUNT = 20;
+/** `seen` is written at most this often. */
+const SEEN_EVERY_MS = 10 * 60_000;
+
+export const ACCOUNT_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex');
+
+const accountFrom = (r: Row): Account => ({
+  id: String(r.id),
+  discordId: String(r.discord_id),
+  username: String(r.username),
+  name: String(r.name),
+  avatar: r.avatar === null || r.avatar === undefined ? null : String(r.avatar),
+  avatarFile: r.avatar_file === null || r.avatar_file === undefined ? null : String(r.avatar_file),
+  created: Number(r.created),
+  seen: Number(r.seen),
+});
 
 export function newGameId(): string {
   return `game_${randomBytes(6).toString('hex')}`;
@@ -170,6 +224,71 @@ export class TableStore {
 
   unseat(gameId: string, memberId: string): void {
     this.db.prepare('DELETE FROM seats WHERE game_id = ? AND member_id = ?').run(gameId, memberId);
+  }
+
+  // ---------- accounts (Discord login) ----------
+
+  account(id: string): Account | undefined {
+    const r = this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id) as Row | undefined;
+    return r ? accountFrom(r) : undefined;
+  }
+
+  accountByDiscord(discordId: string): Account | undefined {
+    const r = this.db.prepare('SELECT * FROM accounts WHERE discord_id = ?').get(discordId) as Row | undefined;
+    return r ? accountFrom(r) : undefined;
+  }
+
+  /** Create the account for a Discord user, or refresh its name and avatar hash. */
+  upsertAccount(u: { discordId: string; username: string; name: string; avatar: string | null }, now = Date.now()): Account {
+    const found = this.db.prepare('SELECT * FROM accounts WHERE discord_id = ?').get(u.discordId) as Row | undefined;
+    if (found) {
+      this.db.prepare('UPDATE accounts SET username = ?, name = ?, avatar = ?, seen = ? WHERE id = ?').run(u.username, u.name, u.avatar, now, String(found.id));
+      return { ...accountFrom(found), username: u.username, name: u.name, avatar: u.avatar, seen: now };
+    }
+    const id = `acc_${randomBytes(6).toString('hex')}`;
+    this.db
+      .prepare('INSERT INTO accounts (id, discord_id, username, name, avatar, avatar_file, created, seen) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)')
+      .run(id, u.discordId, u.username, u.name, u.avatar, now, now);
+    return { id, discordId: u.discordId, username: u.username, name: u.name, avatar: u.avatar, avatarFile: null, created: now, seen: now };
+  }
+
+  setAvatarFile(accountId: string, file: string | null): void {
+    this.db.prepare('UPDATE accounts SET avatar_file = ? WHERE id = ?').run(file, accountId);
+  }
+
+  /** A new session: returns the token for the cookie; only its hash is stored. */
+  createAccountSession(accountId: string, now = Date.now()): string {
+    const token = randomBytes(32).toString('base64url');
+    this.db.prepare('DELETE FROM account_sessions WHERE expires <= ?').run(now);
+    this.db
+      .prepare('INSERT INTO account_sessions (token_hash, account_id, created, expires) VALUES (?, ?, ?, ?)')
+      .run(hashToken(token), accountId, now, now + ACCOUNT_SESSION_DAYS * 86_400_000);
+    this.db
+      .prepare(
+        `DELETE FROM account_sessions WHERE account_id = ? AND token_hash NOT IN
+           (SELECT token_hash FROM account_sessions WHERE account_id = ? ORDER BY created DESC LIMIT ${MAX_SESSIONS_PER_ACCOUNT})`,
+      )
+      .run(accountId, accountId);
+    return token;
+  }
+
+  /** The account behind a session token, if the session exists and hasn't expired. */
+  accountForSession(token: string | undefined, now = Date.now()): Account | undefined {
+    if (!token || !ACCOUNT_TOKEN.test(token)) return undefined;
+    const r = this.db
+      .prepare('SELECT a.* FROM account_sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token_hash = ? AND s.expires > ?')
+      .get(hashToken(token), now) as Row | undefined;
+    if (!r) return undefined;
+    const account = accountFrom(r);
+    if (now - account.seen > SEEN_EVERY_MS) {
+      this.db.prepare('UPDATE accounts SET seen = ? WHERE id = ?').run(now, account.id);
+      account.seen = now;
+    }
+    return account;
+  }
+
+  deleteAccountSession(token: string | undefined): void {
+    if (token && ACCOUNT_TOKEN.test(token)) this.db.prepare('DELETE FROM account_sessions WHERE token_hash = ?').run(hashToken(token));
   }
 
   close(): void {

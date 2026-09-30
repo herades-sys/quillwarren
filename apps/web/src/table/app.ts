@@ -356,6 +356,7 @@ export function startTable(initial: Initial): void {
       board?.showPing(x, y, me().color);
     },
     backgroundView: () => seeAs,
+    gameId: () => initial.gameId,
   })
     .then((b) => {
       board = b;

@@ -10,7 +10,7 @@ login, database directory and release pipeline.
 
 ## Scope of phase 1
 
-- **Games** with one GM, who is Delve's editor login, and players who join through invite links. Players need no account or password.
+- **Games** with one GM, who is Delve's editor login, and players who join through invite links. Players need no account or password; they may log in with Discord (see "Discord login").
 - **Pages** (scenes) in a game. A page's background is a Delve map (its players' view) or an uploaded image. The GM moves all the players to a page ("player banner").
 - **Tokens** on three layers:
   - map (under tokens) and tokens: everyone sees these;
@@ -42,6 +42,8 @@ The message and state types are in `packages/table/src/protocol.ts`, and that fi
   - The GM creates an invite with `POST /api/v1/games/:id/invites {name?, hours?}` (default 72 hours). The link is `/play/join/<token>`: an HMAC-signed token with the game id, an invite id and the expiry, keyed from the server's session key (the same secret the sessions use).
   - Opening the link asks for a display name, creates a member (`p1`, `p2`…, role `player`) and sets the cookie `delve_player_<gameId>`, signed and holding the member id, for 30 days. It then redirects to `/play/:gameId`.
   - Removing a member (GM) invalidates their cookie, because the member no longer exists.
+- **Discord login (optional):** players can log in with Discord instead, so their seat follows them to other devices. Co-GMs listed in `DELVE_GM_DISCORD_IDS` are GM of every game. See "Discord login" below.
+- **Who a request is**, in this order: a valid player cookie for the game, then a seat linked to the request's Discord login, then the GM (editor login, API token, or a co-GM's Discord login).
 - **Every read and write** of a game checks membership. A non-member gets 401/403, and the WebSocket closes with 4401.
 
 ## The one permission check and the one filter
@@ -58,7 +60,8 @@ The message and state types are in `packages/table/src/protocol.ts`, and that fi
   - whispers not addressed to them;
   - GM rolls (the roller sees that they rolled, not the result, if they aren't the GM);
   - hidden turn order;
-  - the invite list and the member list's internal fields.
+  - the invite list and the member list's internal fields;
+  - every member's `accountId` (for everyone, the GM included: it never leaves the server).
 - **Never rely on the client to hide anything.**
 
 ## Sync
@@ -85,6 +88,8 @@ The result is `{ expr, total, terms }`: each dice term lists every die `{value, 
 - **Database:** a separate SQLite file, `${DELVE_DATA}/table.db`, via `node:sqlite` as `store.ts` does.
   - `games(id, name, created, rev, state JSON)`: the whole game state, written after each change (debounced about 300 ms, and always on shutdown).
   - `chat(game_id, seq, at, json)`: the message log (the last 200 go into `hello`).
+  - `seats(game_id, member_id, nonce)`: what player cookies are signed against.
+  - `accounts(id, discord_id, username, name, avatar, avatar_file, created, seen)` and `account_sessions(token_hash, account_id, created, expires)`: Discord logins (see below).
 - **Uploaded images:** `${DELVE_DATA}/table-assets/<sha256>.<ext>`. Accepted: PNG, JPEG, WebP or GIF (checked by magic bytes), at most 10 MB, by the GM. They are served to members only at `/api/v1/games/:id/assets/<sha>.<ext>`.
 
 ## REST (all under `/api/v1`)
@@ -93,6 +98,7 @@ The result is `{ expr, total, terms }`: each dice term lists every die `{value, 
 |---|---|---|
 | `GET /games` | GM | List games `{id, name, created, players}` |
 | `POST /games {name}` | GM | New game with one empty page; returns `{id}` |
+| `PATCH /games/:id {requireDiscord}` | GM | Game settings: `requireDiscord: true` makes invites Discord-only (409 without Discord login set up). Returns `{requireDiscord}` |
 | `DELETE /games/:id` | GM | Delete the game and its chat |
 | `POST /games/:id/invites {name?, hours?}` | GM | `{url, expires}` |
 | `GET /play/join/:token` (page) | anyone | The name form, then creates the member and sets the cookie |
@@ -100,8 +106,35 @@ The result is `{ expr, total, terms }`: each dice term lists every die `{value, 
 | `POST /games/:id/assets` (raw body) | GM | Upload an image, returns `{url}` |
 | `GET /games/:id/assets/:file` | members | The image |
 | `GET /games/:id/live` (WebSocket) | members | The sync channel |
+| `GET /auth/discord?next=` (page, not under `/api/v1`) | anyone | Start a Discord login; afterwards back to `next` |
+| `GET /auth/discord/callback` (page) | Discord | The end of the login |
+| `POST /auth/logout {next?}` (page) | anyone | End the Discord login on this device (`GET` shows a button for it) |
 
 Pages from Delve maps draw their background from `/api/v1/maps/:mapId/render.png?view=players&ppg=70&fog=1&grid=0`. Page coordinates are in cells with the same origin as the Delve map, so Delve's walls and rooms line up with tokens. `page.origin` is the render's top-left cell (`scene.bounds.x0/y0`).
+
+## Discord login
+
+Players can log in with Discord, so their seat is tied to their Discord account instead of one browser: a second device (or a cleared browser) needs no new invite. The Delve map editor keeps its own password login.
+
+- **Turning it on:** set `DELVE_DISCORD_CLIENT_ID` and `DELVE_DISCORD_CLIENT_SECRET` (from the Discord developer portal, in `/etc/delve/delve.env`). Without both, nothing changes and no Discord button shows anywhere.
+- **Optional settings:**
+  - `DELVE_PUBLIC_URL` (e.g. `https://table.example`): the base of the redirect URI, `<DELVE_PUBLIC_URL>/auth/discord/callback`. Without it, the address the browser used (`http://<host>/auth/discord/callback`). With it, a login started on another address first moves over to the public one, so the login cookie lands where Discord sends the browser back.
+  - `DELVE_GM_DISCORD_IDS`: comma-separated Discord user ids who are co-GMs: they see the lobby with every game and are GM (member `gm`) in all of them.
+  - `DELVE_DISCORD_API` (default `https://discord.com/api`) and `DELVE_DISCORD_CDN` (default `https://cdn.discordapp.com`): for tests and dev servers with a fake Discord. With a custom API, the consent page is `<api>/oauth2/authorize` too.
+- **The flow** (OAuth2 authorization code, scope `identify` only):
+  1. `GET /auth/discord?next=<path>` makes a random state and keeps it, with `next`, the redirect URI and a 10-minute expiry, in the signed cookie `delve_discord_state` (HttpOnly, SameSite=Lax, Path=/auth/discord). Then it sends the browser to Discord (`prompt=none`: someone who agreed before isn't asked again).
+  2. `GET /auth/discord/callback?code&state` checks the state against the cookie (constant-time, unexpired, each state once), posts the code to `<api>/oauth2/token`, reads `<api>/users/@me` with the token, and forgets the token. Discord calls time out after 10 s.
+  3. It keeps the user's id, username, display name (`global_name`, else the username) and avatar hash, and fetches the avatar once per change into the table assets. Then it sets `delve_account` (a random token, 30 days, HttpOnly, SameSite=Lax, Path=/, Secure on https; only its SHA-256 is stored) and goes to `next` (only a path on this site: one leading `/`, no `//` or `\`; otherwise `/play`).
+  - Declined consent, a stale state and Discord errors get friendly pages with "Try again".
+  - The code, tokens, the secret and cookies are never logged (`code=` and `state=` are masked in logged URLs).
+- **Seats:**
+  - A logged-in player who joins through an invite gets a seat linked to their account (the name starts as their Discord name and can be changed). That seat needs no player cookie: on any device where they're logged in, `/play/:id`, the WebSocket and the images let them in.
+  - If the account already has a seat in that game, the invite link goes straight to the table.
+  - `/play` lists "Your games" for the login.
+  - The member's `avatar` is the stored picture's game asset URL (`/api/v1/games/:id/assets/<sha>.png`), never Discord's CDN, whose URLs contain the Discord user id. Members carry `accountId` on the server only; views never include it.
+  - Removing the member ends the seat on every device. Logging out (`POST /auth/logout`) deletes the session on the server.
+- **Discord-only invites:** the GM ticks "Players must log in with Discord" in the Players tab (`PATCH /api/v1/games/:id {requireDiscord}`). The invite page then shows only the Discord button, and name-only joins get 403. Players already at the table stay.
+- **Adding the public address later:** in the Discord developer portal, under OAuth2 → Redirects, add `https://<public host>/auth/discord/callback` next to `http://192.168.1.9:8790/auth/discord/callback`. Then either set `DELVE_PUBLIC_URL=https://<public host>`, so every login goes through the public address, or leave it unset, so each address uses its own callback (both must be registered). Behind a TLS proxy (Fastify then sees plain http), set `DELVE_PUBLIC_URL`, so the Discord login's cookies still get `Secure`.
 
 ## Client (`/play/:gameId`)
 
@@ -116,6 +149,8 @@ Pages from Delve maps draw their background from `/api/v1/maps/:mapId/render.png
   - For the GM:
     - Pages: switch, "move players here", new page from a Delve map, rename, delete.
     - Tokens: upload an image, add it to the page, pick a Delve prop as a token.
-    - Players: invite link, member list, remove.
+    - Players: invite link, member list, remove, and (with Discord login set up) "Players must log in with Discord".
+  - Members show their Discord picture (when they have one) in the member list and on their chat lines, else their colour dot.
+  - With a Discord login, the header says "Logged in as <name> · Log out".
 - **Theming:** use Delve's viewer tokens (dark and light). Everything works with mouse and touch (pointer events).
 - **Shared:** `apps/server/src/table/page.ts` exports `tablePage(opts: { gameId: string; gameName: string; version: string; me: { id: string; name: string; role: 'gm' | 'player' } }): string`.

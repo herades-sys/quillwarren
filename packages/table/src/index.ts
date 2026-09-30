@@ -4,6 +4,6 @@ export type * from './protocol.ts';
 export { TableError, DiceError } from './errors.ts';
 export { newGame, addMember, addInvite, removeInvite, PALETTE } from './game.ts';
 export { applyIntent, can, type ApplyContext, type Outcome } from './rules.ts';
-export { viewFor, eventFor, chatFor, pageFor } from './views.ts';
+export { viewFor, eventFor, chatFor, pageFor, publicMember } from './views.ts';
 export { roll, rollInline, MAX_DICE, MAX_EXPR, MAX_INLINE, type Rng } from './dice.ts';
 export { parseChat, HELP, MAX_CHAT, type ParsedChat } from './chat.ts';

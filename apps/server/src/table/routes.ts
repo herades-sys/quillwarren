@@ -1,16 +1,18 @@
 // Delve Table's HTTP side: the REST API under /api/v1/games, the pages under
-// /play (the GM's lobby, invite links, the table itself), uploaded images and
-// the live channel. See docs/TABLE.md for the routes and who may call them.
+// /play (the GM's lobby, invite links, the table itself), uploaded images, the
+// live channel and, when it's set up, Discord login (discord.ts). See
+// docs/TABLE.md for the routes and who may call them.
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { computeFloor, computeWalls, doorSegment, type DelveMap, type Door } from '@delve/core';
-import { addInvite, addMember, newGame, removeInvite, TableError, type GameState, type Invite, type Page } from '@delve/table';
-import { sameOrigin } from '../auth.ts';
-import type { EditorAuth } from '../login.ts';
-import { RenderQueryError, ROLL20_PPG, sceneFor } from '../render.ts';
+import { addInvite, addMember, newGame, pageFor, removeInvite, TableError, type GameState, type Invite, type Member, type Page } from '@delve/table';
+import { readCookie, sameOrigin } from '../auth.ts';
+import { canLogIn, type EditorAuth } from '../login.ts';
+import { render, RenderQueryError, ROLL20_PPG, sceneFor } from '../render.ts';
 import { NotFoundError, type MapStore } from '../store.ts';
 import {
+  accountSeat,
   clearPlayerCookie,
   GAME_ID,
   isGm,
@@ -21,10 +23,11 @@ import {
   type AccessDeps,
 } from './access.ts';
 import { ASSET_FILE, MAX_ASSET_BYTES, sniffImage, TableAssets } from './assets.ts';
-import { joinPage, lobbyPage, messagePage, notGmPage } from './html.ts';
+import { ACCOUNT_COOKIE, avatarUrl, discordLoginUrl, registerDiscord, type DiscordConfig } from './discord.ts';
+import { joinPage, lobbyPage, messagePage, notGmPage, type DiscordLogin } from './html.ts';
 import { registerLive, TableHub } from './live.ts';
 import { tablePage } from './page.ts';
-import { newGameId, TableStore } from './store.ts';
+import { newGameId, TableStore, type Account } from './store.ts';
 
 export interface TableDeps {
   /** Delve's maps, for pages made from a map. */
@@ -37,6 +40,8 @@ export interface TableDeps {
   dataDir?: string;
   /** Subscribe to changes of Delve maps (MapService.onChange), so pages drawn from a map follow it. */
   onMapChange?: (cb: (mapId: string) => void) => void;
+  /** Discord login for players (DELVE_DISCORD_CLIENT_ID/SECRET). Without it there's no Discord anywhere. */
+  discord?: DiscordConfig;
 }
 
 /** A map edit comes in many small changes (a drag, a reveal): wait this long for them to settle. */
@@ -88,8 +93,30 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
   const store = new TableStore(deps.dataDir ? join(deps.dataDir, 'table.db') : ':memory:');
   const assets = new TableAssets(deps.dataDir ? join(deps.dataDir, 'table-assets') : undefined);
   const keys = new TableKeys(deps.token);
-  const access: AccessDeps = { auth: deps.auth, token: deps.token, keys, seatNonce: (g, m) => store.seatNonce(g, m) };
+  const discord = deps.discord;
+  // one session lookup per request, however many games it checks
+  const accounts = new WeakMap<FastifyRequest, Account | null>();
+  const accountOf = (req: FastifyRequest): Account | null => {
+    if (!discord) return null;
+    let a = accounts.get(req);
+    if (a === undefined) accounts.set(req, (a = store.accountForSession(readCookie(req.headers.cookie, ACCOUNT_COOKIE)) ?? null));
+    return a;
+  };
+  const access: AccessDeps = {
+    auth: deps.auth,
+    token: deps.token,
+    keys,
+    seatNonce: (g, m) => store.seatNonce(g, m),
+    accountOf,
+    gmDiscordIds: new Set(discord?.gmIds ?? []),
+  };
   const hub = new TableHub(store, app.log);
+  /** Discord login bits for a page that should go back to `next` afterwards. */
+  const discordLogin = (req: FastifyRequest, next: string): DiscordLogin | undefined => {
+    if (!discord) return undefined;
+    const account = accountOf(req);
+    return { loginUrl: discordLoginUrl(next), ...(account ? { account: { name: account.name } } : {}) };
+  };
 
   // Pages drawn from a Delve map follow it: when the map changes (the GM
   // reveals a room, moves a door), everyone sees the page again, and the client
@@ -145,6 +172,28 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
 
     registerLive(t, hub, store, access);
 
+    // ---------- Discord login ----------
+
+    if (discord) {
+      // a new avatar reaches every seat of the account, everywhere
+      const syncAvatar = (account: Account) => {
+        for (const g of store.list()) {
+          const state = store.get(g.id);
+          if (!state?.members.some((m) => m.accountId === account.id)) continue;
+          const want = avatarUrl(state.id, account);
+          let changed = false;
+          const members = state.members.map((m): Member => {
+            if (m.accountId !== account.id || m.avatar === want) return m;
+            changed = true;
+            const { avatar: _, ...rest } = m;
+            return want ? { ...rest, avatar: want } : rest;
+          });
+          if (changed) hub.replace(state, { ...state, members }, [{ type: 'members', members }]);
+        }
+      };
+      registerDiscord(t, { config: discord, store, keys, assets, log: app.log, onLogin: syncAvatar });
+    }
+
     // ---------- games ----------
 
     t.get('/api/v1/games', { preHandler: gmOnly(false) }, async () => ({ games: store.list() }));
@@ -155,6 +204,19 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
       const id = newGameId();
       store.create(newGame(id, name, Date.now()));
       return reply.code(201).send({ id });
+    });
+
+    // Game settings: for now only whether invites need a Discord login.
+    t.patch('/api/v1/games/:id', { preHandler: gmOnly(true) }, async (req, reply) => {
+      const state = gameOf(req, reply);
+      if (!state) return reply;
+      const body = (req.body ?? {}) as { requireDiscord?: unknown };
+      if (typeof body.requireDiscord !== 'boolean') return reply.code(400).send({ error: 'requireDiscord: true or false' });
+      if (body.requireDiscord && !discord) return reply.code(409).send({ error: 'Discord login is not set up on this server' });
+      const { requireDiscord: _, ...rest } = state;
+      const next = hub.replace(state, body.requireDiscord ? { ...rest, requireDiscord: true } : rest);
+      hub.refresh(next.id, isGmMember(next));
+      return { requireDiscord: next.requireDiscord === true };
     });
 
     t.delete('/api/v1/games/:id', { preHandler: gmOnly(true) }, async (req, reply) => {
@@ -264,16 +326,56 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
         .send(found.bytes);
     });
 
+    // A Delve page's picture, for members of the game only (from the internet the map API needs an
+    // editor login). Players get what they have seen, on their own page; the GM may ask for the whole
+    // map (view=gm: fog dimmed, room numbers, notes). Both in the page's exact frame.
+    t.get('/api/v1/games/:id/pages/:pageId/background.png', async (req, reply) => {
+      const state = gameOf(req, reply);
+      if (!state) return reply;
+      const member = memberOf(access, req, state);
+      if (!member) return reply.code(403).send({ error: 'only members of this game can see its pages' });
+      const { pageId } = req.params as { pageId: string };
+      const page = state.pages.find((p) => p.id === pageId);
+      if (!page || page.background.kind !== 'delve') return reply.code(404).send({ error: 'no Delve page with that id' });
+      const gm = member.role === 'gm';
+      if (!gm && pageFor(state, member.id) !== page.id) return reply.code(403).send({ error: 'that page is not open to players' });
+      const view = gm && (req.query as { view?: string }).view === 'gm' ? 'gm' : 'players';
+      let map: DelveMap;
+      try {
+        map = deps.maps.get(page.background.mapId).map;
+      } catch (e) {
+        if (e instanceof NotFoundError) return reply.code(404).send({ error: 'the Delve map behind this page is gone' });
+        throw e;
+      }
+      const [x0, y0] = page.origin;
+      try {
+        const out = await render(map, { view, fog: '1', grid: '0', ppg: String(page.cellPx || ROLL20_PPG), frame: `${x0},${y0},${x0 + page.width},${y0 + page.height}` }, 'png');
+        return reply.type('image/png').header('cache-control', 'private, no-cache').header('x-content-type-options', 'nosniff').send(out.body);
+      } catch (e) {
+        if (e instanceof RenderQueryError) return reply.code(400).send({ error: e.message });
+        throw e;
+      }
+    });
+
     // ---------- pages ----------
 
     t.get('/play', async (req, reply) => {
-      if (isGm(access, req)) return html(reply, 200, lobbyPage(store.list()));
-      const yours = playerCookieGames(req.headers.cookie).flatMap((id) => {
+      const account = accountOf(req);
+      if (isGm(access, req)) return html(reply, 200, lobbyPage(store.list(), account ? { name: account.name } : undefined));
+      // games of this browser's player cookies, and of the Discord login
+      const ids = new Set(playerCookieGames(req.headers.cookie));
+      if (account) {
+        for (const g of store.list()) {
+          const s = store.get(g.id);
+          if (s && accountSeat(s, account.id)) ids.add(s.id);
+        }
+      }
+      const yours = [...ids].flatMap((id) => {
         const s = store.get(id);
         const m = s ? memberOf(access, req, s) : null;
         return s && m ? [{ id: s.id, name: s.name }] : [];
       });
-      return html(reply, 200, notGmPage(yours, Boolean(deps.auth.passwordHash)));
+      return html(reply, 200, notGmPage(yours, canLogIn(deps.auth), discordLogin(req, '/play')));
     });
 
     t.post('/play/new', async (req, reply) => {
@@ -290,10 +392,28 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
       const state = GAME_ID.test(id) ? store.get(id) : undefined;
       if (!state) return html(reply, 404, messagePage('No such game', ['This game does not exist (any more).'], [{ href: '/play', text: 'Delve Table' }]));
       const me = memberOf(access, req, state);
+      const account = accountOf(req);
       if (!me) {
-        return html(reply, 403, messagePage('Not at this table', ['You are not in this game. Ask your GM for an invite link.'], [{ href: `/login?next=${encodeURIComponent(`/play/${id}`)}`, text: 'GM login' }]));
+        const here = `/play/${id}`;
+        const links = [{ href: `/login?next=${encodeURIComponent(here)}`, text: 'GM login' }];
+        if (discord && !account) links.unshift({ href: discordLoginUrl(here), text: 'Log in with Discord' });
+        const lines = account
+          ? [`You're logged in with Discord as ${account.name}, but that login isn't in this game. Ask your GM for an invite link.`]
+          : ['You are not in this game. Ask your GM for an invite link.'];
+        return html(reply, 403, messagePage('Not at this table', lines, links));
       }
-      return html(reply, 200, tablePage({ gameId: state.id, gameName: state.name, version: deps.version, me: { id: me.id, name: me.name, role: me.role } }));
+      return html(
+        reply,
+        200,
+        tablePage({
+          gameId: state.id,
+          gameName: state.name,
+          version: deps.version,
+          me: { id: me.id, name: me.name, role: me.role },
+          discord: Boolean(discord),
+          ...(account ? { account: { name: account.name }, linked: me.accountId === account.id } : {}),
+        }),
+      );
     });
 
     // Drop the player cookie (the GM testing as a player goes back to being the GM).
@@ -315,8 +435,13 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
       if (invite.expires <= Date.now()) return expired;
       return { state, invite };
     };
-    // memberOf only returns a player for a valid cookie of this game
+    // memberOf only returns a player for a valid cookie of this game, or a seat of the request's Discord account
     const alreadyIn = (req: FastifyRequest, state: GameState): boolean => memberOf(access, req, state)?.role === 'player';
+    /** The join page's Discord part: log in and come back to this invite; `required` only counts with Discord set up. */
+    const joinDiscord = (req: FastifyRequest, token: string, state: GameState) => {
+      const d = discordLogin(req, `/play/join/${token}`);
+      return d ? { discord: { ...d, required: state.requireDiscord === true } } : {};
+    };
 
     // A wildcard, not :token: signed tokens are longer than Fastify lets a route parameter be.
     t.get('/play/join/*', async (req, reply) => {
@@ -324,7 +449,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
       const inv = invitation(token);
       if ('status' in inv) return html(reply, inv.status, messagePage(inv.title, [inv.text]));
       if (alreadyIn(req, inv.state)) return reply.redirect(`/play/${inv.state.id}`, 303);
-      return html(reply, 200, joinPage({ token, gameName: inv.state.name, ...(inv.invite.name ? { inviteName: inv.invite.name } : {}) }));
+      return html(reply, 200, joinPage({ token, gameName: inv.state.name, ...(inv.invite.name ? { inviteName: inv.invite.name } : {}), ...joinDiscord(req, token, inv.state) }));
     });
 
     t.post('/play/join/*', async (req, reply) => {
@@ -334,21 +459,30 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
       if ('status' in inv) return html(reply, inv.status, messagePage(inv.title, [inv.text]));
       const { state } = inv;
       if (alreadyIn(req, state)) return reply.redirect(`/play/${state.id}`, 303);
+      const account = accountOf(req);
       const raw = (req.body as { name?: unknown } | undefined)?.name;
       const name = cleanName(raw, 40);
-      const again = (error: string) =>
-        html(reply, 400, joinPage({ token, gameName: state.name, ...(inv.invite.name ? { inviteName: inv.invite.name } : {}), error, name: typeof raw === 'string' ? raw.slice(0, 40) : '' }));
+      const again = (error: string, code = 400) =>
+        html(
+          reply,
+          code,
+          joinPage({ token, gameName: state.name, ...(inv.invite.name ? { inviteName: inv.invite.name } : {}), error, name: typeof raw === 'string' ? raw.slice(0, 40) : '', ...joinDiscord(req, token, state) }),
+        );
+      if (discord && state.requireDiscord && !account) return again('This game needs a Discord login: log in with Discord first.', 403);
       if (!name) return again('Pick a name of 1 to 40 characters.');
       if (state.members.filter((m) => m.role === 'player').length >= MAX_PLAYERS) return again(`This game is full (${MAX_PLAYERS} players).`);
       let added: ReturnType<typeof addMember>;
       try {
-        added = addMember(state, name);
+        const avatar = account ? avatarUrl(state.id, account) : undefined;
+        added = addMember(state, name, account ? { accountId: account.id, ...(avatar ? { avatar } : {}) } : {});
       } catch (e) {
         if (e instanceof TableError) return again(e.message);
         throw e;
       }
-      const nonce = store.seat(state.id, added.member.id);
+      // a Discord seat needs no cookie of its own: the login is the key (on every device, until logging out)
+      const nonce = account ? null : store.seat(state.id, added.member.id);
       const next = hub.replace(state, added.state, [{ type: 'members', members: added.state.members }]);
+      if (nonce === null) return reply.redirect(`/play/${next.id}`, 303);
       return reply
         .header('set-cookie', playerCookie(next.id, keys.playerValue(next.id, added.member.id, nonce), req.protocol === 'https'))
         .redirect(`/play/${next.id}`, 303);

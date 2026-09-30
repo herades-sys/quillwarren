@@ -51,6 +51,11 @@ export function shell(title: string, body: string): string {
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .links { display: flex; flex-wrap: wrap; gap: 6px; }
   .spacer { flex: 1; }
+  .button.discord { background: #5865F2; border-color: #5865F2; color: #FFFFFF; padding: 8px 14px; font-size: .95rem; }
+  form.inline { display: inline; }
+  form.card-part { display: grid; gap: 12px; }
+  .linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
+  .or { color: var(--muted); font-size: .9rem; }
 </style>
 </head>
 <body>
@@ -59,6 +64,16 @@ ${body}
 </html>`;
 }
 
+/** An inline "Log out" button (a POST, so another site can't log anyone out). */
+export const logoutButton = (next: string, label = 'Log out'): string =>
+  `<form class="inline" method="post" action="/auth/logout"><input type="hidden" name="next" value="${esc(next)}"><button class="linkish" type="submit">${esc(label)}</button></form>`;
+
+/** "Logged in as <name> · Log out" for someone logged in with Discord. */
+export const accountLine = (name: string, next: string): string =>
+  `<p class="note">Logged in with Discord as <strong>${esc(name)}</strong> · ${logoutButton(next)}</p>`;
+
+const discordButton = (href: string): string => `<a class="button discord" href="${esc(href)}">Log in with Discord</a>`;
+
 /** A short page with a heading, some text and a way on. */
 export function messagePage(title: string, lines: string[], links: { href: string; text: string }[] = []): string {
   const ps = lines.map((l) => `<p>${esc(l)}</p>`).join('\n');
@@ -66,7 +81,7 @@ export function messagePage(title: string, lines: string[], links: { href: strin
   return shell(`${title} · Delve Table`, `<main class="page narrow"><h1>${esc(title)}</h1><div class="card">${ps}${as ? `<p class="links">${as}</p>` : ''}</div></main>`);
 }
 
-export function lobbyPage(games: GameSummary[]): string {
+export function lobbyPage(games: GameSummary[], account?: { name: string }): string {
   const rows = games
     .map(
       (g) => `<tr>
@@ -87,6 +102,7 @@ export function lobbyPage(games: GameSummary[]): string {
     'Delve Table',
     `<main class="page">
   <div class="top"><h1>Delve Table</h1><span class="spacer"></span><a class="button" href="/">Delve maps</a></div>
+  ${account ? accountLine(account.name, '/play') : ''}
   <form method="post" action="/play/new" class="row card">
     <label>Name <input name="name" required maxlength="80" placeholder="e.g. Curse of the Crypt"></label>
     <button class="button primary" type="submit">New game</button>
@@ -105,27 +121,73 @@ export function lobbyPage(games: GameSummary[]): string {
   );
 }
 
+/** Discord login on a page: the link that starts it, and who is logged in already. */
+export interface DiscordLogin {
+  loginUrl: string;
+  account?: { name: string };
+}
+
 /** What a player (or anyone not logged in) sees at /play. */
-export function notGmPage(yours: { id: string; name: string }[], canLogIn: boolean): string {
+export function notGmPage(yours: { id: string; name: string }[], canLogIn: boolean, discord?: DiscordLogin): string {
   const list = yours.length
     ? `<p>Your games:</p><p class="links">${yours.map((g) => `<a class="button primary" href="/play/${encodeURIComponent(g.id)}">${esc(g.name)}</a>`).join(' ')}</p>`
     : '';
   const login = canLogIn ? `<p class="note">Are you the GM? <a href="/login?next=/play">Log in</a>.</p>` : '';
+  const who = discord?.account
+    ? accountLine(discord.account.name, '/play')
+    : discord
+      ? `<p class="links">${discordButton(discord.loginUrl)}</p><p class="note">Log in to see your games on any device.</p>`
+      : '';
   return shell(
     'Delve Table',
-    `<main class="page narrow"><h1>Delve Table</h1><div class="card">${list}<p>To join a game, ask your GM for an invite link.</p>${login}</div></main>`,
+    `<main class="page narrow"><h1>Delve Table</h1><div class="card">${who}${list}<p>To join a game, ask your GM for an invite link.</p>${login}</div></main>`,
   );
 }
 
-export function joinPage(o: { token: string; gameName: string; inviteName?: string; error?: string; name?: string }): string {
-  return shell(
-    `Join ${o.gameName} · Delve Table`,
-    `<main class="page narrow"><h1>Join the table</h1>
-<form class="card" method="post" action="/play/join/${esc(o.token)}">
-  <p>You're invited to <strong>${esc(o.gameName)}</strong>${o.inviteName ? ` (${esc(o.inviteName)})` : ''}.</p>
-  ${o.error ? `<p class="error">${esc(o.error)}</p>` : ''}
+export interface JoinOptions {
+  token: string;
+  gameName: string;
+  inviteName?: string;
+  error?: string;
+  name?: string;
+  /** Discord login is set up; `required` when the game only takes Discord logins. */
+  discord?: DiscordLogin & { required: boolean };
+}
+
+export function joinPage(o: JoinOptions): string {
+  const action = `/play/join/${o.token}`;
+  const intro = `<p>You're invited to <strong>${esc(o.gameName)}</strong>${o.inviteName ? ` (${esc(o.inviteName)})` : ''}.</p>
+  ${o.error ? `<p class="error">${esc(o.error)}</p>` : ''}`;
+  const nameForm = (value: string, cls: string) => `<form class="${cls}" method="post" action="${esc(action)}">
+  <label>Your name at the table <input name="name" required maxlength="40" autocomplete="nickname" autofocus value="${esc(value)}"></label>
+  <p><button class="button primary" type="submit">Join</button></p>
+</form>`;
+  const d = o.discord;
+  let body: string;
+  if (!d) {
+    body = `<form class="card" method="post" action="${esc(action)}">
+  ${intro}
   <label>Your name at the table <input name="name" required maxlength="40" autocomplete="nickname" autofocus value="${esc(o.name ?? '')}"></label>
   <p><button class="button primary" type="submit">Join</button></p>
-</form></main>`,
-  );
+</form>`;
+  } else if (d.account) {
+    body = `<div class="card">${intro}
+  <p class="note">Logged in with Discord as <strong>${esc(d.account.name)}</strong>. Your seat follows this login to your other devices.</p>
+  ${nameForm(o.name ?? d.account.name, 'card-part')}
+  <p class="note">Not you? ${logoutButton(action)}</p>
+</div>`;
+  } else if (d.required) {
+    body = `<div class="card">${intro}
+  <p>This game asks players to log in with Discord.</p>
+  <p class="links">${discordButton(d.loginUrl)}</p>
+</div>`;
+  } else {
+    body = `<div class="card">${intro}
+  <p class="links">${discordButton(d.loginUrl)}</p>
+  <p class="note">With a Discord login your seat follows you to your other devices.</p>
+  <p class="or">or just type a name:</p>
+  ${nameForm(o.name ?? '', 'card-part')}
+</div>`;
+  }
+  return shell(`Join ${o.gameName} · Delve Table`, `<main class="page narrow"><h1>Join the table</h1>\n${body}</main>`);
 }

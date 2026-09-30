@@ -66,8 +66,12 @@ export const pageBox = (p: Pick<Page, 'origin' | 'width' | 'height'>): Box => ({
  * only what they've seen, or for the GM the whole map with the unseen parts dimmed
  * and the GM's notes; both exactly in the page's frame, so they line up.
  */
-export function backgroundUrl(p: Page, bust = 0, view: 'gm' | 'players' = 'players'): string | null {
+export function backgroundUrl(p: Page, bust = 0, view: 'gm' | 'players' = 'players', gameId?: string): string | null {
   const bg = p.background;
+  // through the game: it checks membership, which the map API can't do for players from the internet
+  if (bg.kind === 'delve' && gameId) {
+    return `/api/v1/games/${encodeURIComponent(gameId)}/pages/${encodeURIComponent(p.id)}/background.png?view=${view}${bust ? `&v=${bust}` : ''}`;
+  }
   if (bg.kind === 'delve') {
     const b = pageBox(p);
     const q = `view=${view}&ppg=${p.cellPx || 70}&fog=1&grid=0&frame=${b.x0},${b.y0},${b.x1},${b.y1}${bust ? `&v=${bust}` : ''}`;

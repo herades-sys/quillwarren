@@ -231,7 +231,17 @@ export function registerLive(app: FastifyInstance, hub: TableHub, store: TableSt
     }
     const conn: Conn = { socket, gameId: id, memberId: member.id };
     hub.join(conn);
-    socket.on('message', (raw) => hub.receive(conn, raw));
+    socket.on('message', (raw) => {
+      // the login behind the socket may have ended since it opened (logout, "log out everywhere")
+      const now = store.get(id);
+      const still = now ? memberOf(access, req, now, { write: true, ...(typeof token === 'string' ? { queryToken: token } : {}) }) : null;
+      if (!still || still.id !== conn.memberId) {
+        send(socket, { type: 'bye', reason: 'Your login has ended. Reload the page to join again.' });
+        socket.close(CLOSE_NOT_MEMBER, 'login ended');
+        return;
+      }
+      hub.receive(conn, raw);
+    });
     hub.hello(conn, state);
   });
 }

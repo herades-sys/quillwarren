@@ -119,6 +119,7 @@ describe('pages', () => {
   it('builds the Delve background URL (players or GM, fogged, in the page frame) and its box', () => {
     expect(backgroundUrl(page)).toBe(`/api/v1/maps/m%201/render.png?view=players&ppg=70&fog=1&grid=0&frame=${page.origin[0]},${page.origin[1]},${page.origin[0] + page.width},${page.origin[1] + page.height}`);
     expect(backgroundUrl(page, 0, 'gm')).toContain('/render.png?view=gm&');
+    expect(backgroundUrl(page, 5, 'players', 'g1')).toBe(`/api/v1/games/g1/pages/${page.id}/background.png?view=players&v=5`);
     expect(backgroundUrl(page, 123)).toMatch(/&v=123$/);
     expect(backgroundBox(page, 1400, 700)).toEqual({ x0: -2, y0: -1, x1: 18, y1: 9 });
     const img: Page = { ...page, background: { kind: 'image', url: '/api/v1/games/g1/assets/a.png', w: 12, h: 8 } };

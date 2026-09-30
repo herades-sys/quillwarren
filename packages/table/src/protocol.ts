@@ -13,6 +13,10 @@ export interface Member {
   role: Role;
   /** A CSS colour for their pings, chat name and selection. */
   color: string;
+  /** Server only: the Discord-linked account ("acc_…") this seat belongs to. viewFor and eventFor never send it. */
+  accountId?: string;
+  /** The member's picture (their Discord avatar, stored as a game asset URL). */
+  avatar?: string;
 }
 
 export interface Bar {
@@ -101,6 +105,8 @@ export interface GameState {
   turn: TurnOrder;
   /** The number of the next player id ("p<n>"). Kept so a removed player's id is never given out again. */
   nextPlayerNo?: number;
+  /** Invites only work with a Discord login (when the server has Discord login set up). */
+  requireDiscord?: boolean;
 }
 
 // ---------- dice ----------
@@ -202,6 +208,8 @@ export interface GameView {
   turn: TurnOrder | null;
   /** GM only. */
   invites?: Invite[];
+  /** GM only: invites need a Discord login. */
+  requireDiscord?: boolean;
 }
 
 /** A state change, already filtered for its recipient. */

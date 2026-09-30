@@ -19,6 +19,17 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<s
   return e;
 }
 
+/** A member's picture (their Discord avatar), or their colour dot when there's none or it doesn't load. */
+export function memberMark(m: { color: string; avatar?: string | undefined }): HTMLElement {
+  const dot = h('span', { class: 'swatch' });
+  dot.style.setProperty('--c', m.color);
+  if (!m.avatar) return dot;
+  const img = h('img', { class: 'avatar', src: m.avatar, alt: '', referrerPolicy: 'no-referrer', loading: 'lazy', decoding: 'async', width: 20, height: 20 });
+  img.style.setProperty('--c', m.color);
+  img.addEventListener('error', () => img.replaceWith(dot), { once: true });
+  return img;
+}
+
 export function button(label: string, onclick: (e: MouseEvent) => void, props: Record<string, unknown> = {}): HTMLButtonElement {
   return h('button', { type: 'button', class: 'btn', ...props, onclick }, label);
 }

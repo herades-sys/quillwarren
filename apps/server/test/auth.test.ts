@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { WebSocket } from 'ws';
 import { buildApp } from '../src/app.ts';
-import { hashPassword, LoginThrottle, readCookie, Sessions, verifyPassword } from '../src/auth.ts';
+import { hashPassword, readCookie, Sessions, verifyPassword } from '../src/auth.ts';
 
 const TOKEN = 'api-token';
 const PASSWORD = 'correct horse battery';
@@ -26,14 +26,6 @@ describe('passwords and sessions', () => {
     expect(s.valid(v.replace(/\.(\d)/, '.9$1'), 2_000)).toBe(false); // edited expiry
     expect(new Sessions('other-token').valid(v, 2_000)).toBe(false); // token rotated
     expect(new Sessions(undefined).enabled).toBe(false);
-  });
-
-  it('throttles repeated wrong passwords per address', () => {
-    const t = new LoginThrottle();
-    for (let i = 0; i < 5; i++) t.fail('1.2.3.4', 1000 + i);
-    expect(t.blocked('1.2.3.4', 1010)).toBe(true);
-    expect(t.blocked('5.6.7.8', 1010)).toBe(false);
-    expect(t.blocked('1.2.3.4', 1010 + 61_000)).toBe(false);
   });
 });
 
@@ -75,7 +67,7 @@ describe('editor login', () => {
     expect((await login(PASSWORD, 'https://evil.example')).headers.location).toBe('/');
   });
 
-  it('blocks a sixth wrong password in a minute', async () => {
+  it('blocks a sixth try after five wrong passwords', async () => {
     for (let i = 0; i < 5; i++) await login('nope');
     expect((await login(PASSWORD)).statusCode).toBe(429);
   });

@@ -86,7 +86,8 @@ export function nextNumber(ids: Iterable<string>, prefix: string): number {
   return max + 1;
 }
 
-export function addMember(state: GameState, name: string): { state: GameState; member: Member } {
+/** A new player. `link` ties the seat to a Discord-linked account (server side) and gives it a picture. */
+export function addMember(state: GameState, name: string, link: { accountId?: string; avatar?: string } = {}): { state: GameState; member: Member } {
   const clean = memberName(state, name);
   // Never hand out an id twice: a removed player's cookie must not fit a newcomer.
   const n = Math.max(state.nextPlayerNo ?? 1, nextNumber(state.members.map((m) => m.id), 'p'));
@@ -94,6 +95,8 @@ export function addMember(state: GameState, name: string): { state: GameState; m
   const players = PALETTE.slice(1);
   const color = players.find((c) => !used.has(c)) ?? players[(n - 1) % players.length] ?? PALETTE[0];
   const member: Member = { id: `p${n}`, name: clean, role: 'player', color };
+  if (link.accountId) member.accountId = link.accountId;
+  if (link.avatar) member.avatar = link.avatar;
   return {
     state: { ...state, rev: state.rev + 1, members: [...state.members, member], nextPlayerNo: n + 1 },
     member,

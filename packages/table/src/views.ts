@@ -2,6 +2,7 @@
 // eventFor and chatFor decide per member whether (and how) a change reaches them.
 // Players never get gm-layer tokens, gmNotes, other pages, page walls, whispers
 // not meant for them, GM roll results, a hidden turn order or the invite list.
+// Nobody gets a member's accountId: it stays on the server.
 import { TableError } from './errors.ts';
 import type { ChatMessage, GameEvent, GameState, GameView, Member, Page, Token, TurnOrder } from './protocol.ts';
 
@@ -18,6 +19,13 @@ export function pageFor(state: GameState, memberId: string): string {
 function pageForPlayer(p: Page): Page {
   if (p.walls === undefined) return p;
   const { walls: _, ...rest } = p;
+  return rest;
+}
+
+/** A member as anyone may see them: without the account link. */
+export function publicMember(m: Member): Member {
+  if (m.accountId === undefined) return m;
+  const { accountId: _, ...rest } = m;
   return rest;
 }
 
@@ -49,8 +57,8 @@ export function viewFor(state: GameState, memberId: string): GameView {
     id: state.id,
     name: state.name,
     rev: state.rev,
-    you: me,
-    members: state.members,
+    you: publicMember(me),
+    members: state.members.map(publicMember),
     pages: gm ? state.pages : state.pages.filter((p) => p.id === pageId).map(pageForPlayer),
     playerPageId: state.playerPageId,
     pageId,
@@ -58,6 +66,7 @@ export function viewFor(state: GameState, memberId: string): GameView {
     turn: gm ? state.turn : turnForPlayer(state),
   };
   if (gm) view.invites = state.invites;
+  if (gm && state.requireDiscord) view.requireDiscord = true;
   return view;
 }
 
@@ -103,7 +112,7 @@ export function eventFor(state: GameState, memberId: string, event: GameEvent): 
     case 'turn':
       return { type: 'turn', turn: gm ? state.turn : turnForPlayer(state) };
     case 'members':
-      return { type: 'members', members: state.members };
+      return { type: 'members', members: state.members.map(publicMember) };
     case 'game':
       return { type: 'game', name: state.name, playerPageId: state.playerPageId };
   }

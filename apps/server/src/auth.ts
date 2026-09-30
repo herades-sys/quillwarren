@@ -1,7 +1,9 @@
 // Access control.
 // - Scripts and MCP: the API token (Authorization: Bearer <token>, or ?token= on the WebSocket).
-// - The browser editor: a password the user sets with `delve-passwd` (stored only as a scrypt hash),
-//   which gets a signed session cookie. Cookie writes must come from the page's own origin.
+// - The browser editor: admin and GM accounts (accounts/, name + password + authenticator code)
+//   with server-side sessions. Until the first admin account exists, the shared password the
+//   user sets with `delve-passwd` (stored only as a scrypt hash) gets a signed session cookie.
+//   Cookie writes must come from the page's own origin.
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 const digest = (s: string): Buffer => createHash('sha256').update(s).digest();
@@ -51,15 +53,38 @@ export function verifyPassword(password: string, stored: string | undefined): bo
 export const SESSION_COOKIE = 'delve_session';
 const SESSION_DAYS = 30;
 
-/** Signed "v1.<expires ms>.<hmac>" values. The key comes from the API token, so rotating it logs everyone out. */
+/** The account store's side of session checks (see accounts/store.ts). */
+export interface AccountSessions {
+  /** An account session cookie value ("a1.<token>") that is still live. */
+  sessionValid(value: string, now?: number): boolean;
+  /** True once an admin account exists: the shared-password cookies stop counting. */
+  legacyOff(): boolean;
+}
+
+/**
+ * Checks the delve_session cookie. Account sessions ("a1.<token>") live in the
+ * account store. Shared-password sessions are signed "v1.<expires ms>.<hmac>"
+ * values (the key comes from the API token, so rotating it logs them out), and
+ * count only until the first admin account is set up.
+ */
 export class Sessions {
   private readonly key: Buffer | null;
   /** Development only: treat every browser as logged in (DELVE_INSECURE_OPEN_EDIT=1). */
   readonly open: boolean;
+  private accounts: AccountSessions | undefined;
 
   constructor(secret: string | undefined, open = false) {
     this.key = secret ? digest(`delve-session:${secret}`) : null;
     this.open = open;
+  }
+
+  useAccounts(accounts: AccountSessions): void {
+    this.accounts = accounts;
+  }
+
+  /** The shared-password login is switched off (an admin account exists). */
+  get legacyOff(): boolean {
+    return this.accounts?.legacyOff() ?? false;
   }
 
   get enabled(): boolean {
@@ -78,7 +103,9 @@ export class Sessions {
 
   valid(value: string | undefined, now = Date.now()): boolean {
     if (this.open) return true;
-    if (!this.key || !value) return false;
+    if (!value) return false;
+    if (value.startsWith('a1.')) return this.accounts?.sessionValid(value, now) ?? false;
+    if (!this.key || this.legacyOff) return false;
     const m = /^(v1\.(\d+))\.([A-Za-z0-9_-]+)$/.exec(value);
     if (!m || Number(m[2]) < now) return false;
     const want = Buffer.from(this.sign(m[1]!));
@@ -110,31 +137,5 @@ export function sameOrigin(origin: string | undefined, host: string | undefined)
     return new URL(origin).host === host;
   } catch {
     return false;
-  }
-}
-
-// ---------- login throttling ----------
-
-/** After 5 wrong passwords from one address, refuse further tries for a minute. */
-export class LoginThrottle {
-  private readonly fails = new Map<string, { n: number; last: number }>();
-
-  blocked(ip: string, now = Date.now()): boolean {
-    const f = this.fails.get(ip);
-    if (!f) return false;
-    if (now - f.last > 60_000) {
-      this.fails.delete(ip);
-      return false;
-    }
-    return f.n >= 5;
-  }
-
-  fail(ip: string, now = Date.now()): void {
-    const f = this.fails.get(ip);
-    this.fails.set(ip, { n: (f && now - f.last <= 60_000 ? f.n : 0) + 1, last: now });
-  }
-
-  succeed(ip: string): void {
-    this.fails.delete(ip);
   }
 }

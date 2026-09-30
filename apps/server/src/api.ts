@@ -346,7 +346,9 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
       });
       return;
     }
-    const canWrite = checkToken(token, (req.query as { token?: string }).token) === 'ok' || editorSession(sessions, req);
+    // checked again for every change: a session may end (logout, "log out everywhere") while the socket stays open
+    const byToken = checkToken(token, (req.query as { token?: string }).token) === 'ok';
+    const canWrite = () => byToken || editorSession(sessions, req);
     service.hub.join(id, socket);
     LiveHub.send(socket, { type: 'hello', rev: cur.rev, map: cur.map });
 
@@ -359,7 +361,7 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
       }
       if (msg.type === 'ping') return LiveHub.send(socket, { type: 'pong' });
       if (msg.type !== 'ops') return LiveHub.send(socket, { type: 'error', error: `unknown message type ${JSON.stringify(msg.type)}`, ref: msg.ref });
-      if (!canWrite) {
+      if (!canWrite()) {
         return LiveHub.send(socket, { type: 'error', error: 'this connection is read-only: log in to edit (or connect with ?token=<token>)', ref: msg.ref });
       }
       try {

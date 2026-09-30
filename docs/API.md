@@ -9,14 +9,81 @@ Base URL on the LAN: `http://192.168.1.9:8790/api/v1`. Everything is JSON unless
 - The live token is `DELVE_API_TOKEN` in `/etc/delve/delve.env` (root only). A server started without a token refuses all changes with `503`.
 - Tokens in URLs are masked in the server log.
 
-### Browser editor login
+### Browser editor login: admin and GM accounts
 
-- **Password:** `sudo delve-passwd` on the container sets the editor password. Only its scrypt hash goes into `/etc/delve/delve.env`, and Delve restarts.
-- **Login:** `/login` exchanges the password for a 30-day session cookie `delve_session` (HttpOnly, SameSite=Strict, signed with a key derived from the API token, so rotating the token logs everyone out). `/logout` ends it.
-- **What the cookie allows:** the same writes as the token, over REST and the WebSocket, but only from Delve's own origin.
-- **Brute force:** after 5 wrong passwords in a minute, an address is blocked for a minute.
-- **Session check:** `GET /api/v1/session` → `{ loggedIn, passwordSet }`.
-- **Development only:** `DELVE_INSECURE_OPEN_EDIT=1` makes every browser count as logged in. Never use it on the live server.
+The browser editor has two kinds of account, **admin** and **GM**. Both can edit maps, make REST and WebSocket changes, and are the GM at Delve Table. Only admins can open `/admin`. Every login needs a name, a password and a code from an authenticator app (TOTP). The code lives in `apps/server/src/accounts/`, and the data in `${DELVE_DATA}/accounts.db` (in memory without `DELVE_DATA`).
+
+**Getting started (bootstrap).**
+- Until the first admin account exists, the old shared password works as before. `sudo delve-passwd` on the container sets it, and only its scrypt hash goes into `/etc/delve/delve.env`. `/login` then gives a signed 30-day cookie.
+- An editor logged in that way sees "Secure your login: create your admin account" on the start page. It leads to `/account/setup`:
+  1. Choose a name and a password (twice, at least 12 characters).
+  2. Scan the QR code with an authenticator app. The key is also shown as text for typing in by hand.
+  3. Type a code to confirm.
+  4. Save the 10 recovery codes, which are shown once.
+- From then on the shared password is switched off for good (a flag in `accounts.db`). Its cookies stop counting, and `/login` asks for name, password and code.
+
+**Admin page `/admin` (admins only).**
+- List the accounts, with their role, status and last login.
+- **Add account:** a name and a role (GM or admin). This gives a one-time **setup link** (`/account/setup?token=…`), valid for 72 hours and shown only once. The admin passes it on, and the new person chooses their own password and sets up their authenticator with it. A new link replaces the old one.
+- **Reset login:** locks the account (password, authenticator, recovery codes and sessions all go) and makes a new setup link. For accounts not yet set up, the same button just makes a new link.
+- Make admin / make GM, remove an account, and see and end sessions ("Log out everywhere" per account, or "Log out everyone except me").
+- The last active admin can't be removed, demoted or reset. Admins can't remove, demote or reset themselves here (their own login is on `/account`).
+
+**Account page `/account`.**
+- Change your password (needs the current password and a code; your other devices are logged out).
+- Make 10 new recovery codes (needs a code; the old ones stop working).
+- Set up a new authenticator for a new phone (needs the password and a code or recovery code; the old one keeps working until the new one is confirmed).
+- See where you are logged in and end those sessions.
+
+**Codes.**
+- TOTP per RFC 6238: HMAC-SHA1, 30-second steps, 6 digits, one step of clock drift either way.
+- A code is refused if it (or an older one) was used already.
+- The otpauth URI uses the issuer "Delve" and the account name.
+- Each recovery code (`XXXX-XXXX-XXXX-XXXX`, 80 random bits) works once and is stored only as a hash.
+
+**Sessions.**
+- The cookie is `delve_session=a1.<token>` (HttpOnly, SameSite=Strict, and Secure over https or behind a proxy that sends `X-Forwarded-Proto: https`). The server keeps only a SHA-256 hash of the token.
+- A session ends after 12 idle hours, and 30 days after login in any case.
+- "Keep me logged in on this device" makes the cookie outlast the browser, and stretches the idle limit to 7 days.
+- `/logout` ends the session on the server, so a copied cookie stops working too.
+- Cookie writes must come from Delve's own origin (the same rule as before).
+
+**Brute force.**
+- After 5 failed logins within 15 minutes, the address and the account name are each locked for 15 minutes. Account names are locked whether or not they exist.
+- Error messages don't say which part was wrong.
+- Behind the Cloudflare tunnel the address is taken from `CF-Connecting-IP`.
+- The same lockout covers the shared password during bootstrap, and password or code checks on `/account`.
+
+**Secrets at rest.**
+- Passwords are scrypt hashes.
+- Authenticator secrets are sealed with AES-256-GCM, using a key derived from `DELVE_API_TOKEN` (stored plain on a server without a token).
+- **Rotating the API token makes every stored authenticator unreadable.** Each person then logs in with a recovery code and uses "Set up a new authenticator" on `/account`.
+
+**If nobody can log in any more** (every admin lost their phone and recovery codes):
+- As root on the container, run `delve-passwd --reset-accounts`.
+- It moves `accounts.db` aside as `accounts.db.reset-<time>` (maps and games are untouched), asks for a new shared password, and restarts Delve.
+- Log in with that password and create a new admin account from the start page. GMs then need new setup links.
+
+**Other endpoints.**
+- **Session check:** `GET /api/v1/session` → `{ loggedIn, passwordSet }`. `passwordSet` is true when anyone can log in (an admin account exists, or the shared password is set).
+- **Development only:** `DELVE_INSECURE_OPEN_EDIT=1` makes every browser count as logged in (as an editor, not as an admin). Never use it on the live server.
+
+### Delve Table players: Discord login
+
+- With `DELVE_DISCORD_CLIENT_ID` and `DELVE_DISCORD_CLIENT_SECRET` set, table players can log in with Discord (`/auth/discord`, scope `identify`). The cookie `delve_account` (30 days, HttpOnly, SameSite=Lax) then lets them into every game where their account has a seat: pages, the WebSocket and images, with no player cookie or new invite.
+- Discord accounts listed in `DELVE_GM_DISCORD_IDS` are GM at the table (every game), with the same-origin rule for writes. They get no editor rights.
+- The details are in [TABLE.md](TABLE.md#discord-login).
+
+### From the internet (the Cloudflare tunnel)
+
+`https://delve.example.com` reaches Delve through the tunnel "delve". cloudflared runs on the container (`cloudflared-delve.service`) and connects from loopback. Code: `apps/server/src/public.ts`.
+- **How a tunnel request is recognised:** the host of `DELVE_PUBLIC_URL`, or Cloudflare's `CF-Connecting-IP` or `CF-Ray` header. Claiming either only ever takes rights away.
+- **Home only:** `/mcp` answers 404 and the API token (`Authorization` or `?token=`) gets 403. The one exception is a GM's setup link, `/account/setup?token=`.
+- **Open without a login:** `/play/*`, `/api/v1/games/*` (the table's own membership checks), `/auth/*`, `/login`, `/logout`, `/account/setup`, `/api/v1/session`, `/health`, and static files (`/assets/*`, `/fonts/*`, `/favicon.svg`).
+  - **Everything else needs an editor login** (admin or GM account). Pages redirect to `/login?next=…`; the API answers 401.
+  - **Players' map pictures** come from `GET /api/v1/games/:id/pages/:pageId/background.png?view=players|gm`. It is for members only: players get only their own page in the players' view, and only the GM may ask for `view=gm`.
+- **Proxy headers:** Fastify trusts `X-Forwarded-*` from loopback only (`trustProxy`), so links and cookies are https. The login lockout uses `CF-Connecting-IP` only from loopback.
+- **Live connections:** the map and table WebSockets check the login again for every change, so a login that ended (logout, "log out everywhere") can't keep writing.
 
 ## Errors
 

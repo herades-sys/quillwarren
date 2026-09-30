@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { floorText, levelSiblings, PRESETS, revealedBounds, sceneToSvg, storeyTitle, type DelveMap, type Level } from '@delve/core';
 import type { AppInfo } from './app.ts';
 import type { ChatConfig } from './chat/route.ts';
-import { isLoggedIn, type EditorAuth } from './login.ts';
+import { canLogIn, isLoggedIn, type EditorAuth } from './login.ts';
 import { asView, sceneFor } from './render.ts';
 import { NotFoundError, type MapStore } from './store.ts';
 
@@ -391,7 +391,7 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
         view: asView(q.view),
         style,
         loggedIn: isLoggedIn(auth, req),
-        passwordSet: Boolean(auth.passwordHash) || auth.sessions.open,
+        passwordSet: canLogIn(auth) || auth.sessions.open,
         chatModel: chat ? (chat.model ?? 'sonnet') : null,
         levels: levelSiblings(store.list(), id).reverse(),
       };

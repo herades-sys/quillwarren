@@ -4,7 +4,7 @@
 // server; this only shows what came back.
 import type { ChatMessage, RollResult } from '@delve/table';
 import type { TableCtx } from './ctx.ts';
-import { $, h, store } from './dom.ts';
+import { $, h, memberMark, store } from './dom.ts';
 import { CHAT_KEEP, cardRolls, clock, historyStep, isGm, messageView, rollBreakdown, rollFlags, rollView, segments, showsText } from './logic.ts';
 
 const MAX_DICE_SHOWN = 60;
@@ -78,10 +78,13 @@ export function initChat(ctx: TableCtx, visible: () => boolean, onUnread: (n: nu
       prev !== undefined && prev.from === m.from && prev.speaker === m.speaker && prev.kind === m.kind && (m.kind === 'chat' || m.kind === 'roll') && m.at - prev.at < 120_000;
     if (grouped) box.classList.add('cont');
     if (mv.showSpeaker && m.kind !== 'emote' && !grouped) {
+      // the sender's picture, unless the GM speaks as someone else (/as)
+      const sender = members.find((x) => x.id === m.from);
       box.append(
         h(
           'div',
           { class: 'cm-head' },
+          sender?.avatar && sender.name === m.speaker ? memberMark(sender) : null,
           h('span', { class: 'cm-speaker' }, mv.speaker),
           mv.label ? h('span', { class: 'cm-label' }, mv.label) : null,
           h('time', { class: 'cm-time', dateTime: new Date(m.at).toISOString() }, clock(m.at)),

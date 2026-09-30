@@ -17,7 +17,9 @@ import {
 import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 'json' };
 import { editorSession, errorResponse, newMap } from './api.ts';
 import type { AppInfo } from './app.ts';
-import { isLoggedIn, type EditorAuth } from './login.ts';
+import { currentAccount } from './accounts/http.ts';
+import { TOKENS_CSS } from './accounts/pages.ts';
+import { canLogIn, isLoggedIn, type EditorAuth } from './login.ts';
 import { FONT_FILES } from './png.ts';
 import { asView, exportName, render, RenderQueryError, ROLL20_PPG, sceneFor, sizeInSquares, type RenderQuery } from './render.ts';
 import type { MapStore, MapSummary } from './store.ts';
@@ -88,10 +90,29 @@ function savedMaps(store: MapStore, loggedIn: boolean): string {
 <tbody>${rows}</tbody></table></div>${script}`;
 }
 
-function accountBar(loggedIn: boolean, passwordSet: boolean): string {
-  if (loggedIn) return `<form method="post" action="/logout" class="inline"><button class="button" type="submit">Log out</button></form>`;
-  return passwordSet ? `<a class="button" href="/login">Log in to edit</a>` : `<span class="note">Editing: set a password with <code>delve-passwd</code> on the container</span>`;
+interface Access {
+  loggedIn: boolean;
+  passwordSet: boolean;
+  /** The admin or GM account behind the session (null for the shared password or a dev server). */
+  account: { name: string; role: string } | null;
+  /** Logged in with the shared password while there's no admin account yet. */
+  bootstrap: boolean;
 }
+
+function accountBar(a: Access): string {
+  const logout = `<form method="post" action="/logout" class="inline"><button class="button" type="submit">Log out</button></form>`;
+  if (a.account) {
+    const admin = a.account.role === 'admin' ? ` <a class="button" href="/admin">Admin</a>` : '';
+    return `<span class="who"><a class="button" href="/account" title="Your account">${esc(a.account.name)}</a>${admin} ${logout}</span>`;
+  }
+  if (a.loggedIn) return logout;
+  return a.passwordSet ? `<a class="button" href="/login">Log in to edit</a>` : `<span class="note">Editing: set a password with <code>delve-passwd</code> on the container</span>`;
+}
+
+const secureBanner = (): string => `<div class="secure" role="note">
+    <p><strong>Secure your login:</strong> create your admin account. It has its own password and a code from an authenticator app on your phone, and the shared editor password stops working.</p>
+    <a class="button primary" href="/account/setup">Create your admin account</a>
+  </div>`;
 
 function newMapForm(): string {
   const styles = Object.entries(PRESETS).map(([k, s]) => `<option value="${esc(k)}">${esc(s.name)}</option>`).join('');
@@ -142,7 +163,8 @@ function newMapForm(): string {
 </script>`;
 }
 
-function page(info: AppInfo, view: View, store: MapStore, loggedIn: boolean, passwordSet: boolean): string {
+function page(info: AppInfo, view: View, store: MapStore, access: Access): string {
+  const { loggedIn } = access;
   const cards = Object.entries(PRESETS)
     .map(([preset, style]) => {
       const scene = testScene(preset, view);
@@ -178,15 +200,7 @@ function page(info: AppInfo, view: View, store: MapStore, loggedIn: boolean, pas
 <style>
   @font-face { font-family: "IM FELL English"; src: url("/fonts/im-fell-english.ttf") format("truetype"); font-display: swap; }
   @font-face { font-family: "Marcellus SC"; src: url("/fonts/marcellus-sc.ttf") format("truetype"); font-display: swap; }
-  :root {
-    --bg: #F2F4F6; --surface: #FFFFFF; --ink: #1B1F24; --muted: #5B6470; --line: #D9DEE4;
-    --accent: #2C6AA0; --accent-ink: #FFFFFF; --code: #EAEEF2;
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #101317; --surface: #191E24; --ink: #E5E9ED; --muted: #97A1AC; --line: #29303A;
-            --accent: #6FA6D8; --accent-ink: #0C1520; --code: #131820; color-scheme: dark; }
-  }
+  ${TOKENS_CSS}
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
   .page { max-width: 1320px; margin: 0 auto; padding: 28px 20px 64px; display: grid; gap: 32px; }
@@ -226,6 +240,9 @@ function page(info: AppInfo, view: View, store: MapStore, loggedIn: boolean, pas
   pre { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: .84rem; line-height: 1.6; }
   .note { color: var(--muted); font-size: .9rem; margin: 0; }
   .spacer { flex: 1; }
+  .who { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .secure { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 12px 16px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; background: var(--surface); }
+  .secure p { margin: 0; max-width: 75ch; }
   form.inline { display: inline; margin: 0; }
   button.button { font: inherit; cursor: pointer; background: transparent; }
   button.button.primary { background: var(--accent); }
@@ -247,8 +264,9 @@ function page(info: AppInfo, view: View, store: MapStore, loggedIn: boolean, pas
       <a href="/health">/health</a> <a href="/api/v1/maps">/api/v1/maps</a>
     </div>
     <span class="spacer"></span>
-    ${accountBar(loggedIn, passwordSet)}
+    ${accountBar(access)}
   </div>
+  ${access.bootstrap ? secureBanner() : ''}
 
   <section>
     <h2>Saved maps</h2>
@@ -284,7 +302,14 @@ export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapS
 
   app.get('/', async (req, reply) => {
     const view = asView((req.query as { view?: string }).view);
-    const html = page(info, view, store, isLoggedIn(auth, req), Boolean(auth.passwordHash) || auth.sessions.open);
+    const loggedIn = isLoggedIn(auth, req);
+    const account = currentAccount(auth, req)?.user ?? null;
+    const html = page(info, view, store, {
+      loggedIn,
+      passwordSet: canLogIn(auth) || auth.sessions.open,
+      account,
+      bootstrap: loggedIn && !account && !auth.sessions.legacyOff && !auth.sessions.open,
+    });
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(html);
   });
 
