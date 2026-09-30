@@ -3,6 +3,7 @@
 // board, the side panels, the header and the keyboard together.
 import type { GameEvent, Intent, Layer, Member, ServerMessage, Token } from '@delve/table';
 import { createBoard, type Board } from './board.ts';
+import { initTableMarkers, type TableMarkers } from './gm-markers.ts';
 import { initChat } from './chat.ts';
 import type { Change, TableCtx } from './ctx.ts';
 import { openTokenDialog } from './dialog.ts';
@@ -53,6 +54,7 @@ export function startTable(initial: Initial): void {
   const gm = isGm(initial.me);
   /** The GM can look at a Delve page as the players see it. */
   let seeAs: 'gm' | 'players' = gm ? 'gm' : 'players';
+  let tableMarkers: TableMarkers | null = null;
 
   function select(ids: string[]): void {
     selection = new Set(ids);
@@ -114,6 +116,7 @@ export function startTable(initial: Initial): void {
         opt.clear();
         selection = new Set([...selection].filter((id) => msg.view.tokens.some((t) => t.id === id)));
         board?.setPage(page(), again); // a reconnect fetches the picture again: the map may have changed meanwhile
+        tableMarkers?.pageChanged(page());
         board?.update();
         showHeader();
         showBanner();
@@ -138,7 +141,10 @@ export function startTable(initial: Initial): void {
           selection = new Set([...selection].filter((id) => ids.has(id)));
           changes.add('selection');
         }
-        if (changes.has('pages')) board?.setPage(page(), reload);
+        if (changes.has('pages')) {
+          board?.setPage(page(), reload);
+          tableMarkers?.pageChanged(page());
+        }
         board?.update();
         if (changes.has('game') || changes.has('members')) showHeader();
         if (changes.has('pages') || changes.has('game')) showBanner();
@@ -196,7 +202,8 @@ export function startTable(initial: Initial): void {
       });
       b.addEventListener('click', () => {
         seeAs = seeAs === 'gm' ? 'players' : 'gm';
-        board?.setPage(page(), false);
+        board?.setPage(page(), true); // same page, other picture
+        tableMarkers?.pageChanged(page());
         board?.update();
         showBanner();
       });
@@ -353,6 +360,10 @@ export function startTable(initial: Initial): void {
     .then((b) => {
       board = b;
       b.setPage(page(), false);
+      if (gm) {
+        tableMarkers = initTableMarkers({ stage: $('stage'), board: b, seeAs: () => seeAs });
+        tableMarkers.pageChanged(page());
+      }
       b.update();
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => b.retheme());
     })

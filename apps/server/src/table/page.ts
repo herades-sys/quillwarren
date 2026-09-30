@@ -186,6 +186,23 @@ const CSS = `
     .me { display: none; }
     .brand img { width: 20px; height: 20px; }
   }
+  /* the GM's markers on Delve pages (apps/web/src/table/gm-markers.ts), as in the editor */
+  #stage.on-marker:not(.dragging) { cursor: pointer !important; }
+  .marker-box { position: fixed; z-index: 20; width: min(300px, calc(100vw - 16px)); display: grid; gap: 8px; padding: 10px 12px 10px; border-radius: 10px; border: 1px solid var(--line); border-top: 4px solid var(--kind, var(--accent)); background: var(--bar); color: var(--ink); box-shadow: 0 8px 28px rgba(0, 0, 0, .28); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+  .marker-box[hidden] { display: none; }
+  .marker-box[data-kind="discover"] { --kind: #D9961A; }
+  .marker-box[data-kind="interact"] { --kind: #2F7FD1; }
+  .marker-box[data-kind="trap"] { --kind: #C43A2F; }
+  .marker-head { display: flex; align-items: center; gap: 8px; }
+  .marker-head strong { flex: 1; font-size: 13px; }
+  .marker-icon { width: 26px; height: 26px; flex: none; }
+  .marker-close { border: 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 2px; }
+  .marker-text { margin: 0; width: 100%; min-height: 3.2em; font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; resize: vertical; white-space: pre-wrap; }
+  p.marker-text { border-color: transparent; padding: 0; }
+  .marker-box.done .marker-text { text-decoration: line-through; color: var(--muted); }
+  .marker-box.done .marker-head strong { text-decoration: line-through; }
+  .marker-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+  .marker-foot label { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); cursor: pointer; }
 `;
 
 export function tablePage(o: TablePageOptions): string {

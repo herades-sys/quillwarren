@@ -60,6 +60,12 @@ export interface Board {
   centre(): [number, number];
   /** Pan so a world point is in the middle. */
   focus(x: number, y: number): void;
+  /** Page coordinates (cells) under a point on the screen, and back (for the GM markers' note box). */
+  toWorld(clientX: number, clientY: number): [number, number];
+  toClient(x: number, y: number): [number, number];
+  pxPerCell(): number;
+  /** Called after every redraw: the view may have moved. */
+  onView(cb: () => void): void;
   /** The theme changed: re-read the colours. */
   retheme(): void;
 }
@@ -439,12 +445,15 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
     requestAnimationFrame(frame);
   }
 
+  const viewListeners: (() => void)[] = [];
+
   function frame(now: number): void {
     queued = false;
     for (const c of [low, high]) {
       c.position.set(cam.x, cam.y);
       c.scale.set(cam.scale);
     }
+    for (const f of viewListeners) f();
     const list = displayTokens();
     syncTokens(list);
     drawGrid();
@@ -718,6 +727,19 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
       animateTo(zoomAt(cam, vw() / 2, vh() / 2, f), 160);
     },
     centre: () => toWorld(cam, vw() / 2, vh() / 2),
+    toWorld(clientX, clientY) {
+      const r = canvas.getBoundingClientRect();
+      return toWorld(cam, clientX - r.left, clientY - r.top);
+    },
+    toClient(x, y) {
+      const r = canvas.getBoundingClientRect();
+      const [sx, sy] = toScreen(cam, x, y);
+      return [sx + r.left, sy + r.top];
+    },
+    pxPerCell: () => cam.scale,
+    onView(cb) {
+      viewListeners.push(cb);
+    },
     focus(x, y) {
       animateTo({ ...cam, x: vw() / 2 - x * cam.scale, y: vh() / 2 - y * cam.scale });
     },
