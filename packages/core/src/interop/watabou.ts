@@ -190,6 +190,25 @@ export function fromWatabou(input: unknown, opts: CityImportOptions): CityImport
     ring.forEach(([x, y], i) => {
       if (gate[i]) {
         gates++;
+        // a gatehouse block on each side of the road, like the generator draws them
+        const side = width * 1.3;
+        for (const [nx2, ny2] of [ring[(i - 1 + n) % n]!, ring[(i + 1) % n]!]) {
+          const len = Math.hypot(nx2 - x, ny2 - y);
+          if (len < 1) continue;
+          const ux = (nx2 - x) / len;
+          const uy = (ny2 - y) / len;
+          const d = roadWidth / 2 + side / 2 + 0.5;
+          const cx = x + ux * d;
+          const cy = y + uy * d;
+          const h2 = side / 2;
+          const corners: Ring = [
+            [cx + (ux - uy) * h2, cy + (uy + ux) * h2],
+            [cx + (-ux - uy) * h2, cy + (-uy + ux) * h2],
+            [cx + (-ux + uy) * h2, cy + (-uy - ux) * h2],
+            [cx + (ux + uy) * h2, cy + (uy - ux) * h2],
+          ];
+          for (const c of clip([toPath(corners)])) addRoom(poly(c), 'Gatehouse');
+        }
         return;
       }
       const [cx, cy] = T(x, y);

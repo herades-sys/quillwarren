@@ -11,6 +11,7 @@
     "rollback": "sudo /usr/local/sbin/delve-release --rollback",
     "test": "vitest run",
     "render": "node apps/server/src/cli/render.ts",
+    "trace": "node apps/server/src/cli/trace.ts",
     "demo": "node apps/server/src/cli/demo.ts",
     "mcp": "node apps/server/src/cli/mcp-call.ts",
     "assets": "node scripts/build-assets.ts",

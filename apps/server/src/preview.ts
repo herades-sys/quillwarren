@@ -104,6 +104,7 @@ function newMapForm(): string {
   <input id="ds-file" type="file" accept=".ds" hidden>
   <label class="button" for="city-file" title="A city from Watabou's Medieval Fantasy City Generator: Menu → Export as → JSON">Import city (Watabou JSON)…</label>
   <input id="city-file" type="file" accept=".json,application/json" hidden>
+  <a class="button" href="/import/image" title="A city plan or dungeon picture with flat colours, traced into a map">Trace a map picture (PNG/JPG)…</a>
   <label>1 square = <select id="city-feet"><option value="5">5 ft (true scale)</option><option value="10" selected>10 ft</option><option value="20">20 ft (overview)</option></select></label>
   <span id="import-status" class="note" role="status"></span>
 </form>

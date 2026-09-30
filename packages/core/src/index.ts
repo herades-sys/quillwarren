@@ -14,6 +14,8 @@ export {
   type DsImportResult,
 } from './interop/dungeonscrawl.ts';
 export { fromWatabou, CityImportError, type CityImportOptions, type CityImportResult } from './interop/watabou.ts';
+export { mainColours, classify, downscale, dropGridLines, outlines, simplify, signedArea, type RGB, type Mask } from './trace/raster.ts';
+export { traceImage, guessRoles, tracedMap, TRACE_ROLES, TRACE_MIN_WIDTH, type TraceRole, type TraceOptions, type TraceResult } from './trace/trace.ts';
 export {
   shapePath,
   shapeBounds,

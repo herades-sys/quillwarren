@@ -13,6 +13,8 @@ describe('Watabou city import', () => {
     expect(map).toMatchObject({ name: 'Feyvale', grid: { unit: '10 ft' }, style: { preset: 'clean' } });
     const rooms = map.objects.filter((o) => o.type === 'room');
     expect(rooms.filter((r) => r.name === 'Tower')).toHaveLength(14);
+    // a small gatehouse on each side of both gates
+    expect(rooms.filter((r) => r.name === 'Gatehouse')).toHaveLength(4);
     expect(rooms.filter((r) => r.name === 'City wall').length).toBeGreaterThan(10);
     const assets = new Set(map.objects.flatMap((o) => (o.type === 'terrain' ? [o.asset] : [])));
     expect([...assets].sort()).toEqual(['cobblestones', 'dirt', 'flagstones', 'water-deep']);

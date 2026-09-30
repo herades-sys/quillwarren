@@ -120,13 +120,37 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 - **Request:** `POST /maps/import.city?name=&feet=10&style=clean` with the file as `application/json` (token or editor login). Returns `201 { id, rev, map, notes }`. The start page has an "Import city (Watabou JSON)" button with a scale choice.
 - **What comes across:**
   - Buildings become rooms, pulled apart by 0.4 m so each keeps its own walls. The keep ("prisms") becomes a Landmark room.
-  - Each city or castle wall becomes wall strips, a round tower at every corner, and a gap where a road passes through a corner (a gate).
+  - Each city or castle wall becomes wall strips, a round tower at every corner, and a gap where a road passes through a corner (a gate). A small gatehouse stands on each side of every gate.
   - Terrain: roads and plazas become cobblestones and flagstones, rivers and water become deep water, fields become dirt, and parks become grass.
   - Trees become tree props and districts become name labels, and a compass rose is added.
 - **Crop and scale:** the map is cropped to the city (buildings, walls, plazas and 30 m around), not the generator's whole landscape. Default scale is 10 ft per square, and `feet=5` gives true scale. The style defaults to clean, because hatching around hundreds of houses is slow and busy.
 - **Streets:** the export has no street shapes inside the walls; the streets are the gaps between buildings.
 - **Dungeon Scrawl:** the result exports to `.ds` like any map, one outline per house.
 - **Code:** core `fromWatabou`.
+
+### Tracing a map picture (PNG, JPG)
+
+- **Page:** `/import/image`, linked from the start page as "Trace a map picture". The picture never leaves the browser: `/assets/trace.js` runs the page, and `/assets/trace-worker.js` does the tracing, so the page stays responsive. Only the finished map goes to the server, through `POST /api/v1/maps` with `{ map }`, which needs the editor login.
+- **Steps:**
+  1. Load the picture (choose, drop or paste). Pictures bigger than 2000 px are shrunk first.
+  2. Delve finds the main colours (4–12, default 7) and guesses a role for each. Roles: ignore, building/room, wall, water, road, grass, field, sand.
+  3. Set the scale:
+     - the picture's width in feet, or
+     - Measure: click both ends of a scale bar and enter its length in m or ft.
+     - The page shows the squares over the picture, so you can check the scale.
+  4. Optionally crop to the part you want.
+  5. Check the outlines over the picture, or the finished map, then Create map. It opens in the editor.
+- **What comes across:**
+  - Buildings become rooms. Courtyards stay holes (cutouts). Small holes, like printed text, are filled.
+  - Walls become rooms named "Wall". A shape with a hole, like a ring wall, is split into solid pieces that overlap by a pixel.
+  - The other roles become terrain.
+- **Clean-up:**
+  - A printed grid is removed. This means straight lines up to 3 px thick that cross at least 12% of the picture; short lines such as house outlines stay.
+  - Each role skips parts thinner than a set width in squares. Walls default to 0.5 and water to 1, which drops text, outlines and house shadows in those colours.
+  - Pieces under 0.3 squares are dropped.
+  - Touching buildings can be joined into blocks. They stay separate by default.
+- **Command line:** `npm run trace -- picture.png out.delve.json --width-ft 1684 [--feet 10] [--roles ignore,building,water,wall,...] [--min water=1.5] [--join] [--render out.png]`. It prints the colours with the guessed roles, and reads PNG only (decoded with `node:zlib`).
+- **Code:** core `trace/raster.ts` (colours, masks, outlines) and `trace/trace.ts` (`traceImage`, `guessRoles`, `tracedMap`).
 
 ## Live: WebSocket `/maps/:id/live`
 
