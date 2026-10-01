@@ -1,10 +1,13 @@
 // The one filter: what each member may see. viewFor builds a member's whole view,
 // eventFor and chatFor decide per member whether (and how) a change reaches them.
-// Players never get gm-layer tokens, gmNotes, other pages, page walls, whispers
-// not meant for them, GM roll results, a hidden turn order or the invite list.
-// Nobody gets a member's accountId: it stays on the server.
+// Players never get gm-layer tokens, gmNotes, other pages, page walls, doors or
+// lights, whispers not meant for them, GM roll results, a hidden turn order or
+// the invite list. Nobody gets a member's accountId: it stays on the server.
+// On a page with dynamic vision the server passes a TokenFilter (sight.ts):
+// players then get only their own tokens and those the party sees.
 import { TableError } from './errors.ts';
 import type { ChatMessage, GameEvent, GameState, GameView, Member, Page, Token, TurnOrder } from './protocol.ts';
+import { controlsToken, mayGetToken, type TokenFilter } from './sight.ts';
 
 const member = (state: GameState, id: string): Member | undefined => state.members.find((m) => m.id === id);
 const isGm = (m: Member | undefined): boolean => m?.role === 'gm';
@@ -15,10 +18,17 @@ export function pageFor(state: GameState, memberId: string): string {
   return state.pages.some((p) => p.id === page) ? page : (state.pages[0]?.id ?? page);
 }
 
-// Walls outline the whole map, fogged parts included; phase 1 doesn't draw them, so players don't get them.
-function pageForPlayer(p: Page): Page {
-  if (p.walls === undefined) return p;
-  const { walls: _, ...rest } = p;
+// Walls, doors and lights outline the whole map, unseen parts included, so players don't get them.
+const GM_PAGE_FIELDS = ['walls', 'doors', 'doorState', 'lights'] as const;
+
+export function pageForPlayer(p: Page): Page {
+  // nor the Delve map's id: players draw the page through the game's members-only routes, and from
+  // the home network the map's own API would hand them the whole map
+  const mapId = p.background.kind === 'delve' && p.background.mapId !== '';
+  if (!mapId && !GM_PAGE_FIELDS.some((k) => p[k] !== undefined)) return p;
+  const rest = { ...p };
+  for (const k of GM_PAGE_FIELDS) delete rest[k];
+  if (mapId) rest.background = { kind: 'delve', mapId: '' };
   return rest;
 }
 
@@ -29,17 +39,23 @@ export function publicMember(m: Member): Member {
   return rest;
 }
 
-function tokenForPlayer(t: Token): Token {
-  if (t.gmNotes === undefined) return t;
+/** A token as a player gets it: no GM notes, and the sight and light of their own tokens only. */
+export function tokenForPlayer(t: Token, memberId: string): Token {
+  const own = controlsToken(t, memberId);
+  if (t.gmNotes === undefined && (own || (t.sight === undefined && t.light === undefined))) return t;
   const { gmNotes: _, ...rest } = t;
+  if (!own) {
+    delete rest.sight;
+    delete rest.light;
+  }
   return rest;
 }
 
-/** Turn order as a player sees it: gm-layer tokens show as "Hidden", so indices still line up. */
-function turnForPlayer(state: GameState): TurnOrder | null {
+/** Turn order as a player sees it: tokens they may not see (gm layer, or unseen in dynamic vision) show as "Hidden", so indices still line up. */
+function turnForPlayer(state: GameState, me: Member, filter?: TokenFilter | null): TurnOrder | null {
   const { turn } = state;
   if (!turn.visible) return null;
-  const hidden = new Set(state.tokens.filter((t) => t.layer === 'gm').map((t) => t.id));
+  const hidden = new Set(state.tokens.filter((t) => !mayGetToken(me, t, filter)).map((t) => t.id));
   if (!turn.entries.some((e) => e.tokenId !== undefined && hidden.has(e.tokenId))) return turn;
   return {
     ...turn,
@@ -47,12 +63,13 @@ function turnForPlayer(state: GameState): TurnOrder | null {
   };
 }
 
-export function viewFor(state: GameState, memberId: string): GameView {
+/** The member's whole view. `filter`: dynamic vision on their page (players get only the tokens it lets through). */
+export function viewFor(state: GameState, memberId: string, filter?: TokenFilter | null): GameView {
   const me = member(state, memberId);
   if (!me) throw new TableError("You aren't in this game");
   const gm = isGm(me);
   const pageId = pageFor(state, memberId);
-  const tokens = state.tokens.filter((t) => t.pageId === pageId && (gm || t.layer !== 'gm'));
+  const tokens = state.tokens.filter((t) => t.pageId === pageId && mayGetToken(me, t, filter));
   const view: GameView = {
     id: state.id,
     name: state.name,
@@ -62,8 +79,8 @@ export function viewFor(state: GameState, memberId: string): GameView {
     pages: gm ? state.pages : state.pages.filter((p) => p.id === pageId).map(pageForPlayer),
     playerPageId: state.playerPageId,
     pageId,
-    tokens: gm ? tokens : tokens.map(tokenForPlayer),
-    turn: gm ? state.turn : turnForPlayer(state),
+    tokens: gm ? tokens : tokens.map((t) => tokenForPlayer(t, memberId)),
+    turn: gm ? state.turn : turnForPlayer(state, me, filter),
   };
   if (gm) view.invites = state.invites;
   if (gm && state.requireDiscord) view.requireDiscord = true;
@@ -73,8 +90,11 @@ export function viewFor(state: GameState, memberId: string): GameView {
 /**
  * One event as `memberId` should get it, or null. `state` is the state after the change.
  * Routing fields (prevLayer, pageId, hidden, wasPlayerPage, audience) never leave here.
+ * With a `filter` (dynamic vision), an upsert of a token the player may not see
+ * is dropped like a gm-layer one; whether they need a removal instead depends on
+ * what their connection was sent before, which only the server's hub knows.
  */
-export function eventFor(state: GameState, memberId: string, event: GameEvent): GameEvent | null {
+export function eventFor(state: GameState, memberId: string, event: GameEvent, filter?: TokenFilter | null): GameEvent | null {
   const me = member(state, memberId);
   if (!me) return null;
   const gm = isGm(me);
@@ -88,7 +108,8 @@ export function eventFor(state: GameState, memberId: string, event: GameEvent): 
         // Moved to the gm layer: players drop it. Already there, or new: they never had it.
         return event.prevLayer === undefined || event.prevLayer === 'gm' ? null : { type: 'token.remove', ids: [token.id] };
       }
-      return { type: 'token.upsert', token: tokenForPlayer(token) };
+      if (!mayGetToken(me, token, filter)) return null;
+      return { type: 'token.upsert', token: tokenForPlayer(token, memberId) };
     }
     case 'token.remove': {
       if (event.pageId !== undefined && event.pageId !== pageId) return null;
@@ -110,7 +131,7 @@ export function eventFor(state: GameState, memberId: string, event: GameEvent): 
       return message ? { type: 'chat', message } : null;
     }
     case 'turn':
-      return { type: 'turn', turn: gm ? state.turn : turnForPlayer(state) };
+      return { type: 'turn', turn: gm ? state.turn : turnForPlayer(state, me, filter) };
     case 'members':
       return { type: 'members', members: state.members.map(publicMember) };
     case 'game':

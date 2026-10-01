@@ -4,8 +4,13 @@
 // grid, outlines, bars, names and pings are drawn in screen pixels each frame,
 // so they stay crisp at any zoom. Rendering happens on demand, not every frame.
 // Input is plain pointer events on the canvas (mouse, pen, touch, pinch).
+// Dynamic vision: a darkness mask over the background (black where the party
+// has never looked, dimmed where it looked before; for the GM a faint hint),
+// drawn on a small canvas from the server's vision messages; the GM also sees
+// the doors (click one to open or shut it) and the lights' radii.
 import { Application, CanvasSource, Container, Graphics, ImageSource, Sprite, Text, Texture } from 'pixi.js';
-import type { Layer, Member, Page, Token } from '@delve/table';
+import type { Layer, Member, Page, Token, VisionPolygon } from '@delve/table';
+import { doorAt, doorLook, fogAlphas, fogResolution, hasFog, overlayLights, type BoardVision } from './vision-view.ts';
 import {
   BAR_COLORS,
   backgroundBox,
@@ -48,6 +53,10 @@ export interface BoardHost {
   backgroundView?(): 'gm' | 'players';
   /** The game, so Delve page pictures come through it (membership checked). */
   gameId?(): string;
+  /** Dynamic vision: what the party sees (the last vision message), or null. */
+  vision?(): BoardVision | null;
+  /** The GM clicked a door of a dynamic-vision page. */
+  toggleDoor?(id: string): void;
 }
 
 export interface Board {
@@ -70,6 +79,10 @@ export interface Board {
   onView(cb: () => void): void;
   /** The theme changed: re-read the colours. */
   retheme(): void;
+  /** A vision message came, or the GM switched between their view and the players': redraw the darkness. */
+  visionChanged(): void;
+  /** Fetch the page picture again (the explored fog grew), keeping the old one until the new one is in. */
+  reloadBackground(): void;
 }
 
 interface TokenGfx {
@@ -87,7 +100,7 @@ interface Ping {
 }
 
 type Gesture =
-  | { kind: 'press'; pointer: number; sx: number; sy: number; wx: number; wy: number; hit: string | null; toggled: boolean; touch: boolean }
+  | { kind: 'press'; pointer: number; sx: number; sy: number; wx: number; wy: number; hit: string | null; toggled: boolean; touch: boolean; door?: string }
   | { kind: 'drag'; pointer: number; wx: number; wy: number; lead: string; starts: DragStart[] }
   | { kind: 'pan'; pointer: number; lastX: number; lastY: number }
   | { kind: 'pinch'; a: number; b: number; cam: Camera; dist: number; mx: number; my: number }
@@ -149,7 +162,13 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
   const overlay = new Graphics();
   const names = new Container();
   const pingsG = new Graphics();
-  app.stage.addChild(low, gridG, high, overlay, names, pingsG);
+  // dynamic vision: the darkness (world space, over the background and grid, under the tokens), then the GM's doors and lights (screen space)
+  const fogLayer = new Container();
+  const fogSprite = new Sprite(Texture.EMPTY);
+  fogSprite.visible = false;
+  fogLayer.addChild(fogSprite);
+  const visionG = new Graphics();
+  app.stage.addChild(low, gridG, fogLayer, visionG, high, overlay, names, pingsG);
   app.stage.eventMode = 'none';
   const layerOf: Record<Layer, Container> = { map: mapLayer, tokens: tokenLayer, gm: gmLayer };
 
@@ -438,6 +457,136 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
     return pings.length > 0;
   }
 
+  // ---------- dynamic vision ----------
+
+  let fogCanvas: HTMLCanvasElement | null = null;
+  let fogTexture: Texture | null = null;
+  const fogWork = document.createElement('canvas');
+  let hoveredDoor: string | null = null;
+  const isGmMe = () => host.me().role === 'gm';
+
+  function polyPath(polys: readonly VisionPolygon[]): Path2D {
+    const path = new Path2D();
+    for (const p of polys) {
+      for (const ring of [p.outer, ...p.holes]) {
+        if (ring.length < 3) continue;
+        path.moveTo(ring[0]![0], ring[0]![1]);
+        for (let i = 1; i < ring.length; i++) path.lineTo(ring[i]![0], ring[i]![1]);
+        path.closePath();
+      }
+    }
+    return path;
+  }
+
+  /**
+   * The darkness mask, painted on a small canvas at a few pixels per cell and
+   * stretched over the page (bilinear filtering and a slight blur soften its
+   * edges): black never seen, dimmed seen before, a light veil where only dim
+   * light (or darkvision) reaches. Players with no vision message yet get all black.
+   */
+  function drawFog(): void {
+    const p = page;
+    if (!p || !hasFog(p)) {
+      fogSprite.visible = false;
+      requestRender();
+      return;
+    }
+    const a = fogAlphas(isGmMe(), host.backgroundView?.() ?? 'players');
+    const got = host.vision?.() ?? null;
+    const v = got && got.pageId === p.id ? got : null;
+    const b = pageBox(p);
+    const x0 = b.x0 - 1;
+    const y0 = b.y0 - 1;
+    const w = b.x1 - b.x0 + 2;
+    const h = b.y1 - b.y0 + 2;
+    const k = fogResolution(w, h);
+    const W = Math.ceil(w * k);
+    const H = Math.ceil(h * k);
+    fogWork.width = W;
+    fogWork.height = H;
+    const ctx = fogWork.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+    ctx.fillStyle = `rgba(0,0,0,${a.unexplored})`;
+    ctx.fillRect(x0, y0, w, h);
+    if (v) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = `rgba(0,0,0,${1 - a.explored / a.unexplored})`;
+      if (v.explored === 'all') ctx.fillRect(x0, y0, w, h);
+      else ctx.fill(polyPath(v.explored), 'evenodd');
+      const visible = polyPath(v.visible);
+      ctx.fillStyle = '#000';
+      ctx.fill(visible, 'evenodd');
+      if (a.dim > 0) {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = `rgba(0,0,0,${a.dim})`;
+        ctx.fill(visible, 'evenodd');
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = '#000';
+        ctx.fill(polyPath(v.bright), 'evenodd');
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (!fogCanvas || fogCanvas.width !== W || fogCanvas.height !== H) {
+      fogTexture?.destroy(true);
+      fogCanvas = document.createElement('canvas');
+      fogCanvas.width = W;
+      fogCanvas.height = H;
+      fogTexture = null;
+    }
+    const out = fogCanvas.getContext('2d');
+    if (!out) return;
+    out.clearRect(0, 0, W, H);
+    out.filter = `blur(${Math.max(0.5, k * 0.07).toFixed(2)}px)`;
+    out.drawImage(fogWork, 0, 0);
+    out.filter = 'none';
+    if (!fogTexture) {
+      fogTexture = new Texture({ source: new CanvasSource({ resource: fogCanvas, scaleMode: 'linear' }) });
+      fogSprite.texture = fogTexture;
+    } else fogTexture.source.update();
+    fogSprite.position.set(x0, y0);
+    fogSprite.width = w;
+    fogSprite.height = h;
+    fogSprite.visible = true;
+    requestRender();
+  }
+
+  /** The GM's overlay on a dynamic page: lights with their bright and dim radii, and the doors (green open, orange shut, purple secret). */
+  function drawVisionOverlay(list: Token[]): void {
+    visionG.clear();
+    const p = page;
+    if (!p || !hasFog(p) || !isGmMe() || host.backgroundView?.() === 'players') return;
+    const W = vw();
+    const H = vh();
+    for (const l of overlayLights(p, list)) {
+      const [sx, sy] = toScreen(cam, l.x, l.y);
+      const rd = (l.bright + l.dim) * cam.scale;
+      const rb = l.bright * cam.scale;
+      if (sx + rd < 0 || sy + rd < 0 || sx - rd > W || sy - rd > H) continue;
+      if (rd > rb) visionG.circle(sx, sy, rd).stroke({ width: 1, color: '#F2C14E', alpha: 0.5 });
+      if (rb > 0) visionG.circle(sx, sy, rb).fill({ color: '#F2C14E', alpha: 0.06 }).stroke({ width: 1.2, color: '#F2C14E', alpha: 0.75 });
+      visionG.circle(sx, sy, 3.5).fill({ color: '#F2C14E', alpha: 0.95 }).stroke({ width: 1, color: '#000000', alpha: 0.5 });
+    }
+    for (const d of p.doors ?? []) {
+      if (d.style === 'archway') continue;
+      const look = doorLook(p, d);
+      const [ax, ay] = toScreen(cam, d.a[0], d.a[1]);
+      const [bx, by] = toScreen(cam, d.b[0], d.b[1]);
+      if (Math.max(ax, bx) < -20 || Math.max(ay, by) < -20 || Math.min(ax, bx) > W + 20 || Math.min(ay, by) > H + 20) continue;
+      const hot = d.id === hoveredDoor;
+      const color = look.state === 'open' ? '#3FA34D' : look.state === 'secret' ? '#9B59D0' : '#D9822B';
+      visionG.moveTo(ax, ay).lineTo(bx, by).stroke({ width: hot ? 8 : 6, color: '#000000', alpha: 0.4, cap: 'round' });
+      visionG.moveTo(ax, ay).lineTo(bx, by).stroke({ width: hot ? 5 : 3.5, color, alpha: 0.95, cap: 'round' });
+    }
+  }
+
+  /** The door under a screen point, for the GM on a dynamic page. */
+  function doorUnder(wx: number, wy: number): string | null {
+    const p = page;
+    if (!p || !hasFog(p) || !isGmMe() || !host.toggleDoor || host.backgroundView?.() === 'players') return null;
+    return doorAt(p.doors, wx, wy, Math.max(0.25, 9 / cam.scale))?.id ?? null;
+  }
+
   // ---------- frames ----------
 
   let queued = false;
@@ -451,7 +600,7 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
 
   function frame(now: number): void {
     queued = false;
-    for (const c of [low, high]) {
+    for (const c of [low, fogLayer, high]) {
       c.position.set(cam.x, cam.y);
       c.scale.set(cam.scale);
     }
@@ -459,6 +608,7 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
     const list = displayTokens();
     syncTokens(list);
     drawGrid();
+    drawVisionOverlay(list);
     drawOverlay(list);
     const more = drawPings(now);
     app.render();
@@ -573,7 +723,8 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
         toggled = true;
       } else if (!sel.has(hit.id)) host.setSelection([hit.id]);
     }
-    gesture = { kind: 'press', pointer: e.pointerId, sx, sy, wx, wy, hit: hit?.id ?? null, toggled, touch: e.pointerType === 'touch' };
+    const door = hit ? null : doorUnder(wx, wy);
+    gesture = { kind: 'press', pointer: e.pointerId, sx, sy, wx, wy, hit: hit?.id ?? null, toggled, touch: e.pointerType === 'touch', ...(door ? { door } : {}) };
     clearTimeout(holdTimer);
     holdTimer = window.setTimeout(() => {
       if (gesture?.kind !== 'press') return;
@@ -596,9 +747,11 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
       const list = displayTokens();
       const over = tokenAt(list, wx, wy);
       const id = over?.id ?? null;
-      canvas.style.cursor = over && accept()(over) ? 'pointer' : '';
-      if (id !== hovered) {
+      const door = over ? null : doorUnder(wx, wy);
+      canvas.style.cursor = (over && accept()(over)) || door ? 'pointer' : '';
+      if (id !== hovered || door !== hoveredDoor) {
         hovered = id;
+        hoveredDoor = door;
         requestRender();
       }
       return;
@@ -670,6 +823,11 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
       requestRender();
     } else if (g.kind === 'press') {
       if (!g.hit) {
+        if (g.door) {
+          host.toggleDoor?.(g.door);
+          lastClick = null;
+          return;
+        }
         if (!e.shiftKey) host.setSelection([]);
         lastClick = null;
         return;
@@ -710,9 +868,11 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
     setPage(p, reload) {
       const changedPage = p?.id !== page?.id;
       const bgChanged = JSON.stringify(p?.background) !== JSON.stringify(page?.background) || p?.cellPx !== page?.cellPx;
+      const fogBefore = JSON.stringify([page?.id, page?.vision, page?.origin, page?.width, page?.height]);
       page = p;
       if (changedPage || bgChanged || reload) loadBackground(reload && !changedPage);
       else drawPageFill();
+      if (fogBefore !== JSON.stringify([p?.id, p?.vision, p?.origin, p?.width, p?.height])) drawFog();
       if (changedPage && p) {
         const saved = cams.get(camKey(p));
         cam = saved ?? fitCamera(pageBox(p), vw(), vh());
@@ -753,6 +913,10 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
         if (g?.placeholder.visible) drawPlaceholder(g.placeholder, t);
       }
       requestRender();
+    },
+    visionChanged: drawFog,
+    reloadBackground() {
+      if (page) loadBackground(true);
     },
   };
 }

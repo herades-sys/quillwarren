@@ -46,6 +46,83 @@ export interface Token {
   bars?: Bar[];
   /** Never sent to players. */
   gmNotes?: string;
+  /** Light it gives off (a torch, a glowing sword), centred on the token. GM only to change. */
+  light?: TokenLight;
+  /** What it sees in dynamic vision. Player-controlled tokens see by default. GM only to change; players get it for their own tokens only. */
+  sight?: Sight;
+}
+
+/** Light in cells: bright out to `bright`, then dim for `dim` cells more (a torch: 4 and 4). */
+export interface TokenLight {
+  bright: number;
+  dim: number;
+}
+
+export interface Sight {
+  /** Unset: tokens a player controls see, others don't. */
+  enabled?: boolean;
+  /** How far it sees in cells; unset: as far as walls (and light) allow. */
+  range?: number;
+  /** Sees without light out to this many cells. */
+  darkvision?: number;
+}
+
+// ---------- vision (docs/TABLE.md, "Vision and light") ----------
+
+export type VisionMode = 'off' | 'dynamic';
+/** bright: everything is lit; dim: lit but dimmed; dark: only lights and darkvision show anything. */
+export type Ambient = 'dark' | 'dim' | 'bright';
+
+/** off (the default): the Delve map's own room fog, as before. dynamic: line of sight decides. */
+export interface PageVision {
+  mode: VisionMode;
+  /** Default: dark. */
+  ambient?: Ambient;
+}
+
+/** One door of the Delve map behind a page, as a sight blocker. GM only: never sent to players. */
+export interface PageDoor {
+  id: string;
+  a: [number, number];
+  b: [number, number];
+  /** The map's door style (normal, double, locked, secret, portcullis, archway). */
+  style: string;
+  /** Open on the map; the table's own state (page.doorState) wins. */
+  open?: boolean;
+}
+
+/** A light from the Delve map (a torch sconce, a brazier…), in cells. GM only: never sent to players. */
+export interface PageLight {
+  /** The prop's id on the map. */
+  id: string;
+  x: number;
+  y: number;
+  bright: number;
+  dim: number;
+  /** The prop's asset, for the GM's overlay. */
+  asset?: string;
+}
+
+/** A polygon in cells with holes, the shape of @delve/core's Polygon. */
+export interface VisionPolygon {
+  outer: [number, number][];
+  holes: [number, number][][];
+}
+
+/** What a member gets about dynamic vision on the page they look at. */
+export interface VisionView {
+  pageId: string;
+  /** What the party sees right now, walls at its edge included. */
+  visible: VisionPolygon[];
+  /** The part of `visible` in bright light (the rest is dim: dim light or darkvision). */
+  bright: VisionPolygon[];
+  /** Everything the party has seen on this page so far, or "all" (the GM revealed it). Left out when it hasn't changed since the last vision message. */
+  explored?: VisionPolygon[] | 'all';
+  /** Grows by one whenever `explored` changes; the page picture follows it. */
+  exploredVersion: number;
+  ambient: Ambient;
+  /** GM only: the tokens the party sees right now (for "see as players"). */
+  seen?: string[];
 }
 
 export type Background = { kind: 'delve'; mapId: string } | { kind: 'image'; url: string; w: number; h: number } | { kind: 'none' };
@@ -63,8 +140,16 @@ export interface Page {
   cellUnit: string;
   showGrid: boolean;
   background: Background;
-  /** Wall segments in cells, from the Delve map (for phase 3 lighting; not drawn or enforced yet). GM only: never sent to players. */
+  /** Wall segments in cells, from the Delve map, secret doors shut (they block sight in dynamic vision). GM only: never sent to players. */
   walls?: [[number, number], [number, number]][];
+  /** Dynamic vision (line of sight, light, explored fog). Unset: off. */
+  vision?: PageVision;
+  /** The Delve map's doors (they follow the map). GM only. */
+  doors?: PageDoor[];
+  /** The table's door state, by door id: true open, false shut. Wins over the map's. GM only. */
+  doorState?: Record<string, boolean>;
+  /** Lights from the Delve map's props (they follow the map). GM only. */
+  lights?: PageLight[];
 }
 
 export interface TurnEntry {
@@ -181,7 +266,11 @@ export type Intent =
   | { type: 'turn.visible'; visible: boolean }
   | { type: 'member.remove'; id: string }
   | { type: 'member.rename'; id: string; name: string }
-  | { type: 'game.rename'; name: string };
+  | { type: 'game.rename'; name: string }
+  /** GM: open or shut a door of a page's Delve map, for this table only (the map stays as it is). */
+  | { type: 'door.set'; pageId: string; id: string; open: boolean }
+  /** GM: the explored fog of a dynamic-vision page. reset: forget it (what the party sees now stays); reveal: all of the page; hide: nothing, until the party next looks. */
+  | { type: 'vision.explored'; pageId: string; action: 'reset' | 'reveal' | 'hide' };
 
 export type ClientMessage =
   | { type: 'intent'; ref: number; intent: Intent }
@@ -238,5 +327,7 @@ export type ServerMessage =
   | { type: 'ack'; ref: number; rev: number }
   | { type: 'error'; ref?: number; error: string }
   | { type: 'ping'; from: string; color: string; pageId: string; x: number; y: number }
+  /** Dynamic vision of the page you look at, after a hello and whenever it changes; null: the page has no dynamic vision. */
+  | { type: 'vision'; pageId: string; vision: VisionView | null }
   /** You were removed from the game, or it was deleted. */
   | { type: 'bye'; reason: string };

@@ -15,6 +15,8 @@ import { connect, type ConnState } from './net.ts';
 import { initPages } from './pages.ts';
 import { initPlayers } from './players.ts';
 import { initTurns } from './turns.ts';
+import { doorIsOpen } from '@delve/table';
+import { mergeVision, previewTokens, reloadDelay, type BoardVision } from './vision-view.ts';
 
 export interface Initial {
   gameId: string;
@@ -57,6 +59,38 @@ export function startTable(initial: Initial): void {
   let seeAs: 'gm' | 'players' = gm ? 'gm' : 'players';
   let tableMarkers: TableMarkers | null = null;
   let dice: ReturnType<typeof initDice> | null = null;
+
+  // ---------- dynamic vision (vision-view.ts) ----------
+
+  /** The last vision message for the page we look at; null: none (yet), or the page has no dynamic vision. */
+  let vision: BoardVision | null = null;
+  /** The picture follows the explored fog, but at most about once a second. */
+  const BG_GAP_MS = 900;
+  let bgLast = 0;
+  let bgTimer: number | undefined;
+  function reloadForFog(): void {
+    if (bgTimer !== undefined) return;
+    bgTimer = window.setTimeout(() => {
+      bgTimer = undefined;
+      bgLast = Date.now();
+      board?.reloadBackground();
+    }, reloadDelay(Date.now(), bgLast, BG_GAP_MS));
+  }
+  function onVision(pageId: string, v: Parameters<typeof mergeVision>[2]): void {
+    if (!state || pageId !== state.view.pageId) return;
+    const before = vision;
+    vision = mergeVision(vision, pageId, v);
+    board?.visionChanged();
+    // players' pictures (and the GM's look as them) are cut to the explored fog: fetch it again when it grew
+    if (before && vision && before.exploredVersion !== vision.exploredVersion && seeAs === 'players') reloadForFog();
+    board?.update(); // the GM's look as the players shows the tokens the party sees
+  }
+  function toggleDoor(id: string): void {
+    const p = page();
+    const d = p?.doors?.find((x) => x.id === id);
+    if (!p || !d) return;
+    void act({ type: 'door.set', pageId: p.id, id, open: !doorIsOpen(p, d) });
+  }
 
   function select(ids: string[]): void {
     selection = new Set(ids);
@@ -115,6 +149,8 @@ export function startTable(initial: Initial): void {
       case 'hello': {
         const again = state !== null && state.view.pageId === msg.view.pageId;
         state = { view: msg.view, chat: msg.chat };
+        vision = null; // a vision message follows on a dynamic page; until then players see darkness
+        board?.visionChanged();
         opt.clear();
         selection = new Set([...selection].filter((id) => msg.view.tokens.some((t) => t.id === id)));
         board?.setPage(page(), again); // a reconnect fetches the picture again: the map may have changed meanwhile
@@ -156,6 +192,9 @@ export function startTable(initial: Initial): void {
         for (const m of rolled) dice?.message(m); // only live rolls: a hello's backlog throws nothing
         break;
       }
+      case 'vision':
+        onVision(msg.pageId, msg.vision);
+        break;
       case 'error':
         if (msg.ref === undefined) toast(msg.error);
         break;
@@ -208,6 +247,7 @@ export function startTable(initial: Initial): void {
       b.addEventListener('click', () => {
         seeAs = seeAs === 'gm' ? 'players' : 'gm';
         board?.setPage(page(), true); // same page, other picture
+        board?.visionChanged(); // the players' darkness, or the GM's hint of it
         tableMarkers?.pageChanged(page());
         board?.update();
         showBanner();
@@ -348,8 +388,8 @@ export function startTable(initial: Initial): void {
   createBoard($('stage'), {
     me,
     page,
-    // looking as the players do: GM-layer tokens are left out too
-    tokens: () => (seeAs === 'players' ? tokens().filter((t) => t.layer !== 'gm') : tokens()),
+    // looking as the players do: GM-layer tokens are left out too, and on a dynamic page what the party doesn't see
+    tokens: () => (gm && seeAs === 'players' ? previewTokens(tokens(), page(), vision) : tokens()),
     selection: () => selection,
     setSelection: select,
     activeLayer: () => ctx.layer(),
@@ -363,6 +403,8 @@ export function startTable(initial: Initial): void {
     },
     backgroundView: () => seeAs,
     gameId: () => initial.gameId,
+    vision: () => vision,
+    toggleDoor,
   })
     .then((b) => {
       board = b;

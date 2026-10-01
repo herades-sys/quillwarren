@@ -22,7 +22,7 @@ login, database directory and release pipeline.
   - Commands: `/r` `/roll`, `/gr` (GM roll), `/w <name>` (whisper), `/em` `/me`, `/ooc`, `/desc` (GM), `/as "Name"` (GM), and inline `[[2d6+3]]` in any line.
 - **Turn order:** entries (token or free name) with an initiative value. The GM can sort, go to the next turn (rounds count up), hide the list or clear it.
 - **Pings:** ephemeral, never stored.
-- **Out of scope for phase 1:** dynamic lighting and vision, measuring, drawing, character sheets, handouts, jukebox, voice, scripts. They come in later phases. Walls from Delve maps are stored on the page (`walls`) so phase 3 can use them, but they aren't drawn or enforced yet.
+- **Out of scope for phase 1:** measuring, drawing, character sheets, handouts, jukebox, voice, scripts. They come in later phases. Line of sight, light and explored fog came later: see "Vision and light".
 
 ## Code layout and who owns what
 
@@ -53,9 +53,11 @@ The message and state types are in `packages/table/src/protocol.ts`, and that fi
   - A player can:
     - move, rotate and update the bars of tokens they control (`controlledBy` contains their id or `"all"`), on the page they are on, and only on the `tokens` layer;
     - send chat, ping, and end their own turn.
-  - A player can't change `layer`, `controlledBy`, `gmNotes` or images.
+  - A player can't change `layer`, `controlledBy`, `gmNotes`, images, `light` or `sight`, and can't open doors.
 - **`viewFor(state, member)`** / **`eventFor(state, member, event)`** strip what the member may not see before anything is sent:
   - `gm`-layer tokens and every token's `gmNotes`;
+  - on a dynamic-vision page, tokens the party doesn't see, and other players' tokens' `sight` and `light` (see "Vision and light");
+  - a page's `walls`, `doors`, `doorState` and `lights`;
   - pages other than the player's current one;
   - whispers not addressed to them;
   - GM rolls (the roller sees that they rolled, not the result, if they aren't the GM);
@@ -83,12 +85,70 @@ and whole numbers. Modifiers after a dice term:
 
 The result is `{ expr, total, terms }`: each dice term lists every die `{value, dropped?, exploded?, rerolled?, success?, failure?}`. The limits are at most 1000 dice per roll and expressions of 200 characters; beyond them the roll fails with a readable error. The RNG is passed in, so tests can use a fixed sequence and the server uses `crypto.randomInt`.
 
+## Vision and light
+
+Roll20-style dynamic lighting: what the players' characters see is revealed, walls and shut doors block sight, torches and lanterns light areas, and what has been seen stays explored (dimmed). The server decides everything; players are never sent what their party can't see.
+
+### The model
+
+- **Per page:** `page.vision = { mode: 'off' | 'dynamic', ambient?: 'dark' | 'dim' | 'bright' }`.
+  - `off` (the default, also when `vision` is unset): exactly as before, the Delve map's own room fog.
+  - `dynamic`: line of sight decides, and the map's room fog is ignored. Allowed on Delve pages and blank pages; not on picture pages, whose uploaded image goes to the players whole (`page.update` refuses it).
+  - `ambient` (default `dark`): `bright` everything is lit; `dim` everything is lit but dimmed (only bright lights, and darkvision, count as bright); `dark` only lights and darkvision show anything.
+- **Blockers** (`blockersOf`): `page.walls` plus every shut door.
+  - `page.walls` come from the Delve map as the players see it: secret doors are in them as wall, and rough maps use the rough edge as drawn (core `drawnFloor`).
+  - `page.doors` (`{id, a, b, style, open?}`) are the map's doors. A door is open by `page.doorState[id]` (the table's own state, which wins), else by the map's `open`. Shut doors block; a portcullis is bars you see through; an archway is always open; a secret door blocks like wall until the GM opens it.
+  - **Door state is table state, not map state:** the GM clicks a door on the 2D board (dynamic pages only) to open or shut it (intent `door.set {pageId, id, open}`, GM only). The Delve map stays as it is. Players don't open doors yet.
+- **Lights:**
+  - Tokens: `token.light = { bright, dim }` in cells: bright out to `bright`, then dim for `dim` cells more (a torch is 4 and 4). Tokens on every layer give light, the gm layer too (an invisible lamp).
+  - Map props become `page.lights` (`{id, x, y, bright, dim, asset}`) by `PROP_LIGHTS` in `packages/table/src/sight.ts`: sconce, brazier and campfire 4/4, lantern and chandelier 6/6, fireplace, cooking fire and forge 3/3, candles and oven 1/1, and the GM's light marker (a GM symbol, never drawn for players) 6/6. A light whose spot is on the wall line (a sconce hung on it) moves onto the floor.
+  - Pages from a Delve map follow it: when the map changes, the page takes its new walls, doors and lights (a `page.update`); otherwise only the picture reloads, as before.
+- **Sight:** `token.sight = { enabled?, range?, darkvision? }` (cells). Unset `enabled`: a token sees when a player controls it (`controlledBy` has a player or `"all"`). Never on the gm layer.
+  - What a token sees = (its visibility polygon among the blockers, cut to `range`) ∩ (lit ∪ its darkvision circle). Under a `bright` or `dim` ambient everything in its visibility polygon is lit.
+  - **Party vision is shared:** players get the union of what every seeing token on the page sees. Per-player vision (each player sees only through their own tokens) is a later option.
+- **Explored fog:** per page, everything the party has seen, stored in `table.db` (table `explored`, one row per page with a version). It grows when sight changes, by more than a sliver.
+- **When it is recomputed:** after any change to a dynamic page's tokens, walls, doors, lights or settings, at most every 120 ms per page, and always once more after the last change (so the final position counts). Visibility polygons are cached per position, so a map's lights cost nothing while tokens move.
+- **Light and sight are the GM's:** the token dialog has fields for both (GM only), and the rules refuse `light` and `sight` from players, even on their own tokens.
+
+### The geometry (`packages/table/src/vision.ts`)
+
+- `visibilityPolygon(origin, segments, box)`: rays to every wall end and ± 1e-5 rad either side, each stopping at the nearest wall; walls are sorted into 512 angular buckets so a ray only tests the walls in its direction. A ray through a shared corner hits both walls (no crack), a wall seen edge-on hides nothing, and a viewer standing exactly on a wall is moved 1e-4 off it so it sees one side.
+- `circle`, `union`, `intersect`, `difference`, `inflate`, `simplify` (clipper2-ts, 4 decimals), `pointIn`, `rectSamples`.
+- **Drawn walls at the edge:** a visibility polygon stops on the wall line, so what clients get (`visible`) and what the picture is cut to also include the strips of the walls and shut doors right at its edge (0.15 cells each side: the far half of the wall stroke, a door leaf). The exact polygon (`raw`) never leaves the server; it decides the tokens.
+- 300 walls × 6 viewers with the union take about 7 ms on the container; a full recompute of the test dungeon with 6 torch-bearers in the dark about 4 ms (1 ms when one moved); 719 rough-cave walls × 6 viewers 16 ms.
+
+### What is sent to whom (server only: `apps/server/src/table/vision.ts` and `live.ts`)
+
+- **Tokens:** on a dynamic page a player gets their own tokens, the party's seeing tokens, tokens-layer tokens while their footprint is in sight (sample points 0.2 cells inside its edges, so touching the edge of sight, or poking past a wall, doesn't count), and map-layer tokens (scenery) once their spot is explored. Never the gm layer.
+  - Each player connection remembers which tokens of its page it holds. A token that comes into view arrives as a `token.upsert`, one that leaves goes as a `token.remove`, and changes of tokens it can't see (moves, bars, names, a new token in the dark, deleting one it never had) send it nothing at all.
+  - Other players' tokens arrive without `sight` and `light`; GM notes never.
+  - The turn order shows tokens the player may not see as "Hidden", without their token id; when one comes into view, a fresh `turn` follows.
+- **Vision messages:** after the `hello` on a dynamic page and whenever it changes, each member gets `{type: 'vision', pageId, vision: {visible, bright, explored?, exploredVersion, ambient, seen?}}` (polygons in cells, `VisionView` in `protocol.ts`). `explored` (polygons or `"all"`) comes only when its version moved; `seen` (the token ids the party sees) only to the GM. A page without dynamic vision gets no vision messages.
+- **Page data:** players' pages never carry `walls`, `doors`, `doorState` or `lights` (they outline the whole map); they do carry `vision` (mode and ambient).
+- **The picture:** `background.png` for players (and for the GM's "see as players") on a dynamic page is the players' view with the table's doors (an opened secret door is drawn as an open door), cut to the explored fog with everything else black: core `RenderOptions.reveal`, one SVG clipPath around every layer, so the PNG has no pixel of what wasn't seen (the SVG never leaves the server). The GM's own view is the whole map with the table's doors. Pictures are cached per map rev, door state and explored version, and rendered in resvg's thread pool unless the map has uploaded pictures. Clients fetch the picture again when the explored version moves, at most about once a second.
+- **Switching** a page between off and dynamic gives its players (and the GM looking at it) a fresh `hello`.
+- **The 3D view:** `exploredRegion(hub.vision, state, page, {member, view})` in `vision.ts` returns `'all'` (the GM's own view, or a fully revealed page), the explored polygons (a player on their page, or the GM looking as the players), or `null` for a page without dynamic vision (then the map's room fog applies). Lights for a player's 3D view should be only the ones inside what they see.
+
+### GM tools
+
+- **Pages tab**, per Delve or blank page: "Vision: room fog / line of sight", the ambient, and for the explored fog (intent `vision.explored {pageId, action}`, GM only):
+  - **Forget explored** (`reset`): the history goes; what the party sees right now stays.
+  - **Reveal all** (`reveal`): the whole page counts as explored (tokens still show only while in sight).
+  - **Hide everything** (`hide`): nothing is explored or seen until anything on the page next changes (a token moves, a door turns).
+- **The board** (dynamic pages): a faint shade over what the party doesn't see, the lights with their bright and dim radii, and the doors (green open, orange shut, purple secret; click to open or shut). The "GM view / Players' view" button shows the players' darkness, picture and tokens exactly.
+- **The token dialog:** sight (default, sees, sees nothing), range, darkvision, bright and dim light, and presets (torch, lantern, candle, no light).
+
+### The players' board
+
+Black where the party has never looked, dimmed (55 %) where it looked before, a light veil where only dim light or darkvision reaches, clear in bright light. It is painted on a small canvas (up to 16 px per cell) stretched over the page, which softens its edges. Until the first vision message arrives a dynamic page is all black.
+
 ## Storage
 
 - **Database:** a separate SQLite file, `${DELVE_DATA}/table.db`, via `node:sqlite` as `store.ts` does.
   - `games(id, name, created, rev, state JSON)`: the whole game state, written after each change (debounced about 300 ms, and always on shutdown).
   - `chat(game_id, seq, at, json)`: the message log (the last 200 go into `hello`).
   - `seats(game_id, member_id, nonce)`: what player cookies are signed against.
+  - `explored(game_id, page_id, version, data)`: a dynamic-vision page's explored fog (`data` is `{polys}` or `{all: true}`), written with the game state's debounced flush.
   - `accounts(id, discord_id, username, name, avatar, avatar_file, created, seen)` and `account_sessions(token_hash, account_id, created, expires)`: Discord logins (see below).
 - **Uploaded images:** `${DELVE_DATA}/table-assets/<sha256>.<ext>`. Accepted: PNG, JPEG, WebP or GIF (checked by magic bytes), at most 10 MB, by the GM. They are served to members only at `/api/v1/games/:id/assets/<sha>.<ext>`.
 
@@ -102,7 +162,8 @@ The result is `{ expr, total, terms }`: each dice term lists every die `{value, 
 | `DELETE /games/:id` | GM | Delete the game and its chat |
 | `POST /games/:id/invites {name?, hours?}` | GM | `{url, expires}` |
 | `GET /play/join/:token` (page) | anyone | The name form, then creates the member and sets the cookie |
-| `POST /games/:id/pages/from-map {mapId}` | GM | New page from a Delve map: background `{kind:'delve', mapId}`, with size and origin in cells from the map's players-view render bounds, and walls from `computeWalls` (kept for phase 3) |
+| `POST /games/:id/pages/from-map {mapId}` | GM | New page from a Delve map: background `{kind:'delve', mapId}`, with size and origin in cells from the map's players-view render bounds, plus `walls`, `doors` and `lights` for vision (see "Vision and light") |
+| `GET /games/:id/pages/:pageId/background.png?view=` | members | A Delve page's picture in its exact frame. Players: their own page only, players' view. In dynamic vision it is cut to the explored fog, black elsewhere |
 | `POST /games/:id/assets` (raw body) | GM | Upload an image, returns `{url}` |
 | `GET /games/:id/assets/:file` | members | The image |
 | `GET /games/:id/live` (WebSocket) | members | The sync channel |
@@ -192,8 +253,13 @@ The same live game as the 2D table, for the GM and the players, with the page as
 - **Side panel:** a **Minis** tab (every mini on the page; select, look at, follow) and a **View** tab (walls, flat, shadows; kept per browser in `localStorage` `delve-table3d-*`). On phones it's a bottom sheet, and the camera buttons move above it.
 - **No token tools in 3D:** the GM adds characters on the 2D table (Tokens tab); they appear in 3D at once.
 
-### For the next steps (line of sight, notes, Discord)
+### With dynamic vision (line of sight)
 
-- **Line of sight and light:** replace the body of `revealedRegion()`; the scene's walls, doors and stairs for players follow it. The floor picture still comes from `background.png`, which follows the map's fog, so an explored-by-sight area also needs its picture masked (or an overlay). The client's `view.lights.setSources([{id, x, y, height?, color?, intensity?, range?, castShadow?}])` places point lights (at most 12, nearest to the view), and `view.lights.setAmbient(0..1)` dims the sun and sky for dark dungeons. `view.overlays.set(name, mesh)` / `view.overlays.polygons(polys, color, opacity)` is the layer just over the floor for darkness or explored areas; `Scene3D.region` carries the seen polygons. Today tokens on the tokens layer are visible to players anywhere on their page (as in 2D), even in unrevealed rooms.
+- On a page with `vision.mode: 'dynamic'`, `revealedRegion()` asks `exploredRegion()` (`apps/server/src/table/vision.ts`): players (and the GM's Players' view) get the walls, doors and stairs of what the party has explored, with the table's door state (`withTableDoors`), and the floor is `background.png`, which is cut to the same explored fog. Tokens the party doesn't see never reach players (the live hub filters them, as on the 2D table).
+- The 3D client keeps the `vision` messages (`vision-view.ts` `mergeVision`): when the explored fog grows it fetches the scene again (at most about once a second), and it dims what the party saw before but doesn't see now (`darknessPolygons` on `view.overlays`). The GM's Players' view shows only the tokens the party sees (`previewTokens`).
+- Not yet: point lights in 3D. `view.lights.setSources([{id, x, y, height?, color?, intensity?, range?, castShadow?}])` (at most 12) and `view.lights.setAmbient(0..1)` are ready; give players only lights inside `visible`, because map light positions would give away rooms nobody has seen.
+
+### For the next steps (notes, Discord)
+
 - **Notes:** `startTable3d()` returns a `Table3dCtx` (`state`, `page`, `tokens`, `scene`, `selected`, `act`, `on`, `view`); `ctx.addPanel(id, label)` adds a tab to the side panel and returns its empty panel.
 - **Shared:** `apps/server/src/table/page.ts` exports `tablePage(opts: { gameId: string; gameName: string; version: string; me: { id: string; name: string; role: 'gm' | 'player' } }): string`.

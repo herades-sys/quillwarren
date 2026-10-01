@@ -1,7 +1,8 @@
 // The token settings dialog (double-click a token). The GM edits everything;
 // a player edits the rotation and bars of their own tokens, and sees the rest.
 // Only the fields that changed are sent, as one token.update.
-import type { Bar, Layer, Token } from '@delve/table';
+// Sight and light (dynamic vision) are the GM's: the rules refuse them from players.
+import type { Bar, Layer, Sight, Token, TokenLight } from '@delve/table';
 import type { TableCtx } from './ctx.ts';
 import { button, h } from './dom.ts';
 import { BAR_COLORS, changed, editLevel, num } from './logic.ts';
@@ -41,6 +42,26 @@ export function openTokenDialog(ctx: TableCtx, id: string): void {
   const image = h('input', { type: 'text', value: t.image, 'aria-label': 'Image address' });
   const notes = h('textarea', { rows: 3, value: t.gmNotes ?? '', maxLength: 4000, placeholder: 'Only you see these' });
 
+  // dynamic vision: what it sees, and the light it gives (cells)
+  const sees = h(
+    'select',
+    { class: 'field', 'aria-label': 'Sight' },
+    h('option', { value: '', selected: t.sight?.enabled === undefined }, 'Default: sees if a player controls it'),
+    h('option', { value: 'on', selected: t.sight?.enabled === true }, 'Sees (shares its sight with the players)'),
+    h('option', { value: 'off', selected: t.sight?.enabled === false }, 'Sees nothing'),
+  );
+  const cells = (v: number | undefined, placeholder: string, max: number, label: string) =>
+    h('input', { type: 'number', min: '0', max: String(max), step: '0.5', value: v === undefined ? '' : String(v), placeholder, 'aria-label': label });
+  const range = cells(t.sight?.range, 'no limit', 1000, 'Sight range in cells');
+  const darkvision = cells(t.sight?.darkvision, 'none', 1000, 'Darkvision in cells');
+  const bright = cells(t.light?.bright, '0', 200, 'Bright light in cells');
+  const dim = cells(t.light?.dim, '0', 200, 'Dim light in cells, beyond the bright');
+  const preset = (label: string, b: number, d: number) =>
+    button(label, () => {
+      bright.value = b ? String(b) : '';
+      dim.value = d ? String(d) : '';
+    }, { class: 'btn small' });
+
   const form = h('form', { method: 'dialog' });
   const dlg = h('dialog', { class: 'tok', 'aria-label': `Token ${t.name ?? ''}` }, form);
 
@@ -62,10 +83,20 @@ export function openTokenDialog(ctx: TableCtx, id: string): void {
     form.append(
       field('Layer', layer),
       h('div', { class: 'field' }, h('span', {}, 'Controlled by'), h('div', { class: 'checks' }, ...ctl.map((c) => h('label', { class: 'check' }, c.box, c.name)))),
+      field('Sight (dynamic vision)', sees),
+      h('div', { class: 'grid2' }, field('Sight range (cells)', range), field('Darkvision (cells)', darkvision)),
+      h('div', { class: 'grid2' }, field('Bright light (cells)', bright), field('Dim light beyond (cells)', dim)),
+      h('div', { class: 'row' }, preset('Torch', 4, 4), preset('Lantern', 6, 6), preset('Candle', 1, 1), preset('No light', 0, 0)),
       field('Image', image),
       field('GM notes', notes),
     );
-  } else form.append(h('p', { class: 'hint' }, 'You can turn this token and change its bars. The GM sets the rest.'));
+  } else {
+    const told: string[] = [];
+    if (t.light) told.push(`gives light (${t.light.bright} bright, ${t.light.dim} dim)`);
+    if (t.sight?.darkvision) told.push(`has darkvision ${t.sight.darkvision}`);
+    if (t.sight?.range !== undefined) told.push(`sees ${t.sight.range} cells far`);
+    form.append(h('p', { class: 'hint' }, `You can turn this token and change its bars. The GM sets the rest${told.length ? `; it ${told.join(', ')}` : ''}.`));
+  }
 
   function collect(): Partial<Token> {
     const outBars: Bar[] = [];
@@ -78,6 +109,17 @@ export function openTokenDialog(ctx: TableCtx, id: string): void {
     const next: Partial<Token> = { rotation: ((num(rot.value, 0) % 360) + 360) % 360, bars: outBars };
     if (!full) return next;
     const controlledBy = ctl.filter((c) => c.box.checked).map((c) => c.id);
+    const n = (input: HTMLInputElement, max: number): number | undefined => (input.value.trim() === '' ? undefined : Math.min(max, Math.max(0, num(input.value, 0))));
+    const sight: Sight = {};
+    if (sees.value === 'on') sight.enabled = true;
+    if (sees.value === 'off') sight.enabled = false;
+    const r = n(range, 1000);
+    if (r !== undefined) sight.range = r;
+    const dv = n(darkvision, 1000);
+    if (dv) sight.darkvision = dv;
+    const lb = n(bright, 200) ?? 0;
+    const ld = n(dim, 200) ?? 0;
+    const light: TokenLight | null = lb > 0 || ld > 0 ? { bright: lb, dim: ld } : null;
     return {
       ...next,
       name: name.value.trim(),
@@ -88,12 +130,22 @@ export function openTokenDialog(ctx: TableCtx, id: string): void {
       controlledBy: controlledBy.includes('all') ? ['all'] : controlledBy,
       image: image.value.trim() || t.image,
       gmNotes: notes.value,
+      // null takes it off the token
+      ...({ light, sight: Object.keys(sight).length ? sight : null } as unknown as Partial<Token>),
     };
   }
 
   async function save(): Promise<void> {
     const cur: Token = ctx.state()?.view.tokens.find((x) => x.id === id) ?? t;
-    const base: Token = { ...cur, rotation: cur.rotation ?? 0, bars: cur.bars ?? [], name: cur.name ?? '', showName: Boolean(cur.showName), gmNotes: cur.gmNotes ?? '' };
+    const base: Token = {
+      ...cur,
+      rotation: cur.rotation ?? 0,
+      bars: cur.bars ?? [],
+      name: cur.name ?? '',
+      showName: Boolean(cur.showName),
+      gmNotes: cur.gmNotes ?? '',
+      ...({ light: cur.light ?? null, sight: cur.sight ?? null } as unknown as Partial<Token>),
+    };
     const set = changed(base, collect());
     if (!Object.keys(set).length) return dlg.close();
     if (await ctx.act({ type: 'token.update', id, set })) dlg.close();

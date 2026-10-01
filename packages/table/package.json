@@ -9,5 +9,7 @@
   "scripts": {
     "typecheck": "tsc -p ."
   },
-  "dependencies": {}
+  "dependencies": {
+    "clipper2-ts": "2.0.1-18"
+  }
 }

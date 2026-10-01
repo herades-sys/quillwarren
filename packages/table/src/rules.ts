@@ -15,7 +15,12 @@ import type {
   Layer,
   Member,
   Page,
+  PageDoor,
+  PageLight,
+  PageVision,
+  Sight,
   Token,
+  TokenLight,
   TurnEntry,
   TurnOrder,
 } from './protocol.ts';
@@ -32,6 +37,8 @@ export interface Outcome {
   state: GameState;
   events: GameEvent[];
   chat?: ChatMessage;
+  /** A GM tool for a page's explored fog (vision.explored): the server's vision keeper does it; nothing in the state changes. */
+  explored?: { pageId: string; action: 'reset' | 'reveal' | 'hide' };
 }
 
 type Obj = Record<string, unknown>;
@@ -57,6 +64,8 @@ const INTENT_TYPES = new Set<string>([
   'member.remove',
   'member.rename',
   'game.rename',
+  'door.set',
+  'vision.explored',
 ]);
 
 const GM_ONLY = new Map<string, string>([
@@ -74,6 +83,8 @@ const GM_ONLY = new Map<string, string>([
   ['turn.visible', 'Only the GM can change the turn order'],
   ['member.remove', 'Only the GM can remove players'],
   ['game.rename', 'Only the GM can rename the game'],
+  ['door.set', 'Only the GM can open and shut doors'],
+  ['vision.explored', 'Only the GM can change what has been explored'],
 ]);
 
 /** What a player may change on a token they control. */
@@ -215,6 +226,81 @@ function bars(v: unknown): Bar[] {
   });
 }
 
+function only(v: Obj, keys: readonly string[], what: string): void {
+  for (const k of Object.keys(v)) if (!keys.includes(k)) fail(`${what} has no field "${k}"`);
+}
+
+function tokenLight(v: unknown): TokenLight {
+  if (!isObj(v)) fail('light must be {bright, dim} in cells');
+  only(v, ['bright', 'dim'], 'light');
+  return { bright: num(v.bright ?? 0, 'Bright light', 0, 200), dim: num(v.dim ?? 0, 'Dim light', 0, 200) };
+}
+
+function sight(v: unknown): Sight {
+  if (!isObj(v)) fail('sight must be {enabled?, range?, darkvision?}');
+  only(v, ['enabled', 'range', 'darkvision'], 'sight');
+  const out: Sight = {};
+  if (v.enabled !== undefined) out.enabled = bool(v.enabled, 'sight.enabled');
+  if (v.range !== undefined) out.range = num(v.range, 'Sight range', 0, 1000);
+  if (v.darkvision !== undefined) out.darkvision = num(v.darkvision, 'Darkvision', 0, 1000);
+  return out;
+}
+
+/** Delve map ids (doors, props), as page doors and lights carry them. */
+const MAP_ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+
+function mapId(v: unknown, what: string): string {
+  if (typeof v !== 'string' || !MAP_ID.test(v)) fail(`${what} must be a Delve map id`);
+  return v;
+}
+
+function pageVision(v: unknown): PageVision {
+  if (!isObj(v)) fail('vision must be {mode: "off" | "dynamic", ambient?: "dark" | "dim" | "bright"}');
+  only(v, ['mode', 'ambient'], 'vision');
+  if (v.mode !== 'off' && v.mode !== 'dynamic') fail('vision.mode must be off or dynamic');
+  const out: PageVision = { mode: v.mode };
+  if (v.ambient !== undefined) {
+    if (v.ambient !== 'dark' && v.ambient !== 'dim' && v.ambient !== 'bright') fail('vision.ambient must be dark, dim or bright');
+    out.ambient = v.ambient;
+  }
+  return out;
+}
+
+function pageDoors(v: unknown): PageDoor[] {
+  if (!Array.isArray(v) || v.length > 5000) fail('doors must be a list of at most 5000 doors');
+  return v.map((d) => {
+    if (!isObj(d)) fail('A door is {id, a, b, style, open?}');
+    only(d, ['id', 'a', 'b', 'style', 'open'], 'A door');
+    const door: PageDoor = { id: mapId(d.id, 'Door id'), a: point(d.a, 'Door end'), b: point(d.b, 'Door end'), style: text(d.style, 'Door style', 20) };
+    if (d.open !== undefined) door.open = bool(d.open, 'Door open');
+    return door;
+  });
+}
+
+function pageLights(v: unknown): PageLight[] {
+  if (!Array.isArray(v) || v.length > 5000) fail('lights must be a list of at most 5000 lights');
+  return v.map((l) => {
+    if (!isObj(l)) fail('A light is {id, x, y, bright, dim, asset?}');
+    only(l, ['id', 'x', 'y', 'bright', 'dim', 'asset'], 'A light');
+    const light: PageLight = {
+      id: mapId(l.id, 'Light id'),
+      x: num(l.x, 'Light x', -100000, 100000),
+      y: num(l.y, 'Light y', -100000, 100000),
+      bright: num(l.bright, 'Bright light', 0, 200),
+      dim: num(l.dim, 'Dim light', 0, 200),
+    };
+    if (l.asset !== undefined) light.asset = text(l.asset, 'Light asset', 100);
+    return light;
+  });
+}
+
+function doorStates(v: unknown): Record<string, boolean> {
+  if (!isObj(v) || Object.keys(v).length > 5000) fail('doorState must be {doorId: true | false} for at most 5000 doors');
+  const out: Record<string, boolean> = {};
+  for (const [k, x] of Object.entries(v)) out[mapId(k, 'Door id')] = bool(x, `Door ${k}`);
+  return out;
+}
+
 type Patch<T> = { [K in keyof T]?: T[K] | undefined };
 
 /** Check the token fields in `set`; undefined removes an optional field. */
@@ -253,6 +339,12 @@ function tokenPatch(state: GameState, set: Obj): Patch<Token> {
         break;
       case 'gmNotes':
         out.gmNotes = v === undefined ? undefined : text(v, 'GM notes', 5000);
+        break;
+      case 'light':
+        out.light = v === undefined || v === null ? undefined : tokenLight(v);
+        break;
+      case 'sight':
+        out.sight = v === undefined || v === null ? undefined : sight(v);
         break;
       case 'id':
       case 'pageId':
@@ -329,6 +421,18 @@ function pagePatch(set: Obj): Patch<Page> {
       case 'walls':
         out.walls = v === undefined ? undefined : walls(v);
         break;
+      case 'vision':
+        out.vision = v === undefined || v === null ? undefined : pageVision(v);
+        break;
+      case 'doors':
+        out.doors = v === undefined ? undefined : pageDoors(v);
+        break;
+      case 'lights':
+        out.lights = v === undefined ? undefined : pageLights(v);
+        break;
+      case 'doorState':
+        out.doorState = v === undefined || v === null ? undefined : doorStates(v);
+        break;
       case 'id':
         fail("A page's id can't be changed");
         break;
@@ -363,6 +467,14 @@ function turnPatch(state: GameState, set: Obj): Patch<TurnEntry> {
   return out;
 }
 
+/** Dynamic vision can't hide anything of an uploaded picture: players load the image itself. */
+function visionFits(page: Page): Page {
+  if (page.vision?.mode === 'dynamic' && page.background.kind === 'image') {
+    fail('Dynamic vision needs a page drawn from a Delve map (or a blank one): a picture page’s image goes to the players whole');
+  }
+  return page;
+}
+
 /** A copy of `target` with `patch` applied; undefined values remove the field. */
 function patched<T extends object>(target: T, patch: Patch<T>): T {
   const out = { ...target } as Record<string, unknown>;
@@ -391,6 +503,7 @@ interface Change {
   state: GameState;
   events: GameEvent[];
   chat?: ChatMessage;
+  explored?: Outcome['explored'];
 }
 
 function removeTokens(state: GameState, ids: Set<string>): Change {
@@ -459,12 +572,12 @@ function apply(state: GameState, memberId: string, intent: Intent, ctx: ApplyCon
       const input = needObj(intent.page, 'page');
       const { id: wantId, ...fields } = input;
       const id = newId(wantId, state.pages.map((p) => p.id), 'pg', 'Page');
-      const page = patched(defaultPage(id, `Page ${state.pages.length + 1}`), pagePatch(fields));
+      const page = visionFits(patched(defaultPage(id, `Page ${state.pages.length + 1}`), pagePatch(fields)));
       return { state: { ...state, pages: [...state.pages, page] }, events: [{ type: 'page.upsert', page }] };
     }
     case 'page.update': {
       const old = needPage(intent.id);
-      const page = patched(old, pagePatch(needObj(intent.set, 'set')));
+      const page = visionFits(patched(old, pagePatch(needObj(intent.set, 'set'))));
       return { state: { ...state, pages: state.pages.map((p) => (p.id === old.id ? page : p)) }, events: [{ type: 'page.upsert', page }] };
     }
     case 'page.delete': {
@@ -585,6 +698,23 @@ function apply(state: GameState, memberId: string, intent: Intent, ctx: ApplyCon
       const name = cleanText(intent.name, 'Game name', 80);
       return { state: { ...state, name }, events: [{ type: 'game', name, playerPageId: state.playerPageId }] };
     }
+
+    case 'door.set': {
+      const page = needPage(intent.pageId);
+      const id = intent.id as unknown;
+      if (typeof id !== 'string' || !(page.doors ?? []).some((d) => d.id === id)) fail(`No door ${JSON.stringify(id)?.slice(0, 70)} on that page`);
+      const open = bool(intent.open, 'open');
+      const doorState: Record<string, boolean> = { ...(page.doorState ?? {}) };
+      doorState[id] = open;
+      const next: Page = { ...page, doorState };
+      return { state: { ...state, pages: state.pages.map((p) => (p.id === page.id ? next : p)) }, events: [{ type: 'page.upsert', page: next }] };
+    }
+    case 'vision.explored': {
+      const page = needPage(intent.pageId);
+      const action = intent.action as unknown;
+      if (action !== 'reset' && action !== 'reveal' && action !== 'hide') fail('action must be reset, reveal or hide');
+      return { state, events: [], explored: { pageId: page.id, action } };
+    }
   }
 }
 
@@ -599,5 +729,6 @@ export function applyIntent(state: GameState, memberId: string, intent: Intent, 
   const change = apply(state, memberId, intent, ctx);
   const out: Outcome = { state: { ...change.state, rev: state.rev + 1 }, events: change.events };
   if (change.chat) out.chat = change.chat;
+  if (change.explored) out.explored = change.explored;
   return out;
 }

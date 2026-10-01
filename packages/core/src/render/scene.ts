@@ -43,6 +43,13 @@ export interface RenderOptions {
   frame?: Bounds;
   /** false: no floor number in the GM view's top-left corner (the viewer shows it as a badge instead). */
   floorNumber?: boolean;
+  /**
+   * Draw only inside these polygons and paint the rest `revealColor` (default
+   * black): a tabletop page's explored region in dynamic vision. Written as one
+   * SVG clipPath around every layer, so a PNG of it holds nothing outside them.
+   */
+  reveal?: Polygon[];
+  revealColor?: string;
 }
 
 /** One prop in an 'assets' layer: its body (in asset units, 100 per square) placed around `at`. */
@@ -102,6 +109,8 @@ export interface Scene {
   bounds: Bounds;
   clips: Record<string, Polygon[]>;
   layers: Layer[];
+  /** Everything is drawn only inside these polygons; the rest of the picture is `color` (RenderOptions.reveal). */
+  reveal?: { polygons: Polygon[]; color: string };
 }
 
 const open = (points: Point[]): Polyline => ({ points, closed: false });
@@ -473,5 +482,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     if (markers.length) layers.push({ name: 'markers', kind: 'markers', items: markers });
   }
 
-  return { bounds, clips, layers };
+  const scene: Scene = { bounds, clips, layers };
+  if (opts.reveal) scene.reveal = { polygons: opts.reveal, color: opts.revealColor ?? '#000000' };
+  return scene;
 }

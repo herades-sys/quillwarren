@@ -52,7 +52,7 @@ export {
 } from './assets/catalog.ts';
 export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset } from './assets/svg.ts';
 export { objectBounds, insidePolygons, clipPolylines } from './geometry/objects.ts';
-export { roughFloor, hasRoughness, amplitudeOf, ROUGHNESS_AMPLITUDE } from './geometry/rough.ts';
+export { roughFloor, drawnFloor, hasRoughness, amplitudeOf, ROUGHNESS_AMPLITUDE } from './geometry/rough.ts';
 export { scatterAlong, type ScatterOptions, type Placement } from './scatter.ts';
 export {
   collectSegment,

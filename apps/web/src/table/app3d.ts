@@ -17,6 +17,7 @@ import { ackOptimistic, canMove, failOptimistic, isGm, needsReload, reduce, sett
 import { connect, type ConnState } from './net.ts';
 import { baseColor, followSubject, shownTokens } from './scene3d-logic.ts';
 import { createView3d, type View3d } from './view3d.ts';
+import { darknessPolygons, fogAlphas, mergeVision, previewTokens, reloadDelay, type BoardVision } from './vision-view.ts';
 
 export interface Initial3d {
   gameId: string;
@@ -80,7 +81,14 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
   const page = (): Page | null => (state ? (state.view.pages.find((p) => p.id === state!.view.pageId) ?? null) : null);
   /** The GM can look at a page as the players see it (their scene, no gm layer); like the 2D table, every load starts in the GM's view. */
   let seeAs: 'gm' | 'players' = gm ? 'gm' : 'players';
-  const tokens = (): Token[] => (state ? shownTokens(withOptimistic(state.view.tokens, opt), seeAs) : []);
+  /** The last vision message for the page we look at (dynamic vision); null: none, or the page has none. */
+  let vision: BoardVision | null = null;
+  const tokens = (): Token[] => {
+    if (!state) return [];
+    const list = withOptimistic(state.view.tokens, opt);
+    // the GM looking as the players: on a dynamic page only what the party sees, like the 2D table
+    return gm && seeAs === 'players' ? previewTokens(list, page(), vision) : shownTokens(list, seeAs);
+  };
   let flat = store.get<boolean>(KEY.flat) ?? false;
   let wallH = store.get<number>(KEY.walls) ?? 0.9;
   let shadows = store.get<boolean>(KEY.shadows) ?? true;
@@ -164,12 +172,47 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
       if (serial !== sceneSerial) return;
       scene = s;
       view?.setScene(s, page(), bust);
+      showDarkness();
       emit(['pages']);
     } catch (e) {
       if (serial !== sceneSerial) return;
       ui.status.hidden = false;
       ui.status.textContent = `This page didn't load in 3D: ${(e as Error).message}`;
     }
+  }
+
+  // ---------- dynamic vision (the server cuts the scene; this only draws the darkness) ----------
+
+  /** The scene follows the explored fog, but at most about once a second. */
+  const FOG_GAP_MS = 900;
+  let fogLast = 0;
+  let fogTimer: number | undefined;
+  function reloadForFog(): void {
+    if (fogTimer !== undefined) return;
+    fogTimer = window.setTimeout(() => {
+      fogTimer = undefined;
+      fogLast = Date.now();
+      void loadScene(Date.now());
+    }, reloadDelay(Date.now(), fogLast, FOG_GAP_MS));
+  }
+
+  /** Dim what the party saw before but doesn't see now (unexplored ground isn't in the players' scene at all). */
+  function showDarkness(): void {
+    if (!view) return;
+    const box = scene?.bounds;
+    if (!vision || !box) return view.overlays.set('darkness', null);
+    view.overlays.set('darkness', view.overlays.polygons(darknessPolygons(box, vision.visible), '#000000', fogAlphas(gm, seeAs).explored));
+  }
+
+  function onVision(pageId: string, v: Parameters<typeof mergeVision>[2]): void {
+    if (!state || pageId !== state.view.pageId) return;
+    const before = vision;
+    vision = mergeVision(vision, pageId, v);
+    // the players' scene (and the GM's look as them) is cut to the explored fog: fetch it again when it grew
+    if (before && vision && before.exploredVersion !== vision.exploredVersion && seeAs === 'players') reloadForFog();
+    showDarkness();
+    view?.update();
+    emit(['tokens']);
   }
 
   // ---------- receiving ----------
@@ -179,6 +222,8 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
       case 'hello': {
         state = { view: msg.view, chat: msg.chat };
         opt.clear();
+        vision = null; // a vision message follows on a dynamic page
+        showDarkness();
         selection = new Set([...selection].filter((id) => msg.view.tokens.some((t) => t.id === id)));
         showHeader();
         showBanner();
@@ -224,6 +269,9 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
         break;
       case 'ping':
         if (state && msg.pageId === state.view.pageId && msg.from !== me().id) view?.showPing(msg.x, msg.y, msg.color);
+        break;
+      case 'vision':
+        onVision(msg.pageId, msg.vision);
         break;
       default:
         break;
@@ -274,6 +322,7 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
             onclick: () => {
               seeAs = seeAs === 'gm' ? 'players' : 'gm';
               void loadScene(0);
+              showDarkness();
               view?.update();
               showBanner();
               emit(['tokens']);

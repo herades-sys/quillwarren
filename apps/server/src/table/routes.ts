@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { computeFloor, computeWalls, doorSegment, type DelveMap, type Door } from '@delve/core';
-import { addInvite, addMember, newGame, pageFor, removeInvite, TableError, type GameState, type Invite, type Member, type Page } from '@delve/table';
+import { addInvite, addMember, isDynamic, newGame, pageFor, removeInvite, TableError, type GameState, type Invite, type Member, type Page } from '@delve/table';
 import { readCookie, sameOrigin } from '../auth.ts';
 import { canLogIn, type EditorAuth } from '../login.ts';
 import { render, RenderQueryError, ROLL20_PPG, sceneFor } from '../render.ts';
@@ -29,6 +29,7 @@ import { registerLive, TableHub } from './live.ts';
 import { tablePage } from './page.ts';
 import { registerTable3d } from './scene3d.ts';
 import { newGameId, TableStore, type Account } from './store.ts';
+import { pageSightData } from './vision.ts';
 
 export interface TableDeps {
   /** Delve's maps, for pages made from a map. */
@@ -65,15 +66,14 @@ function cleanName(v: unknown, max: number): string | null {
 }
 
 /**
- * A Delve map as a page: its players'-view render bounds, grid unit and walls.
- * Walls are the players' view of them: secret doors open no gap and close
- * their opening, so the page data never gives a secret door away.
+ * A Delve map as a page: its players'-view render bounds, grid unit, and for
+ * vision its walls, doors and lights (vision.ts pageSightData). Walls are the
+ * players' view of them: secret doors open no gap and close their opening, so
+ * the page data never gives a secret door away.
  */
 export function pageFromMap(map: DelveMap, name?: string): Omit<Page, 'id'> {
   const { bounds } = sceneFor(map, { view: 'players' });
-  const secret = (o: DelveMap['objects'][number]): o is Door => o.type === 'door' && o.style === 'secret';
-  const shut = { ...map, objects: map.objects.filter((o) => !secret(o)) };
-  const walls = [...computeWalls(shut, computeFloor(map)), ...map.objects.filter(secret).map(doorSegment)];
+  const { walls, doors, lights } = pageSightData(map);
   return {
     name: name ?? map.name.slice(0, 80),
     width: bounds.x1 - bounds.x0,
@@ -83,10 +83,9 @@ export function pageFromMap(map: DelveMap, name?: string): Omit<Page, 'id'> {
     cellUnit: map.grid.unit ?? '5 ft',
     showGrid: true,
     background: { kind: 'delve', mapId: map.id },
-    walls: walls.map(([a, b]) => [
-      [a[0], a[1]],
-      [b[0], b[1]],
-    ]),
+    walls,
+    doors,
+    lights,
   };
 }
 
@@ -121,25 +120,56 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
 
   // Pages drawn from a Delve map follow it: when the map changes (the GM
   // reveals a room, moves a door), everyone sees the page again, and the client
-  // reloads its picture. Nothing about the page itself changes, so no rev bump.
+  // reloads its picture. When the map's walls, doors or lights changed, the page
+  // takes the new ones (a page.update, so vision follows); otherwise nothing
+  // about the page itself changes, so no rev bump.
   const following = new Map<string, ReturnType<typeof setTimeout>>();
+  const followMap = (mapId: string) => {
+    let map: DelveMap | null = null;
+    try {
+      map = deps.maps.get(mapId).map;
+    } catch {
+      map = null; // deleted: the picture route says so
+    }
+    const fresh = map ? pageSightData(map) : null;
+    for (const g of store.list()) {
+      const pageIds = store.get(g.id)?.pages.filter((p) => p.background.kind === 'delve' && p.background.mapId === mapId).map((p) => p.id) ?? [];
+      const same: string[] = [];
+      for (const id of pageIds) {
+        const state = store.get(g.id);
+        const page = state?.pages.find((p) => p.id === id);
+        if (!state || !page) continue;
+        const set = fresh ? Object.fromEntries((['walls', 'doors', 'lights'] as const).filter((k) => JSON.stringify(page[k] ?? []) !== JSON.stringify(fresh[k])).map((k) => [k, fresh[k]])) : {};
+        if (!Object.keys(set).length) {
+          same.push(id);
+          continue;
+        }
+        try {
+          hub.change(state.id, gmId(state), { type: 'page.update', id, set });
+        } catch (e) {
+          app.log.warn({ err: e, game: state.id, page: id }, 'could not follow the map');
+          same.push(id);
+        }
+      }
+      const state = store.get(g.id);
+      const pages = state?.pages.filter((p) => same.includes(p.id)) ?? [];
+      if (state && pages.length) hub.publish(state, pages.map((page) => ({ type: 'page.upsert', page })));
+    }
+  };
   deps.onMapChange?.((mapId) => {
     if (following.has(mapId)) return;
     following.set(
       mapId,
       setTimeout(() => {
         following.delete(mapId);
-        for (const g of store.list()) {
-          const state = store.get(g.id);
-          const pages = state?.pages.filter((p) => p.background.kind === 'delve' && p.background.mapId === mapId) ?? [];
-          if (state && pages.length) hub.publish(state, pages.map((page) => ({ type: 'page.upsert', page })));
-        }
+        followMap(mapId);
       }, MAP_FOLLOW_MS),
     );
   });
 
   app.addHook('onClose', async () => {
     for (const t of following.values()) clearTimeout(t);
+    hub.close();
     store.close();
     assets.close();
   });
@@ -173,7 +203,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
 
     registerLive(t, hub, store, access);
     // the 3D table view: /play/:id/3d and the members-only scene3d.json
-    registerTable3d(t, { store, access, maps: deps.maps, version: deps.version, discord: Boolean(discord), accountOf });
+    registerTable3d(t, { store, access, maps: deps.maps, version: deps.version, discord: Boolean(discord), accountOf, vision: hub.vision });
 
     // ---------- Discord login ----------
 
@@ -344,11 +374,18 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
       if (!gm && pageFor(state, member.id) !== page.id) return reply.code(403).send({ error: 'that page is not open to players' });
       const view = gm && (req.query as { view?: string }).view === 'gm' ? 'gm' : 'players';
       let map: DelveMap;
+      let mapRev = 0;
       try {
-        map = deps.maps.get(page.background.mapId).map;
+        ({ map, rev: mapRev } = deps.maps.get(page.background.mapId));
       } catch (e) {
         if (e instanceof NotFoundError) return reply.code(404).send({ error: 'the Delve map behind this page is gone' });
         throw e;
+      }
+      // dynamic vision: the table's doors; players get only what the party has explored, black elsewhere (vision-render.ts)
+      if (isDynamic(page)) {
+        const explored = hub.vision.current(state, page.id)?.explored ?? hub.vision.explored(state.id, page.id);
+        const png = await hub.pictures.png({ gameId: state.id, page, map, mapRev, view, explored });
+        return reply.type('image/png').header('cache-control', 'private, no-cache').header('x-content-type-options', 'nosniff').send(png);
       }
       const [x0, y0] = page.origin;
       try {

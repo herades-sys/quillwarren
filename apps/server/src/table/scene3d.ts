@@ -32,6 +32,7 @@ import { discordLoginUrl } from './discord.ts';
 import { messagePage } from './html.ts';
 import { table3dPage } from './page3d.ts';
 import type { Account, TableStore } from './store.ts';
+import { exploredRegion, withTableDoors, type TableVision } from './vision.ts';
 
 export interface RegionViewer {
   member: Member;
@@ -46,12 +47,14 @@ export interface RegionViewer {
  *   the map's revealed rooms and corridors, plus `show` minus `hide` areas,
  *   the same area the players' 2D picture is drawn from.
  * - Otherwise everything: without fog the players' picture shows the whole map.
- * Step 2 (line of sight) replaces this body; the scene's walls, doors and
- * stairs follow whatever it returns. (The floor picture still comes from
- * background.png, which follows the map's fog.)
+ * - On a page with dynamic vision: what the party has explored (vision.ts
+ *   exploredRegion), the same area background.png cuts the players' picture to.
+ * The scene's walls, doors and stairs follow whatever this returns.
  */
-export function revealedRegion(_state: GameState, page: Page, map: DelveMap | null, viewer: RegionViewer): Polygon[] | 'all' {
+export function revealedRegion(state: GameState, page: Page, map: DelveMap | null, viewer: RegionViewer, vision?: TableVision): Polygon[] | 'all' {
   if (viewer.member.role === 'gm' && viewer.view === 'gm') return 'all';
+  const explored = vision ? exploredRegion(vision, state, page, viewer) : null;
+  if (explored !== null) return explored;
   if (page.background.kind !== 'delve' || !map) return 'all';
   if (!map.fog?.on) return 'all';
   return visiblePolygons(map);
@@ -154,6 +157,8 @@ export interface Table3dDeps {
   /** Discord login is set up (the refusal page offers it). */
   discord: boolean;
   accountOf: (req: FastifyRequest) => Account | null;
+  /** The live hub's vision keeper: on pages with dynamic vision the players' scene is cut to the explored fog. */
+  vision?: TableVision;
 }
 
 const html = (reply: FastifyReply, code: number, body: string) =>
@@ -198,13 +203,14 @@ export function registerTable3d(t: FastifyInstance, deps: Table3dDeps): void {
     let map: DelveMap | null = null;
     if (page.background.kind === 'delve') {
       try {
-        map = deps.maps.get(page.background.mapId).map;
+        // with the doors as the table has them (the GM opens and shuts them during play), like the 2D picture
+        map = withTableDoors(deps.maps.get(page.background.mapId).map, page, view);
       } catch (e) {
         if (e instanceof NotFoundError) return reply.code(404).send({ error: 'the Delve map behind this page is gone' });
         throw e;
       }
     }
-    const region = revealedRegion(state, page, map, { member, view });
+    const region = revealedRegion(state, page, map, { member, view }, deps.vision);
     return reply.header('cache-control', 'private, no-cache').header('x-content-type-options', 'nosniff').send(scene3d(state.id, page, map, view, region));
   });
 }

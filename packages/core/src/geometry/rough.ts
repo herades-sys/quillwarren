@@ -4,10 +4,10 @@
 // for everything, and a room, corridor or cutout can set its own; each point of
 // the outline takes the level of the nearest one. Doors stay on straight wall.
 import { FillRule, unionD, type PathsD } from 'clipper2-ts';
-import { hashInts } from '../render/rng.ts';
+import { hashInts, hashString } from '../render/rng.ts';
 import type { DelveMap, Door, Point } from '../schema.ts';
 import { corridorOutline, corridorPath, roomsById } from './corridors.ts';
-import { polygonsOf } from './floor.ts';
+import { computeFloor, polygonsOf } from './floor.ts';
 import { PRECISION, shapePath, toPath, type Polygon, type Ring } from './shapes.ts';
 import { doorSegment } from './walls.ts';
 
@@ -138,4 +138,10 @@ export function maxBulge(map: DelveMap): number {
   let level = map.roughness ?? 0;
   for (const o of map.objects) if ('roughness' in o && o.roughness) level = Math.max(level, o.roughness);
   return amplitudeOf(level) * 1.6 * 0.6;
+}
+
+/** The floor as the renderer draws it: with its rough edges when the map asks for them (walls for line of sight follow these). */
+export function drawnFloor(map: DelveMap): Polygon[] {
+  const floor = computeFloor(map);
+  return roughFloor(map, floor, map.seed ?? hashString(map.id)) ?? floor;
 }

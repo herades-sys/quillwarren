@@ -4,9 +4,11 @@
 // so a player cookie dies with its member even if a later player gets the same id.
 // Accounts are players who logged in with Discord; their sessions are random
 // tokens of which only the SHA-256 is stored.
+// Explored fog (dynamic vision) is one row per page, kept apart from the game
+// state so the GM's view and the page events stay small.
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import type { ChatMessage, GameState } from '@delve/table';
+import type { ChatMessage, Explored, GameState } from '@delve/table';
 
 type Row = Record<string, unknown>;
 
@@ -48,6 +50,13 @@ CREATE TABLE IF NOT EXISTS account_sessions (
   expires    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS account_sessions_account ON account_sessions (account_id);
+CREATE TABLE IF NOT EXISTS explored (
+  game_id TEXT NOT NULL,
+  page_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  data    TEXT NOT NULL,
+  PRIMARY KEY (game_id, page_id)
+);
 `;
 
 export interface GameSummary {
@@ -102,6 +111,9 @@ export class TableStore {
   private readonly created = new Map<string, string>();
   private readonly seqs = new Map<string, number>();
   private readonly dirty = new Set<string>();
+  /** Explored fog by "<gameId>\n<pageId>"; null: known to have no row. */
+  private readonly exploredCache = new Map<string, Explored | null>();
+  private readonly exploredDirty = new Set<string>();
   private timer: NodeJS.Timeout | null = null;
   private closed = false;
   readonly debounceMs: number;
@@ -154,16 +166,31 @@ export class TableStore {
     }
   }
 
+  private schedule(): void {
+    if (!this.timer && !this.closed) {
+      this.timer = setTimeout(() => this.flush(), this.debounceMs);
+      this.timer.unref();
+    }
+  }
+
   flush(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    if (!this.dirty.size) return;
+    if (!this.dirty.size && !this.exploredDirty.size) return;
     const update = this.db.prepare('UPDATE games SET name = ?, rev = ?, state = ? WHERE id = ?');
+    const put = this.db.prepare('INSERT OR REPLACE INTO explored (game_id, page_id, version, data) VALUES (?, ?, ?, ?)');
+    const drop = this.db.prepare('DELETE FROM explored WHERE game_id = ? AND page_id = ?');
     this.db.exec('BEGIN');
     try {
       for (const id of this.dirty) {
         const g = this.games.get(id);
         if (g) update.run(g.name, g.rev, JSON.stringify(g), id);
+      }
+      for (const key of this.exploredDirty) {
+        const [gameId, pageId] = key.split('\n') as [string, string];
+        const e = this.exploredCache.get(key);
+        if (e) put.run(gameId, pageId, e.version, JSON.stringify(e.all ? { all: true, polys: [] } : { polys: e.polys }));
+        else drop.run(gameId, pageId);
       }
       this.db.exec('COMMIT');
     } catch (e) {
@@ -171,6 +198,46 @@ export class TableStore {
       throw e;
     }
     this.dirty.clear();
+    this.exploredDirty.clear();
+  }
+
+  // ---------- explored fog (dynamic vision) ----------
+
+  /** What the party has explored on a page, or undefined if nothing was ever stored. */
+  explored(gameId: string, pageId: string): Explored | undefined {
+    const key = `${gameId}\n${pageId}`;
+    const cached = this.exploredCache.get(key);
+    if (cached !== undefined) return cached ?? undefined;
+    const r = this.db.prepare('SELECT version, data FROM explored WHERE game_id = ? AND page_id = ?').get(gameId, pageId) as Row | undefined;
+    let e: Explored | null = null;
+    if (r) {
+      const data = JSON.parse(String(r.data)) as { all?: boolean; polys?: Explored['polys'] };
+      e = { version: Number(r.version), polys: data.all ? [] : (data.polys ?? []), ...(data.all ? { all: true } : {}) };
+    }
+    this.exploredCache.set(key, e);
+    return e ?? undefined;
+  }
+
+  /** Keep a page's explored fog now; it's written with the next flush. */
+  setExplored(gameId: string, pageId: string, e: Explored): void {
+    const key = `${gameId}\n${pageId}`;
+    this.exploredCache.set(key, e);
+    this.exploredDirty.add(key);
+    this.schedule();
+  }
+
+  /** Forget a page's explored fog (the page was deleted), or every page's of a game. */
+  dropExplored(gameId: string, pageId?: string): void {
+    if (pageId !== undefined) {
+      const key = `${gameId}\n${pageId}`;
+      this.exploredCache.set(key, null);
+      this.exploredDirty.add(key);
+      this.schedule();
+      return;
+    }
+    for (const key of [...this.exploredCache.keys()]) if (key.startsWith(`${gameId}\n`)) this.exploredCache.delete(key);
+    for (const key of [...this.exploredDirty]) if (key.startsWith(`${gameId}\n`)) this.exploredDirty.delete(key);
+    this.db.prepare('DELETE FROM explored WHERE game_id = ?').run(gameId);
   }
 
   delete(id: string): boolean {
@@ -181,6 +248,7 @@ export class TableStore {
     const r = this.db.prepare('DELETE FROM games WHERE id = ?').run(id);
     this.db.prepare('DELETE FROM chat WHERE game_id = ?').run(id);
     this.db.prepare('DELETE FROM seats WHERE game_id = ?').run(id);
+    this.dropExplored(id);
     return Number(r.changes) > 0;
   }
 

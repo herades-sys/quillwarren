@@ -2,6 +2,13 @@
 // authoritative: an intent goes through applyIntent, the new state is saved,
 // and every connected member gets the events filtered for them (eventFor /
 // chatFor / viewFor), so nothing GM-only ever leaves the server unfiltered.
+//
+// Dynamic vision (vision.ts): on such a page, players get only their own tokens
+// and the ones the party sees. Each player connection remembers which tokens
+// of its page it holds, so a token that comes into view arrives as an upsert,
+// one that leaves goes as a removal, and moves of tokens it can't see send it
+// nothing at all. After each recompute it gets what the party sees as a
+// `vision` message (the explored fog only when it grew).
 import { randomInt } from 'node:crypto';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
@@ -9,8 +16,12 @@ import {
   applyIntent,
   chatFor,
   eventFor,
+  isDynamic,
+  mayGetToken,
   pageFor,
+  sightFilter,
   TableError,
+  tokenForPlayer,
   viewFor,
   type ApplyContext,
   type ChatMessage,
@@ -21,6 +32,8 @@ import {
 } from '@delve/table';
 import { GAME_ID, memberOf, type AccessDeps } from './access.ts';
 import type { TableStore } from './store.ts';
+import { VisionPictures } from './vision-render.ts';
+import { TableVision, type PageSight } from './vision.ts';
 
 export const MAX_MESSAGE_BYTES = 64 * 1024;
 export const HELLO_CHAT = 200;
@@ -35,6 +48,12 @@ interface Conn {
   socket: WebSocket;
   gameId: string;
   memberId: string;
+  /** Players on a dynamic page: the ids of that page's tokens this connection holds. */
+  known?: Set<string>;
+  knownPage?: string;
+  /** The explored version it has, and what the last vision message showed. */
+  exploredSent?: number;
+  visionSig?: string;
 }
 
 export interface ChangeResult {
@@ -56,10 +75,15 @@ export class TableHub {
   private readonly pingCounts = new Map<string, { window: number; n: number }>();
   private readonly store: TableStore;
   private readonly log: FastifyBaseLogger;
+  /** Dynamic vision: what the party sees per page, and the explored fog. */
+  readonly vision: TableVision;
+  /** Page pictures in dynamic vision, cached per explored version. */
+  readonly pictures = new VisionPictures();
 
-  constructor(store: TableStore, log: FastifyBaseLogger) {
+  constructor(store: TableStore, log: FastifyBaseLogger, visionThrottleMs?: number) {
     this.store = store;
     this.log = log;
+    this.vision = new TableVision(store, (state, now) => this.visionChanged(state, now), visionThrottleMs, (err) => this.log.error({ err }, 'table vision failed'));
   }
 
   join(conn: Conn): void {
@@ -72,14 +96,75 @@ export class TableHub {
     });
   }
 
-  /** The member's whole filtered view plus the recent chat they may read. */
+  /** The member's whole filtered view plus the recent chat they may read; then, on a dynamic page, what the party sees. */
   hello(conn: Conn, state = this.store.get(conn.gameId)): void {
     if (!state) return;
     const chat = this.store
       .lastChat(conn.gameId, HELLO_CHAT)
       .map((m) => chatFor(state, conn.memberId, m))
       .filter((m): m is ChatMessage => m !== null);
-    send(conn.socket, { type: 'hello', view: viewFor(state, conn.memberId), chat });
+    const filter = this.vision.filterFor(state, conn.memberId);
+    const view = viewFor(state, conn.memberId, filter);
+    if (filter) {
+      conn.known = new Set(view.tokens.map((t) => t.id));
+      conn.knownPage = view.pageId;
+    } else {
+      delete conn.known;
+      delete conn.knownPage;
+    }
+    delete conn.exploredSent;
+    delete conn.visionSig;
+    send(conn.socket, { type: 'hello', view, chat });
+    this.sendVision(conn, state);
+  }
+
+  /** The vision message for the page the member looks at, unless it would show what they already have. */
+  private sendVision(conn: Conn, state: GameState, now?: PageSight): void {
+    const me = state.members.find((m) => m.id === conn.memberId);
+    if (!me) return;
+    const pageId = pageFor(state, conn.memberId);
+    const cur = now?.pageId === pageId ? now : this.vision.current(state, pageId);
+    if (!cur) return; // no dynamic vision there: a hello already told the client everything
+    const sig = me.role === 'gm' ? `${cur.sig}|${[...cur.seen].sort().join(',')}` : cur.sig;
+    if (conn.visionSig === sig) return;
+    const withExplored = conn.exploredSent !== cur.explored.version;
+    send(conn.socket, { type: 'vision', pageId, vision: this.vision.viewFor(state, me, cur, withExplored) });
+    conn.exploredSent = cur.explored.version;
+    conn.visionSig = sig;
+  }
+
+  /** After a recompute: tokens that came into or went out of the party's sight, then what it sees. */
+  private visionChanged(state: GameState, now: PageSight): void {
+    const filter = sightFilter(now.pageId, now.sight, now.explored);
+    const inTurn = new Set(state.turn.entries.flatMap((e) => (e.tokenId === undefined ? [] : [e.tokenId])));
+    for (const c of this.rooms.get(state.id) ?? []) {
+      const me = state.members.find((m) => m.id === c.memberId);
+      if (!me || pageFor(state, c.memberId) !== now.pageId) continue;
+      const known = me.role !== 'gm' && c.knownPage === now.pageId ? c.known : undefined;
+      if (known) {
+        const events: GameEvent[] = [];
+        let turn = false;
+        for (const t of state.tokens) {
+          if (t.pageId !== now.pageId) continue;
+          const may = mayGetToken(me, t, filter);
+          if (may === known.has(t.id)) continue;
+          if (may) {
+            known.add(t.id);
+            events.push({ type: 'token.upsert', token: tokenForPlayer(t, me.id) });
+          } else {
+            known.delete(t.id);
+            events.push({ type: 'token.remove', ids: [t.id] });
+          }
+          if (inTurn.has(t.id)) turn = true;
+        }
+        if (turn) {
+          const ev = eventFor(state, me.id, { type: 'turn', turn: state.turn }, filter);
+          if (ev) events.push(ev);
+        }
+        if (events.length) send(c.socket, { type: 'events', rev: state.rev, events });
+      }
+      this.sendVision(c, state, now);
+    }
   }
 
   /** Send a fresh hello to the connections that match (e.g. the GM after the invite list changed). */
@@ -104,6 +189,8 @@ export class TableHub {
     const state = this.commit(prev, out.state, out.events.length > 0);
     if (out.chat) this.store.appendChat(gameId, out.chat);
     this.publish(state, out.events, out.chat);
+    this.afterChange(prev, state, out.events);
+    if (out.explored) this.vision.setExplored(state, out.explored.pageId, out.explored.action);
     return { state, events: out.events, ...(out.chat ? { chat: out.chat } : {}) };
   }
 
@@ -111,6 +198,7 @@ export class TableHub {
   replace(prev: GameState, next: GameState, events: GameEvent[] = []): GameState {
     const state = this.commit(prev, next, true);
     this.publish(state, events);
+    this.afterChange(prev, state, events);
     return state;
   }
 
@@ -125,17 +213,73 @@ export class TableHub {
     return state;
   }
 
+  /**
+   * Dynamic vision after a change: pages whose tokens, walls, doors, lights or
+   * settings changed are recomputed (throttled); a page that switched vision on
+   * or off gives its players a fresh view; a deleted page's fog goes.
+   */
+  private afterChange(prev: GameState, state: GameState, events: GameEvent[]): void {
+    const touched = new Set<string>();
+    const switched = new Set<string>();
+    for (const e of events) {
+      if (e.type === 'token.upsert') touched.add(e.token.pageId);
+      else if (e.type === 'token.remove' && e.pageId !== undefined) touched.add(e.pageId);
+      else if (e.type === 'page.upsert') {
+        touched.add(e.page.id);
+        if (isDynamic(prev.pages.find((p) => p.id === e.page.id)) !== isDynamic(e.page)) switched.add(e.page.id);
+      } else if (e.type === 'page.remove') this.vision.forget(state.id, e.id, true);
+    }
+    for (const pageId of switched) {
+      this.vision.forget(state.id, pageId, false);
+      const players = (id: string) => state.members.some((m) => m.id === id && m.role !== 'gm') && pageFor(state, id) === pageId;
+      // the GM's board needs the vision messages too (or to drop them)
+      this.refresh(state.id, (id) => pageFor(state, id) === pageId && (players(id) || state.members.some((m) => m.id === id && m.role === 'gm')));
+    }
+    for (const pageId of touched) {
+      const page = state.pages.find((p) => p.id === pageId);
+      if (page && isDynamic(page) && !switched.has(pageId)) this.vision.touch(state.id, pageId, () => this.store.get(state.id));
+    }
+  }
+
   /** Fan events (and a chat line) out to every connection, each through the member's filter. */
   publish(state: GameState, events: GameEvent[], chat?: ChatMessage): void {
     for (const c of this.rooms.get(state.id) ?? []) {
-      if (!state.members.some((m) => m.id === c.memberId)) continue;
+      const me = state.members.find((m) => m.id === c.memberId);
+      if (!me) continue;
+      const filter = me.role === 'gm' ? null : this.vision.filterFor(state, c.memberId);
+      const known = filter && c.knownPage === filter.pageId ? c.known : undefined;
       const mine: GameEvent[] = [];
       let switched = false;
+      let turnShows = false; // a token in the turn order came into sight or left it: its entry changes
       for (const e of events) {
-        const f = eventFor(state, c.memberId, e);
+        const f = eventFor(state, c.memberId, e, filter);
+        if (known && e.type === 'token.upsert') {
+          // in sight: send it; out of sight: a removal if they hold it, else nothing at all
+          const id = e.token.id;
+          if (f?.type === 'token.upsert') {
+            if (!known.has(id)) turnShows ||= state.turn.entries.some((t) => t.tokenId === id);
+            known.add(id);
+            mine.push(f);
+          } else if (known.has(id)) {
+            known.delete(id);
+            turnShows ||= state.turn.entries.some((t) => t.tokenId === id);
+            mine.push({ type: 'token.remove', ids: [id] });
+          }
+          continue;
+        }
+        if (known && e.type === 'token.remove') {
+          const ids = f?.type === 'token.remove' ? f.ids.filter((id) => known.has(id)) : [];
+          for (const id of ids) known.delete(id);
+          if (ids.length) mine.push({ type: 'token.remove', ids });
+          continue;
+        }
         if (!f) continue;
         if (f.type === 'page.switch') switched = true;
         mine.push(f);
+      }
+      if (turnShows && !mine.some((e) => e.type === 'turn')) {
+        const t = eventFor(state, c.memberId, { type: 'turn', turn: state.turn }, filter);
+        if (t) mine.push(t);
       }
       if (chat) {
         const m = chatFor(state, c.memberId, chat);
@@ -161,6 +305,12 @@ export class TableHub {
       c.socket.close(CLOSE_GONE, 'game deleted');
     }
     this.rooms.delete(gameId);
+    this.vision.forgetGame(gameId);
+  }
+
+  /** Stop the vision timers (the server is closing). */
+  close(): void {
+    this.vision.close();
   }
 
   /** Relay a ping to the members looking at that page. Never stored; beyond 20 a second per member they're dropped. */

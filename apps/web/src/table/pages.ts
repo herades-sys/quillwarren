@@ -5,6 +5,7 @@ import type { Page } from '@delve/table';
 import type { TableCtx } from './ctx.ts';
 import { $, api, button, h, postJson, toast } from './dom.ts';
 import { uploadImage } from './upload.ts';
+import { visionControls } from './vision-panel.ts';
 
 interface MapSummary {
   id: string;
@@ -105,6 +106,7 @@ export function initPages(ctx: TableCtx): void {
           if (confirm(`Delete the page "${p.name}" and its tokens?`)) void ctx.act({ type: 'page.delete', id: p.id });
         }, { class: 'btn small danger', disabled: only, title: only ? 'A game needs at least one page' : undefined }),
       ),
+      visionControls(ctx, p),
     );
   }
 

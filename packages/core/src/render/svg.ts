@@ -186,11 +186,18 @@ export function sceneToSvg(scene: Scene, opts: SvgOptions = {}): string {
     .join('');
   const f = opts.frame;
   const size = f ? `x="${n(f.x)}" y="${n(f.y)}" width="${n(f.width)}" height="${n(f.height)}"` : `width="${Math.round(w * ppg)}" height="${Math.round(h * ppg)}"`;
+  const body = scene.layers.map((l) => layerSvg(l, prefix)).join('');
+  // reveal: only what's inside the polygons is drawn, over a plain fill (never a filter: resvg panics on feDisplacementMap)
+  const r = scene.reveal;
+  const revealDef = r ? `<clipPath id="${esc(prefix)}clip-reveal"><path d="${polygonsD(r.polygons)}" clip-rule="evenodd"/></clipPath>` : '';
+  const drawn = r
+    ? `<rect x="${n(x0)}" y="${n(y0)}" width="${n(w)}" height="${n(h)}" fill="${esc(r.color)}"/>` + (r.polygons.length ? `<g clip-path="url(#${esc(prefix)}clip-reveal)">${body}</g>` : '')
+    : body;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" ${size} ` +
     `viewBox="${n(x0)} ${n(y0)} ${n(w)} ${n(h)}">` +
-    `<defs>${clips}${patternDefs(scene, prefix)}</defs>` +
-    scene.layers.map((l) => layerSvg(l, prefix)).join('') +
+    `<defs>${clips}${revealDef}${patternDefs(scene, prefix)}</defs>` +
+    drawn +
     `</svg>`
   );
 }
