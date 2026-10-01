@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/nocturne-e6f200f3-aa6b-461e-928f-4e9cf9a04da9/styles.css">
+  <link rel="stylesheet" href="delve-tokens.css">
+  <script src="_ds/nocturne-e6f200f3-aa6b-461e-928f-4e9cf9a04da9/_ds_bundle.js"></script>
+  <script src="delve-icons.js"></script>
+  <script src="delve-map.js"></script>
+  <style>body{margin:0;background:var(--color-bg)} a{color:var(--color-accent)} a:hover{color:var(--color-accent-text)} kbd{font-family:inherit}</style>
+</helmet>
+<div data-theme="{{ pageTheme }}" style="min-height:100vh; background:var(--color-bg); color:var(--color-text); font-family:var(--font-ui); font-size:14px; line-height:1.5">
+<div style="max-width:1440px; padding:56px 40px 96px; display:flex; flex-direction:column; gap:72px">
+
+  <header style="display:flex; flex-direction:column; gap:20px; max-width:980px">
+    <span style="font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--color-text-muted)">Delve · design system v1 · built on Nocturne</span>
+    <h1 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:64px; line-height:1; letter-spacing:0">Ink, stone &amp; parchment</h1>
+    <p style="margin:0; font-size:16px; line-height:1.6; color:var(--color-text-muted); max-width:760px; text-wrap:pretty">A quiet toolkit for the cartographer's desk. The map is always the hero, so the chrome stays low-chroma stone in both themes. One violet ink accent marks focus, selection and the active tool. Red, amber and blue only appear for status and the three GM markers.</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:28px; padding-top:8px">
+      <div style="display:flex; flex-direction:column; gap:4px"><span style="font-family:var(--font-display); font-size:21px">The map leads</span><span style="color:var(--color-text-muted); text-wrap:pretty">The canvas is parchment in both themes. Panels never float more than a third over it, and nothing around it is saturated.</span></div>
+      <div style="display:flex; flex-direction:column; gap:4px"><span style="font-family:var(--font-display); font-size:21px">Keys first, thumbs welcome</span><span style="color:var(--color-text-muted); text-wrap:pretty">Every GM tool shows its letter. On phones every target is at least 44 px, and sheets replace panels.</span></div>
+      <div style="display:flex; flex-direction:column; gap:4px"><span style="font-family:var(--font-display); font-size:21px">Lines, not floods</span><span style="color:var(--color-text-muted); text-wrap:pretty">From Nocturne: outlined primary buttons, 8 px radii, a 2 px focus ring, and elevation made of an edge plus soft shade.</span></div>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; padding-top:4px">
+      <a class="btn btn-primary" href="Delve Editor.dc.html" style="text-decoration:none"><d-icon name="room" size="16"></d-icon>Open the map editor</a>
+      <span class="btn btn-secondary" style="cursor:default; font-family:var(--font-mono); font-size:12.5px">delve-tokens.css</span>
+      <span class="btn btn-secondary" style="cursor:default; font-family:var(--font-mono); font-size:12.5px">delve-icons.js</span>
+      <span class="btn btn-secondary" style="cursor:default; font-family:var(--font-mono); font-size:12.5px">delve-map.js</span>
+    </div>
+  </header>
+
+  <section id="colour" style="display:flex; flex-direction:column; gap:24px">
+    <div style="display:flex; align-items:baseline; gap:16px"><span style="font-family:var(--font-numeral); font-size:18px; color:var(--color-text-faint)">01</span><h2 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:38px; letter-spacing:0">Colour tokens</h2></div>
+    <p style="margin:0; max-width:780px; color:var(--color-text-muted); text-wrap:pretty">The token names are the same in both themes; set <code style="font-family:var(--font-mono); font-size:13px; color:var(--color-text)">data-theme="dark|light"</code> on any element. Ratios are measured against <code style="font-family:var(--font-mono); font-size:13px; color:var(--color-text)">--color-surface</code>. Text needs 4.5 : 1, control edges and icons need 3 : 1.</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+      <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+        <div data-theme="{{ th.id }}" style="background:var(--color-surface); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:4px; min-width:0">
+          <div style="display:flex; align-items:center; gap:8px; padding-bottom:10px"><d-icon name="{{ th.icon }}" size="16" style="color:var(--color-accent)"></d-icon><span style="font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--color-text-muted)">{{ th.label }}</span></div>
+          <sc-for list="{{ th.colors }}" as="c">
+            <sc-if value="{{ c.isHead }}"><div style="font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint); padding:12px 0 4px">{{ c.group }}</div></sc-if>
+            <div style="display:grid; grid-template-columns:30px minmax(0,1.3fr) 76px minmax(0,1.4fr) 74px; align-items:center; gap:12px; padding:5px 0">
+              <span style="width:30px; height:30px; border-radius:7px; background:{{ c.val }}; box-shadow:inset 0 0 0 1px var(--color-border-strong)"></span>
+              <span style="font-family:var(--font-mono); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ c.name }}</span>
+              <span style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-muted)">{{ c.val }}</span>
+              <span style="font-size:12.5px; color:var(--color-text-muted)">{{ c.use }}</span>
+              <span style="justify-self:end; font-size:11px; font-variant-numeric:tabular-nums; color:{{ c.ratioFg }}">{{ c.ratio }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:20px">
+      <div style="border-radius:14px; overflow:hidden; background:var(--canvas-parchment); color:var(--canvas-ink); padding:22px; display:flex; flex-direction:column; gap:14px; box-shadow:var(--shadow-sm)">
+        <span style="font-family:var(--font-display); font-size:22px">Canvas: the same in both themes</span>
+        <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px">
+          <sc-for list="{{ canvas }}" as="c">
+            <div style="display:flex; flex-direction:column; gap:6px">
+              <span style="height:48px; border-radius:7px; background:{{ c.val }}; box-shadow:inset 0 0 0 1px rgba(43,36,29,.3)"></span>
+              <span style="font-family:var(--font-mono); font-size:11px">{{ c.name }}</span>
+              <span style="font-size:11.5px; color:#5A4E40">{{ c.use }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="border-radius:14px; overflow:hidden; background:var(--canvas-parchment); color:var(--canvas-ink); padding:22px; display:flex; flex-direction:column; gap:14px; box-shadow:var(--shadow-sm)">
+        <span style="font-family:var(--font-display); font-size:22px">GM markers: fixed brand colours</span>
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <div style="display:flex; align-items:center; gap:12px"><span style="width:28px; height:28px; border-radius:50%; display:grid; place-items:center; background:var(--marker-discover); color:var(--marker-ink); box-shadow:0 0 0 1.5px var(--marker-ink); font-family:var(--font-numeral); font-size:17px">?</span><span style="flex:1"><span style="font-family:var(--font-display); font-size:17px">Discover</span><span style="font-size:12.5px; color:#5A4E40"> · something to find</span></span><span style="font-family:var(--font-mono); font-size:11.5px">#D9961A · ink glyph</span></div>
+          <div style="display:flex; align-items:center; gap:12px"><span style="width:28px; height:28px; border-radius:50%; display:grid; place-items:center; background:var(--marker-interact); color:var(--canvas-floor); box-shadow:0 0 0 1.5px var(--marker-ink); font-family:var(--font-numeral); font-size:17px">!</span><span style="flex:1"><span style="font-family:var(--font-display); font-size:17px">Interact</span><span style="font-size:12.5px; color:#5A4E40"> · something to use</span></span><span style="font-family:var(--font-mono); font-size:11.5px">#2F7FD1 · paper glyph</span></div>
+          <div style="display:flex; align-items:center; gap:12px"><span style="width:28px; height:28px; border-radius:50%; display:grid; place-items:center; background:var(--marker-trap); color:var(--canvas-floor); box-shadow:0 0 0 1.5px var(--marker-ink)"><d-icon name="skull" size="17" stroke="2"></d-icon></span><span style="flex:1"><span style="font-family:var(--font-display); font-size:17px">Trap</span><span style="font-size:12.5px; color:#5A4E40"> · something that hurts</span></span><span style="font-family:var(--font-mono); font-size:11.5px">#C43A2F · paper glyph</span></div>
+          <p style="margin:0; font-size:12.5px; color:#5A4E40; text-wrap:pretty">Markers are told apart by their glyph as well as their colour, so they still read in greyscale prints and for colour-blind players. In the UI, status text uses the theme's own red, amber and blue, which are tuned for contrast.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="type" style="display:flex; flex-direction:column; gap:24px">
+    <div style="display:flex; align-items:baseline; gap:16px"><span style="font-family:var(--font-numeral); font-size:18px; color:var(--color-text-faint)">02</span><h2 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:38px; letter-spacing:0">Type</h2></div>
+    <div style="display:flex; flex-direction:column">
+      <sc-for list="{{ typeScale }}" as="t">
+        <div style="display:grid; grid-template-columns:200px minmax(0,1fr) 220px; align-items:baseline; gap:24px; padding:14px 0; box-shadow:inset 0 -1px 0 var(--color-border)">
+          <div style="display:flex; flex-direction:column"><span style="font-family:var(--font-mono); font-size:12px">{{ t.token }}</span><span style="font-size:12px; color:var(--color-text-muted)">{{ t.spec }}</span></div>
+          <span style="font-family:{{ t.font }}; font-size:{{ t.size }}; line-height:1.15; letter-spacing:{{ t.track }}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ t.sample }}</span>
+          <span style="font-size:12.5px; color:var(--color-text-muted)">{{ t.use }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <p style="margin:0; max-width:780px; color:var(--color-text-muted); text-wrap:pretty">IM Fell English has a single 400 weight and is never bolded, which fits Nocturne's rule of hierarchy through size. Marcellus SC is only for numbers that must read at a glance. UI text uses the system sans at 13 px on desktop and 15–16 px on phones; inputs on phones are 16 px so iOS does not zoom.</p>
+  </section>
+
+  <section id="space" style="display:flex; flex-direction:column; gap:24px">
+    <div style="display:flex; align-items:baseline; gap:16px"><span style="font-family:var(--font-numeral); font-size:18px; color:var(--color-text-faint)">03</span><h2 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:38px; letter-spacing:0">Space, radius, elevation</h2></div>
+    <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:40px">
+      <div style="display:flex; flex-direction:column; gap:8px">
+        <sc-for list="{{ spaces }}" as="s">
+          <div style="display:grid; grid-template-columns:96px 40px minmax(0,1fr); align-items:center; gap:12px"><span style="font-family:var(--font-mono); font-size:12px">{{ s.name }}</span><span style="font-size:12px; color:var(--color-text-muted); font-variant-numeric:tabular-nums">{{ s.px }}</span><span style="height:12px; width:{{ s.px }}; background:var(--color-accent); border-radius:2px"></span></div>
+        </sc-for>
+        <div style="display:flex; flex-wrap:wrap; gap:12px 20px; padding-top:12px; font-size:12.5px; color:var(--color-text-muted)">
+          <span><span style="font-family:var(--font-mono); color:var(--color-text)">--control-sm/md/lg</span> 28 · 32 · 36</span>
+          <span><span style="font-family:var(--font-mono); color:var(--color-text)">--touch</span> 44</span>
+          <span><span style="font-family:var(--font-mono); color:var(--color-text)">--bar-h</span> 48</span>
+          <span><span style="font-family:var(--font-mono); color:var(--color-text)">--rail-w</span> 52</span>
+          <span><span style="font-family:var(--font-mono); color:var(--color-text)">--panel-w</span> 288</span>
+          <span><span style="font-family:var(--font-mono); color:var(--color-text)">--chat-w</span> 344</span>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:20px">
+        <div style="display:flex; gap:16px; align-items:flex-end">
+          <sc-for list="{{ radii }}" as="r">
+            <div style="display:flex; flex-direction:column; align-items:center; gap:6px"><span style="width:56px; height:56px; background:var(--color-surface-2); box-shadow:inset 0 0 0 1.5px var(--color-accent); border-radius:{{ r.px }}"></span><span style="font-family:var(--font-mono); font-size:11.5px">{{ r.name }}</span><span style="font-size:11.5px; color:var(--color-text-muted)">{{ r.px }}</span></div>
+          </sc-for>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+          <sc-for list="{{ themes }}" as="th">
+            <div data-theme="{{ th.id }}" style="background:var(--color-bg); border-radius:12px; padding:18px; display:flex; gap:12px; box-shadow:0 0 0 1px var(--color-border)">
+              <div style="flex:1; height:64px; border-radius:8px; background:var(--color-surface); box-shadow:var(--shadow-sm); display:grid; place-items:center; font-family:var(--font-mono); font-size:11px; color:var(--color-text-muted)">sm</div>
+              <div style="flex:1; height:64px; border-radius:8px; background:var(--color-surface); box-shadow:var(--shadow-md); display:grid; place-items:center; font-family:var(--font-mono); font-size:11px; color:var(--color-text-muted)">md</div>
+              <div style="flex:1; height:64px; border-radius:8px; background:var(--color-surface-2); box-shadow:var(--shadow-lg); display:grid; place-items:center; font-family:var(--font-mono); font-size:11px; color:var(--color-text-muted)">lg</div>
+            </div>
+          </sc-for>
+        </div>
+        <p style="margin:0; font-size:12.5px; color:var(--color-text-muted); text-wrap:pretty">sm: cards and panels. md: floating canvas controls, tooltips. lg: menus, dialogs, sheets, toasts. In dark, elevation is an edge plus ambient shade. In light, it is a warm ink-tinted shadow.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="icons" style="display:flex; flex-direction:column; gap:24px">
+    <div style="display:flex; align-items:baseline; gap:16px"><span style="font-family:var(--font-numeral); font-size:18px; color:var(--color-text-faint)">04</span><h2 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:38px; letter-spacing:0">Icons</h2></div>
+    <p style="margin:0; max-width:820px; color:var(--color-text-muted); text-wrap:pretty">24 px grid, 1.7 stroke, round caps and joins, drawn in currentColor. The 30 brand icons here are stand-ins drawn to your list. Swap in the original SVGs in <code style="font-family:var(--font-mono); font-size:13px; color:var(--color-text)">delve-icons.js</code> and every screen picks them up. The nine new icons and the utility set follow the same rules. Use them at 16, 18, 20 or 24.</p>
+    <sc-for list="{{ iconGroups }}" as="ig">
+      <div style="display:flex; flex-direction:column; gap:10px">
+        <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:20px">{{ ig.title }}</span><span style="font-size:12.5px; color:var(--color-text-muted)">{{ ig.note }}</span></div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:6px">
+          <sc-for list="{{ ig.icons }}" as="i">
+            <div style="height:78px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; border-radius:8px; background:var(--color-surface); box-shadow:{{ ig.ring }}">
+              <d-icon name="{{ i }}" size="22"></d-icon>
+              <span style="font-family:var(--font-mono); font-size:10.5px; color:var(--color-text-muted)">{{ i }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+  </section>
+
+  <section id="components" style="display:flex; flex-direction:column; gap:28px">
+    <div style="display:flex; align-items:baseline; gap:16px"><span style="font-family:var(--font-numeral); font-size:18px; color:var(--color-text-faint)">05</span><h2 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:38px; letter-spacing:0">Components and their states</h2></div>
+    <p style="margin:0; max-width:820px; color:var(--color-text-muted); text-wrap:pretty">Each specimen is shown in both themes. Hover, active and focus are drawn statically so they can be compared side by side; the live controls also respond to the pointer and keyboard. Disabled is always 45 % opacity with a not-allowed cursor. Focus is always a 2 px accent outline with a 2 px offset.</p>
+
+    <sc-for list="{{ themesPair }}" as="pair">
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Buttons</span><span style="font-size:12.5px; color:var(--color-text-muted)">.btn + .btn-primary · .btn-secondary · danger · small · .btn-icon</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-bg); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px">
+            <div style="display:grid; grid-template-columns:76px repeat(5, minmax(0,1fr)); gap:12px 10px; align-items:center">
+              <span></span>
+              <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Default</span>
+              <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Hover</span>
+              <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Active</span>
+              <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Focus</span>
+              <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Disabled</span>
+
+              <span style="font-size:12px; color:var(--color-text-muted)">Primary</span>
+              <button class="btn btn-primary" style="height:32px; font-size:13px">Play</button>
+              <button class="btn btn-primary" style="height:32px; font-size:13px; background:color-mix(in srgb, var(--color-accent) 12%, transparent)">Play</button>
+              <button class="btn btn-primary" style="height:32px; font-size:13px; background:color-mix(in srgb, var(--color-accent) 22%, transparent)">Play</button>
+              <button class="btn btn-primary" style="height:32px; font-size:13px; outline:2px solid var(--color-accent); outline-offset:2px">Play</button>
+              <button class="btn btn-primary" disabled="{{ true }}" style="height:32px; font-size:13px">Play</button>
+
+              <span style="font-size:12px; color:var(--color-text-muted)">Secondary</span>
+              <button class="btn btn-secondary" style="height:32px; font-size:13px">Export</button>
+              <button class="btn btn-secondary" style="height:32px; font-size:13px; background:var(--color-hover)">Export</button>
+              <button class="btn btn-secondary" style="height:32px; font-size:13px; background:var(--color-press)">Export</button>
+              <button class="btn btn-secondary" style="height:32px; font-size:13px; outline:2px solid var(--color-accent); outline-offset:2px">Export</button>
+              <button class="btn btn-secondary" disabled="{{ true }}" style="height:32px; font-size:13px">Export</button>
+
+              <span style="font-size:12px; color:var(--color-text-muted)">Danger</span>
+              <button class="btn" style="height:32px; font-size:13px; color:var(--color-danger); border-color:color-mix(in srgb, var(--color-danger) 70%, transparent)" style-hover="background:color-mix(in srgb, var(--color-danger) 12%, transparent)">Delete</button>
+              <button class="btn" style="height:32px; font-size:13px; color:var(--color-danger); border-color:color-mix(in srgb, var(--color-danger) 70%, transparent); background:color-mix(in srgb, var(--color-danger) 12%, transparent)">Delete</button>
+              <button class="btn" style="height:32px; font-size:13px; color:var(--color-danger); border-color:var(--color-danger); background:color-mix(in srgb, var(--color-danger) 22%, transparent)">Delete</button>
+              <button class="btn" style="height:32px; font-size:13px; color:var(--color-danger); border-color:color-mix(in srgb, var(--color-danger) 70%, transparent); outline:2px solid var(--color-accent); outline-offset:2px">Delete</button>
+              <button class="btn" disabled="{{ true }}" style="height:32px; font-size:13px; color:var(--color-danger); border-color:color-mix(in srgb, var(--color-danger) 70%, transparent)">Delete</button>
+
+              <span style="font-size:12px; color:var(--color-text-muted)">Small</span>
+              <button class="btn btn-secondary" style="height:28px; padding:0 8px; font-size:12px">Reveal</button>
+              <button class="btn btn-secondary" style="height:28px; padding:0 8px; font-size:12px; background:var(--color-hover)">Reveal</button>
+              <button class="btn btn-secondary" style="height:28px; padding:0 8px; font-size:12px; background:var(--color-press)">Reveal</button>
+              <button class="btn btn-secondary" style="height:28px; padding:0 8px; font-size:12px; outline:2px solid var(--color-accent); outline-offset:2px">Reveal</button>
+              <button class="btn btn-secondary" disabled="{{ true }}" style="height:28px; padding:0 8px; font-size:12px">Reveal</button>
+
+              <span style="font-size:12px; color:var(--color-text-muted)">Icon only</span>
+              <div style="display:flex; gap:4px"><button class="btn btn-icon" aria-label="Settings" style="width:32px; height:32px; color:var(--color-text-muted)" style-hover="background:var(--color-hover); color:var(--color-text)"><d-icon name="settings" size="18"></d-icon></button><button class="btn btn-icon" aria-label="Trash" style="width:32px; height:32px; color:var(--color-text-muted)"><d-icon name="trash" size="18"></d-icon></button></div>
+              <button class="btn btn-icon" aria-label="Settings" style="width:32px; height:32px; background:var(--color-hover); color:var(--color-text)"><d-icon name="settings" size="18"></d-icon></button>
+              <button class="btn btn-icon" aria-label="Settings" style="width:32px; height:32px; background:var(--tint-accent-bg); color:var(--color-accent); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent)"><d-icon name="settings" size="18"></d-icon></button>
+              <button class="btn btn-icon" aria-label="Settings" style="width:32px; height:32px; color:var(--color-text-muted); outline:2px solid var(--color-accent); outline-offset:2px"><d-icon name="settings" size="18"></d-icon></button>
+              <button class="btn btn-icon" aria-label="Settings" disabled="{{ true }}" style="width:32px; height:32px; color:var(--color-text-muted)"><d-icon name="settings" size="18"></d-icon></button>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-top:18px">
+              <button class="btn btn-primary" style="height:32px; font-size:13px"><d-icon name="play" size="15"></d-icon>Play</button>
+              <button class="btn btn-secondary" style="height:32px; font-size:13px"><d-icon name="admin" size="15"></d-icon>Admin</button>
+              <button class="btn btn-ghost" style="height:32px; font-size:13px">Undo</button>
+              <button class="btn btn-primary" style="min-height:44px; padding:0 16px; font-size:15px"><d-icon name="play" size="17"></d-icon>Touch 44</button>
+              <span style="font-size:12px; color:var(--color-text-muted)">One primary per view. Icon-only buttons always carry aria-label and a tooltip with the shortcut.</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Segmented controls and tabs</span><span style="font-size:12.5px; color:var(--color-text-muted)">.seg + .seg-opt on native radios · role="tablist"</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-bg); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px; display:flex; flex-direction:column; gap:18px">
+            <div style="display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end">
+              <div style="display:flex; flex-direction:column; gap:6px"><span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Live</span>
+                <div class="seg" role="radiogroup" aria-label="View as"><label class="seg-opt"><input type="radio" name="sv-{{ th.id }}" defaultChecked="{{ true }}"><d-icon name="eye" size="15"></d-icon>GM view</label><label class="seg-opt"><input type="radio" name="sv-{{ th.id }}"><d-icon name="eye-off" size="15"></d-icon>Players</label></div></div>
+              <div style="display:flex; flex-direction:column; gap:6px"><span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Live</span>
+                <div class="seg" role="radiogroup" aria-label="Board"><label class="seg-opt"><input type="radio" name="sd-{{ th.id }}" defaultChecked="{{ true }}">2D</label><label class="seg-opt"><input type="radio" name="sd-{{ th.id }}"><d-icon name="3d" size="15"></d-icon>3D</label></div></div>
+              <div style="display:flex; flex-direction:column; gap:6px"><span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Hover · focus · disabled</span>
+                <div class="seg"><span class="seg-opt" style="color:var(--color-accent); box-shadow:inset 0 0 0 1px var(--color-accent)">Lines</span><span class="seg-opt" style="background:var(--color-hover)">Dots</span><span class="seg-opt" style="outline:2px solid var(--color-accent); outline-offset:-2px">None</span><span class="seg-opt" style="opacity:.45">Hex</span></div></div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px">
+              <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Tabs · active · hover · focus · disabled</span>
+              <div role="tablist" style="display:flex; gap:20px; height:38px; box-shadow:inset 0 -1px 0 var(--color-border)">
+                <span role="tab" aria-selected="true" style="display:flex; align-items:center; gap:6px; color:var(--color-text); box-shadow:inset 0 -2px 0 var(--color-accent)"><d-icon name="chat" size="15"></d-icon>Chat</span>
+                <span role="tab" style="display:flex; align-items:center; gap:6px; color:var(--color-text); box-shadow:inset 0 -2px 0 var(--color-border-strong)"><d-icon name="dice" size="15"></d-icon>Turn order</span>
+                <span role="tab" style="display:flex; align-items:center; gap:6px; color:var(--color-text-muted); outline:2px solid var(--color-accent); outline-offset:-4px; border-radius:6px; padding:0 6px"><d-icon name="layers" size="15"></d-icon>Pages</span>
+                <span role="tab" style="display:flex; align-items:center; gap:6px; color:var(--color-text-muted)"><d-icon name="prop" size="15"></d-icon>Tokens</span>
+                <span role="tab" aria-disabled="true" style="display:flex; align-items:center; gap:6px; color:var(--color-text-muted); opacity:.45"><d-icon name="notes" size="15"></d-icon>Notes</span>
+              </div>
+              <span style="font-size:12px; color:var(--color-text-muted)">Arrow keys move between tabs, Home and End jump to the ends. GM-only tabs are hidden from players, not shown as disabled.</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Tool rail, tooltip and context bar</span><span style="font-size:12.5px; color:var(--color-text-muted)">38 × 36 buttons in a 52 px rail · letter shortcut in the corner</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-bg); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px; display:flex; gap:28px; align-items:flex-start">
+            <div style="width:52px; flex:none; display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 0; border-radius:10px; background:var(--color-surface); box-shadow:var(--shadow-sm)">
+              <sc-for list="{{ railDemo }}" as="t">
+                <div style="position:relative">
+                  <span style="width:38px; height:36px; display:grid; place-items:center; border-radius:8px; position:relative; background:{{ t.bg }}; color:{{ t.fg }}; box-shadow:{{ t.ring }}; outline:{{ t.outline }}; outline-offset:2px; opacity:{{ t.op }}"><d-icon name="{{ t.icon }}" size="20"></d-icon><span style="position:absolute; right:3px; bottom:2px; font-size:9px; line-height:1; font-weight:600; color:var(--color-text-faint)">{{ t.key }}</span></span>
+                  <sc-if value="{{ t.tip }}"><div role="tooltip" style="position:absolute; left:46px; top:50%; transform:translateY(-50%); z-index:4; display:flex; align-items:center; gap:8px; padding:6px 8px 6px 10px; border-radius:7px; background:var(--color-surface-3); box-shadow:var(--shadow-md); white-space:nowrap; font-size:12px"><span>Room</span><kbd style="display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:4px; font-size:10.5px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong)">R</kbd><span style="color:var(--color-text-muted)">1–7 change shape</span></div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:16px; padding-top:150px">
+              <div style="display:flex; flex-direction:column; gap:7px; font-size:12.5px; color:var(--color-text-muted)">
+                <span><span style="color:var(--color-text)">Default</span> muted ink. <span style="color:var(--color-text)">Hover</span> shows the tooltip after 400 ms, or at once while another is open.</span>
+                <span><span style="color:var(--color-text)">Active</span> accent tint, a 1 px accent edge and aria-pressed. <span style="color:var(--color-text)">Focus</span> 2 px ring. Arrow keys move along the rail.</span>
+                <span><span style="color:var(--color-text)">Disabled</span> 45 %, for example Fog reveal on a storey without fog.</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; height:40px; padding:0 6px 0 12px; border-radius:10px; background:var(--color-surface); box-shadow:var(--shadow-md); white-space:nowrap; align-self:flex-start; max-width:100%; overflow:hidden">
+                <span style="display:inline-flex; align-items:center; gap:7px; font-weight:500"><d-icon name="room" size="16" style="color:var(--color-accent)"></d-icon>Room</span>
+                <span style="width:1px; height:20px; background:var(--color-border-strong); margin:0 2px"></span>
+                <sc-for list="{{ shapeDemo }}" as="o"><span style="height:30px; display:inline-flex; align-items:center; gap:5px; padding:0 7px; border-radius:6px; background:{{ o.bg }}; color:{{ o.fg }}; box-shadow:{{ o.ring }}"><d-icon name="{{ o.icon }}" size="17"></d-icon><span style="font-size:10px; color:var(--color-text-faint)">{{ o.num }}</span></span></sc-for>
+              </div>
+              <span style="font-size:12px; color:var(--color-text-muted)">The context bar floats top-centre on the canvas and changes with the tool: options, sliders, then shortcut hints.</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Inspector fields</span><span style="font-size:12.5px; color:var(--color-text-muted)">.field · .input · slider · checkbox · select</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-surface); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px; display:flex; flex-direction:column; gap:18px">
+            <div style="display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:10px">
+              <div class="field"><label>Default</label><input class="input" defaultValue="Chapter house" style="min-height:30px; padding:4px 9px; font-size:13px; border-color:var(--color-control-border)"></div>
+              <div class="field"><label>Hover</label><input class="input" defaultValue="Chapter house" style="min-height:30px; padding:4px 9px; font-size:13px; border-color:var(--color-text-muted)"></div>
+              <div class="field"><label>Focus</label><input class="input" defaultValue="Chapter ho" style="min-height:30px; padding:4px 9px; font-size:13px; border-color:var(--color-accent); outline:2px solid var(--color-accent); outline-offset:0"></div>
+              <div class="field"><label>Disabled</label><input class="input" defaultValue="Locked" disabled="{{ true }}" style="min-height:30px; padding:4px 9px; font-size:13px; border-color:var(--color-control-border); opacity:.45"></div>
+              <div class="field"><label style="color:var(--color-danger)">Error</label><input class="input" defaultValue="12.3.4" aria-invalid="true" style="min-height:30px; padding:4px 9px; font-size:13px; border-color:var(--color-danger)"><span style="display:block; font-size:11.5px; color:var(--color-danger); margin-top:4px">Use a number</span></div>
+            </div>
+            <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:22px">
+              <div style="display:flex; flex-direction:column; gap:14px">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
+                  <div class="field"><label>Width</label><div style="position:relative"><input class="input" defaultValue="9" style="min-height:30px; padding:4px 30px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><span style="position:absolute; right:9px; top:7px; font-size:11.5px; color:var(--color-text-muted)">sq</span></div></div>
+                  <div class="field"><label>Rotation</label><div style="position:relative"><input class="input" defaultValue="45" style="min-height:30px; padding:4px 30px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><span style="position:absolute; right:9px; top:7px; font-size:11.5px; color:var(--color-text-muted)">°</span></div></div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px">
+                  <div style="display:flex; align-items:center; font-size:12px; color:color-mix(in srgb, var(--color-text) 70%, transparent)"><span style="flex:1">Roughness</span><span style="min-width:34px; text-align:right; padding:2px 6px; border-radius:5px; background:var(--color-surface-2); box-shadow:inset 0 0 0 1px var(--color-border-strong); color:var(--color-text)">{{ th.roughVal }}</span></div>
+                  <div style="position:relative; height:20px">
+                    <div style="position:absolute; left:0; right:0; top:8px; height:4px; border-radius:2px; background:var(--color-surface-3); box-shadow:inset 0 0 0 1px var(--color-border-strong)"></div>
+                    <div style="position:absolute; left:0; top:8px; height:4px; border-radius:2px; background:var(--color-accent); width:{{ th.roughPos }}"></div>
+                    <div style="position:absolute; top:3px; left:{{ th.roughPos }}; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:var(--color-surface-2); box-shadow:0 0 0 2px var(--color-accent)"></div>
+                    <input type="range" aria-label="Roughness" min="1" max="10" step="1" value="{{ th.roughVal }}" onChange="{{ th.setRough }}" style="position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer">
+                  </div>
+                  <div style="display:flex; justify-content:space-between; padding:0 4px; font-size:10px; color:var(--color-text-faint); font-variant-numeric:tabular-nums"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span></div>
+                </div>
+                <div style="display:flex; gap:20px; align-items:center">
+                  <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint); width:52px">Focus</span>
+                  <div style="position:relative; height:20px; flex:1"><div style="position:absolute; left:0; right:0; top:8px; height:4px; border-radius:2px; background:var(--color-surface-3); box-shadow:inset 0 0 0 1px var(--color-border-strong)"></div><div style="position:absolute; left:0; top:8px; height:4px; width:60%; border-radius:2px; background:var(--color-accent)"></div><div style="position:absolute; top:3px; left:60%; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:var(--color-surface-2); box-shadow:0 0 0 2px var(--color-accent), 0 0 0 4px var(--color-surface), 0 0 0 6px var(--color-accent)"></div></div>
+                </div>
+                <div style="display:flex; gap:20px; align-items:center; opacity:.45">
+                  <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint); width:52px">Disabled</span>
+                  <div style="position:relative; height:20px; flex:1"><div style="position:absolute; left:0; right:0; top:8px; height:4px; border-radius:2px; background:var(--color-surface-3); box-shadow:inset 0 0 0 1px var(--color-border-strong)"></div><div style="position:absolute; left:0; top:8px; height:4px; width:30%; border-radius:2px; background:var(--color-text-muted)"></div><div style="position:absolute; top:3px; left:30%; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:var(--color-surface-2); box-shadow:0 0 0 2px var(--color-text-muted)"></div></div>
+                </div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:10px">
+                <div style="display:flex; flex-direction:column; gap:7px">
+                  <sc-for list="{{ checkDemo }}" as="cb">
+                    <span style="display:flex; align-items:center; gap:9px; opacity:{{ cb.op }}"><span style="width:16px; height:16px; flex:none; display:grid; place-items:center; border-radius:4px; background:{{ cb.bg }}; box-shadow:{{ cb.ring }}; outline:{{ cb.outline }}; outline-offset:2px; color:var(--color-bg)"><sc-if value="{{ cb.checked }}"><d-icon name="check" size="12" stroke="2.8"></d-icon></sc-if></span><span style="flex:1">{{ cb.label }}</span><span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">{{ cb.state }}</span></span>
+                  </sc-for>
+                </div>
+                <div class="field" style="position:relative"><label>Select · open</label>
+                  <div style="position:relative"><span class="input" style="display:flex; align-items:center; min-height:30px; padding:4px 26px 4px 9px; font-size:13px; border-color:var(--color-accent); outline:2px solid var(--color-accent); outline-offset:0">Ink, hatched</span><d-icon name="chevron-up" size="14" style="position:absolute; right:8px; top:8px; color:var(--color-text-muted)"></d-icon></div>
+                  <div role="listbox" style="margin-top:4px; padding:4px; border-radius:8px; background:var(--color-surface-2); box-shadow:var(--shadow-lg); display:flex; flex-direction:column">
+                    <span style="display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:5px; background:var(--tint-accent-bg); color:var(--tint-accent-fg)"><d-icon name="check" size="14"></d-icon>Ink, hatched</span>
+                    <span style="display:flex; align-items:center; gap:8px; padding:6px 8px 6px 30px; border-radius:5px; background:var(--color-hover)">Ink, plain</span>
+                    <span style="display:flex; align-items:center; gap:8px; padding:6px 8px 6px 30px">Rubble</span>
+                    <span style="display:flex; align-items:center; gap:8px; padding:6px 8px 6px 30px; opacity:.45">Cave (needs terrain pack)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Cards, tables, tags</span><span style="font-size:12.5px; color:var(--color-text-muted)">.card · .table · .tag</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-bg); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px; display:flex; flex-direction:column; gap:20px">
+            <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px">
+              <div class="card elev-sm" style="padding:0; gap:0; overflow:hidden">
+                <div style="position:relative; aspect-ratio:16/10; background:var(--canvas-parchment)"><delve-map static="1" zoom="1.08" grid="off" style="position:absolute; inset:0"></delve-map></div>
+                <div style="padding:10px 12px 12px; display:flex; flex-direction:column; gap:3px"><span style="font-family:var(--font-display); font-size:18px; line-height:1.15">The Sunken Abbey</span><span class="card-meta" style="font-size:12px; color:var(--color-text-muted)">3 storeys · edited 2 h ago</span></div>
+              </div>
+              <div class="card" style="padding:0; gap:0; overflow:hidden; box-shadow:var(--shadow-md), 0 0 0 1px var(--color-accent)">
+                <div style="position:relative; aspect-ratio:16/10; background:var(--canvas-parchment)"><delve-map static="1" zoom="2.2" focus="34.5,13" grid="off" style="position:absolute; inset:0"></delve-map>
+                  <div style="position:absolute; right:8px; bottom:8px; display:flex; gap:4px"><span class="btn btn-primary" style="height:28px; padding:0 9px; font-size:12px; background:var(--color-surface); border-color:var(--color-accent)"><d-icon name="play" size="13"></d-icon>Play</span><span class="btn btn-secondary" style="height:28px; padding:0 9px; font-size:12px; background:var(--color-surface)">Edit</span></div>
+                </div>
+                <div style="padding:10px 12px 12px; display:flex; flex-direction:column; gap:3px"><span style="font-family:var(--font-display); font-size:18px; line-height:1.15">Chapter house</span><span style="font-size:12px; color:var(--color-text-muted)">1 storey · edited yesterday</span></div>
+              </div>
+              <div style="border-radius:8px; box-shadow:inset 0 0 0 1.5px var(--color-border-strong); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:var(--color-text-muted); min-height:180px; outline:2px solid var(--color-accent); outline-offset:2px">
+                <d-icon name="plus" size="22"></d-icon><span style="color:var(--color-text)">New map</span><span style="font-size:11.5px">N</span>
+              </div>
+            </div>
+            <div style="display:flex; gap:24px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint); margin-top:-12px"><span style="flex:1">Default</span><span style="flex:1">Hover · actions appear</span><span style="flex:1">Focus</span></div>
+            <table class="table" style="font-size:13px">
+              <thead><tr><th>Account</th><th>Role</th><th>Status</th><th>Sign-in</th><th style="text-align:right">Last seen</th></tr></thead>
+              <tbody>
+                <tr><td>Mara Venn</td><td><span class="tag" style="background:var(--tint-accent-bg); color:var(--tint-accent-fg)">Admin</span></td><td><span class="tag" style="gap:6px; background:var(--tint-neutral-bg); color:var(--tint-neutral-fg)"><span style="width:6px; height:6px; border-radius:50%; background:var(--color-accent)"></span>Active</span></td><td style="color:var(--color-text-muted)">Password + code</td><td style="text-align:right; color:var(--color-text-muted)">now</td></tr>
+                <tr><td>Oskar Lind</td><td><span class="tag" style="box-shadow:inset 0 0 0 1px var(--color-border-strong)">GM</span></td><td><span class="tag" style="gap:6px; background:var(--tint-neutral-bg); color:var(--tint-neutral-fg)"><span style="width:6px; height:6px; border-radius:50%; background:var(--color-accent)"></span>Active</span></td><td style="color:var(--color-text-muted)">Password only</td><td style="text-align:right; color:var(--color-text-muted)">3 d</td></tr>
+                <tr><td>Priya S.</td><td><span class="tag" style="box-shadow:inset 0 0 0 1px var(--color-border-strong)">Player</span></td><td><span class="tag" style="background:var(--tint-warning-bg); color:var(--tint-warning-fg)">Invited</span></td><td style="color:var(--color-text-muted)">Discord</td><td style="text-align:right; color:var(--color-text-muted)">—</td></tr>
+                <tr><td style="color:var(--color-text-muted)">Tom Ashby</td><td><span class="tag" style="box-shadow:inset 0 0 0 1px var(--color-border-strong)">Player</span></td><td><span class="tag" style="background:var(--tint-danger-bg); color:var(--tint-danger-fg)">Disabled</span></td><td style="color:var(--color-text-muted)">Password only</td><td style="text-align:right; color:var(--color-text-muted)">4 mo</td></tr>
+              </tbody>
+            </table>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center">
+              <span class="tag" style="background:var(--tint-accent-bg); color:var(--tint-accent-fg)">accent</span>
+              <span class="tag" style="background:var(--tint-neutral-bg); color:var(--tint-neutral-fg)">neutral</span>
+              <span class="tag" style="box-shadow:inset 0 0 0 1px var(--color-border-strong)">outline</span>
+              <span class="tag" style="background:var(--tint-info-bg); color:var(--tint-info-fg)">info</span>
+              <span class="tag" style="background:var(--tint-warning-bg); color:var(--tint-warning-fg)">warning</span>
+              <span class="tag" style="background:var(--tint-danger-bg); color:var(--tint-danger-fg)">danger</span>
+              <span class="tag" style="gap:5px; background:var(--tint-neutral-bg); color:var(--tint-neutral-fg); font-family:var(--font-numeral); font-size:12px">Storey −1</span>
+              <span class="tag" style="gap:5px; background:var(--tint-neutral-bg); color:var(--tint-neutral-fg)"><d-icon name="lock" size="12"></d-icon>Password only</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Toasts, dialogs, the marker note</span><span style="font-size:12.5px; color:var(--color-text-muted)">role="status" · .dialog · popover anchored to a marker</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-bg); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px; display:flex; flex-direction:column; gap:20px">
+            <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-start">
+              <div role="status" style="display:flex; align-items:center; gap:10px; padding:7px 7px 7px 12px; border-radius:10px; background:var(--color-surface-2); box-shadow:var(--shadow-lg)"><d-icon name="check" size="16" style="color:var(--color-text-muted)"></d-icon>Exported “The Sunken Abbey.png”<button class="btn btn-ghost" style="height:28px; padding:0 8px; font-size:13px">Show file</button><span style="width:28px; height:28px; display:grid; place-items:center; color:var(--color-text-muted)"><d-icon name="x" size="15"></d-icon></span></div>
+              <div role="status" style="display:flex; align-items:center; gap:10px; padding:7px 7px 7px 12px; border-radius:10px; background:var(--color-surface-2); box-shadow:var(--shadow-lg)"><d-icon name="trash" size="16" style="color:var(--color-text-muted)"></d-icon>Room 3 deleted<button class="btn btn-ghost" style="height:28px; padding:0 8px; font-size:13px">Undo</button><kbd style="display:inline-grid; place-items:center; height:18px; padding:0 5px; border-radius:4px; font-size:10.5px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong)">Ctrl Z</kbd><span style="width:22px"></span></div>
+              <div role="alert" style="display:flex; align-items:center; gap:10px; padding:7px 7px 7px 12px; border-radius:10px; background:var(--color-surface-2); box-shadow:var(--shadow-lg), inset 0 0 0 1px color-mix(in srgb, var(--color-danger) 45%, transparent)"><d-icon name="offline" size="16" style="color:var(--color-danger)"></d-icon>Connection lost. 3 changes queued.<button class="btn btn-ghost" style="height:28px; padding:0 8px; font-size:13px">Retry now</button></div>
+              <span style="font-size:12px; color:var(--color-text-muted)">Bottom-centre, stacked, auto-dismiss after 4 s. Errors stay until resolved and use role="alert".</span>
+            </div>
+            <div style="border-radius:12px; padding:28px 20px; background:var(--color-overlay); display:grid; place-items:center">
+              <div class="dialog" role="dialog" aria-labelledby="dlg-{{ th.id }}" style="width:min(400px, 100%)">
+                <div id="dlg-{{ th.id }}" class="dialog-title" style="font-family:var(--font-display); font-weight:400; font-size:24px">Delete storey −1?</div>
+                <div class="dialog-body" style="font-size:13.5px; opacity:1; color:var(--color-text-muted); text-wrap:pretty">“Flooded crypt” has 4 rooms, 11 props and 2 GM notes. The stairs from Room 5 will lead nowhere. You can undo this until you close the map.</div>
+                <div class="dialog-actions"><button class="btn btn-secondary" style="height:32px; font-size:13px">Cancel<span style="font-size:11px; color:var(--color-text-faint)">Esc</span></button><button class="btn" style="height:32px; font-size:13px; color:var(--color-danger); border-color:color-mix(in srgb, var(--color-danger) 70%, transparent)">Delete storey</button></div>
+              </div>
+            </div>
+            <div style="position:relative; height:260px; border-radius:12px; overflow:hidden; background:var(--canvas-parchment)">
+              <delve-map static="1" zoom="2.6" focus="22.5,10.5" focus-at=".2,.45" grid="on" style="position:absolute; inset:0"></delve-map>
+              <div role="dialog" aria-label="Marker note" style="position:absolute; left:calc(20% + 26px); top:18px; width:300px; padding:12px 14px; border-radius:10px; background:var(--color-surface); box-shadow:var(--shadow-lg); display:flex; flex-direction:column; gap:10px">
+                <div style="display:flex; align-items:center; gap:8px"><span style="width:20px; height:20px; border-radius:50%; display:grid; place-items:center; background:var(--marker-discover); color:var(--marker-ink); box-shadow:0 0 0 1px var(--marker-ink); font-family:var(--font-numeral); font-size:13px">?</span><span style="font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-muted); flex:1">Discover · Room 2</span><d-icon name="x" size="15" style="color:var(--color-text-muted)"></d-icon></div>
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  <div style="display:flex; gap:9px; align-items:flex-start"><span style="width:16px; height:16px; flex:none; margin-top:2px; display:grid; place-items:center; border-radius:4px; background:var(--color-accent); color:var(--color-bg)"><d-icon name="check" size="12" stroke="2.8"></d-icon></span><span style="color:var(--color-text-muted); text-decoration:line-through; text-decoration-color:var(--color-text-faint)">Loose flagstone by the second pillar</span></div>
+                  <div style="display:flex; gap:9px; align-items:flex-start"><span style="width:16px; height:16px; flex:none; margin-top:2px; border-radius:4px; box-shadow:inset 0 0 0 1.5px var(--color-control-border)"></span><span style="text-wrap:pretty">Under it: a silver key and a note in the prior's hand (DC 13 Investigation)</span></div>
+                </div>
+                <div style="display:flex; gap:6px; padding-top:2px"><button class="btn btn-secondary" style="height:28px; padding:0 9px; font-size:12px">Edit</button><button class="btn btn-ghost" style="height:28px; padding:0 6px; font-size:12px">Reveal to players</button></div>
+              </div>
+            </div>
+            <span style="font-size:12px; color:var(--color-text-muted); margin-top:-10px">Clicking a marker opens its note. Tick a line to strike it through once the party has found it. Only the GM sees struck lines.</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Chat lines and roll cards</span><span style="font-size:12.5px; color:var(--color-text-muted)">Delve Table sidebar · dice notation in mono · totals in Marcellus SC</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-bg); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px; display:grid; grid-template-columns:minmax(0,1fr) 210px; gap:20px">
+            <div style="background:var(--color-surface); border-radius:10px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; min-width:0">
+              <div style="display:flex; align-items:center; gap:8px; height:40px; padding:0 12px; box-shadow:inset 0 -1px 0 var(--color-border)"><span style="flex:1; font-weight:500">Chat</span><span style="font-size:12px; color:var(--color-text-muted)">3D dice</span>
+                <button role="switch" aria-checked="{{ th.diceAria }}" aria-label="3D dice" onClick="{{ th.toggleDice }}" style="width:34px; height:20px; padding:2px; border:0; border-radius:10px; display:flex; cursor:pointer; justify-content:{{ th.diceJustify }}; background:{{ th.diceTrack }}; box-shadow:{{ th.diceRing }}"><span style="width:16px; height:16px; border-radius:50%; background:{{ th.diceKnob }}"></span></button>
+              </div>
+              <div style="padding:12px; display:flex; flex-direction:column; gap:12px">
+                <span style="align-self:center; font-size:11.5px; color:var(--color-text-faint)">Isolde joined the table · 20:14</span>
+                <div style="display:flex; gap:9px"><span style="width:24px; height:24px; flex:none; border-radius:50%; background:#5B6E8C; color:#F4ECD7; display:grid; place-items:center; font-size:10px; font-weight:600">BR</span><div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:12px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Brannoc</span> · 20:16</span><span>I check the altar for traps before I touch it.</span></div></div>
+                <div style="display:flex; gap:9px; padding:8px 10px; margin:0 -4px; border-radius:8px; background:var(--tint-info-bg); color:var(--tint-info-fg)"><d-icon name="lock" size="15" style="margin-top:2px"></d-icon><div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:12px"><span style="font-weight:500">Whisper · Mara → Brannoc</span> · 20:16</span><span style="color:var(--color-text)">You notice faint scratches around the base.</span></div></div>
+                <div style="display:flex; gap:9px; position:relative"><span style="width:24px; height:24px; flex:none; border-radius:50%; background:#5B6E8C; color:#F4ECD7; display:grid; place-items:center; font-size:10px; font-weight:600">BR</span>
+                  <div style="flex:1; min-width:0; border-radius:10px; background:var(--color-surface-2); box-shadow:inset 0 0 0 1px var(--color-border-strong), 0 0 0 0 transparent; padding:10px 12px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; align-items:center">
+                    <span style="font-size:12px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Brannoc</span> · Longsword attack</span>
+                    <span style="grid-row:span 2; min-width:48px; height:44px; padding:0 8px; display:grid; place-items:center; border-radius:8px; font-family:var(--font-numeral); font-size:26px; line-height:1; box-shadow:inset 0 0 0 1.5px var(--color-accent); color:var(--color-text)">23</span>
+                    <code style="font-family:var(--font-mono); font-size:12.5px; color:var(--color-text-muted)">/r 2d20kh1+5</code>
+                    <span style="grid-column:1 / -1; display:flex; align-items:center; gap:5px; padding-top:4px; font-size:12px; color:var(--color-text-muted)"><span style="min-width:22px; height:20px; padding:0 4px; display:grid; place-items:center; border-radius:4px; background:var(--tint-accent-bg); color:var(--tint-accent-fg); font-family:var(--font-numeral)">18</span><span style="min-width:22px; height:20px; padding:0 4px; display:grid; place-items:center; border-radius:4px; box-shadow:inset 0 0 0 1px var(--color-border-strong); font-family:var(--font-numeral); text-decoration:line-through">7</span>+ 5 · hits AC 16</span>
+                  </div>
+                </div>
+                <div style="display:flex; gap:9px"><span style="width:24px; height:24px; flex:none; border-radius:50%; background:#7A5A8C; color:#F4ECD7; display:grid; place-items:center; font-size:10px; font-weight:600">IS</span>
+                  <div style="flex:1; min-width:0; border-radius:10px; background:var(--color-surface-2); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--color-danger) 55%, transparent); padding:10px 12px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; align-items:center">
+                    <span style="font-size:12px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Isolde</span> · Dexterity save</span>
+                    <span style="grid-row:span 2; min-width:48px; height:44px; padding:0 8px; display:grid; place-items:center; border-radius:8px; font-family:var(--font-numeral); font-size:26px; line-height:1; box-shadow:inset 0 0 0 1.5px var(--color-danger); color:var(--color-danger)">3</span>
+                    <span style="display:flex; align-items:center; gap:8px"><code style="font-family:var(--font-mono); font-size:12.5px; color:var(--color-text-muted)">/r 1d20+2</code><span class="tag" style="padding:1px 7px; background:var(--tint-danger-bg); color:var(--tint-danger-fg)">Natural 1</span></span>
+                  </div>
+                </div>
+              </div>
+              <div style="padding:10px 12px; box-shadow:inset 0 1px 0 var(--color-border); display:flex; gap:6px"><input class="input" placeholder="Message, or /r 1d20+3" style="min-height:32px; padding:5px 10px; font-size:13px; border-color:var(--color-control-border); background:var(--color-surface-2)"><button class="btn btn-icon" aria-label="Roll" title="Roll dice" style="width:32px; height:32px; color:var(--color-text-muted); flex:none"><d-icon name="dice" size="18"></d-icon></button><button class="btn btn-primary" aria-label="Send" style="width:32px; height:32px; padding:0; flex:none"><d-icon name="send" size="16"></d-icon></button></div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:10px; padding-top:150px">
+              <span style="font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-faint)">Hover on a total</span>
+              <div role="tooltip" style="padding:10px 12px; border-radius:9px; background:var(--color-surface-3); box-shadow:var(--shadow-lg); display:flex; flex-direction:column; gap:6px; font-size:12px">
+                <code style="font-family:var(--font-mono); font-size:12px">2d20kh1 + 5</code>
+                <div style="display:grid; grid-template-columns:auto 1fr auto; gap:3px 10px; color:var(--color-text-muted)">
+                  <span>d20</span><span>kept</span><span style="font-family:var(--font-numeral); color:var(--color-text)">18</span>
+                  <span>d20</span><span>dropped</span><span style="font-family:var(--font-numeral); text-decoration:line-through">7</span>
+                  <span>mod</span><span>Strength</span><span style="font-family:var(--font-numeral); color:var(--color-text)">+5</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding-top:6px; box-shadow:inset 0 1px 0 var(--color-border-strong)"><span>Total</span><span style="font-family:var(--font-numeral); font-size:15px; color:var(--color-text)">23</span></div>
+              </div>
+              <span style="font-size:12px; color:var(--color-text-muted); text-wrap:pretty">The total has a 1.5 px edge: accent for a normal roll, red for a natural 1, and accent with a “Natural 20” tag for a crit. Rolls are also announced to screen readers.</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Token settings and the bottom sheet</span><span style="font-size:12.5px; color:var(--color-text-muted)">dialog on desktop · the same content becomes a sheet on phones</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-bg); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px; display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:20px; align-items:start">
+            <div class="dialog" role="dialog" aria-label="Token settings" style="width:100%; gap:14px">
+              <div style="display:flex; align-items:center; gap:12px"><span style="width:44px; height:44px; border-radius:50%; background:#5B6E8C; color:#F4ECD7; display:grid; place-items:center; font-weight:600; box-shadow:0 0 0 2px var(--canvas-floor), 0 0 0 3px var(--color-border-strong)">BR</span><div style="flex:1"><div class="dialog-title" style="font-family:var(--font-display); font-weight:400; font-size:22px; margin:0">Brannoc</div><span style="font-size:12px; color:var(--color-text-muted)">Token · owned by Sam</span></div><d-icon name="x" size="17" style="color:var(--color-text-muted)"></d-icon></div>
+              <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px">
+                <div class="field"><label>HP</label><input class="input" defaultValue="31" style="min-height:30px; padding:4px 9px; font-size:13px; border-color:var(--color-control-border)"></div>
+                <div class="field"><label>Max HP</label><input class="input" defaultValue="38" style="min-height:30px; padding:4px 9px; font-size:13px; border-color:var(--color-control-border)"></div>
+                <div class="field"><label>Bar shown to</label><div style="position:relative"><select class="input" style="appearance:none; min-height:30px; padding:4px 24px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><option>Everyone</option><option>Owner + GM</option><option>GM only</option></select><d-icon name="chevron-down" size="14" style="position:absolute; right:7px; top:8px; color:var(--color-text-muted); pointer-events:none"></d-icon></div></div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:10px; padding-top:4px">
+                <span style="font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-muted)">Vision and light</span>
+                <span style="display:flex; align-items:center; gap:9px"><span style="width:16px; height:16px; display:grid; place-items:center; border-radius:4px; background:var(--color-accent); color:var(--color-bg)"><d-icon name="check" size="12" stroke="2.8"></d-icon></span>Has sight<span style="font-size:12px; color:var(--color-text-muted)">· reveals fog as it moves</span></span>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px">
+                  <div class="field"><label>Darkvision</label><div style="position:relative"><input class="input" defaultValue="60" style="min-height:30px; padding:4px 26px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><span style="position:absolute; right:8px; top:7px; font-size:11.5px; color:var(--color-text-muted)">ft</span></div></div>
+                  <div class="field"><label>Bright light</label><div style="position:relative"><input class="input" defaultValue="20" style="min-height:30px; padding:4px 26px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><span style="position:absolute; right:8px; top:7px; font-size:11.5px; color:var(--color-text-muted)">ft</span></div></div>
+                  <div class="field"><label>Dim light</label><div style="position:relative"><input class="input" defaultValue="40" style="min-height:30px; padding:4px 26px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><span style="position:absolute; right:8px; top:7px; font-size:11.5px; color:var(--color-text-muted)">ft</span></div></div>
+                </div>
+                <span style="font-size:12px; color:var(--color-text-muted)">Torch preset: 20 bright, 20 dim. The page's vision mode and ambient light still apply.</span>
+              </div>
+              <div class="dialog-actions" style="margin-top:0"><button class="btn btn-secondary" style="height:32px; font-size:13px">Cancel</button><button class="btn btn-primary" style="height:32px; font-size:13px">Save token</button></div>
+            </div>
+            <div style="width:250px; height:440px; position:relative; overflow:hidden; border-radius:28px; box-shadow:0 0 0 6px #050608, 0 0 0 7px var(--color-border-strong); background:var(--canvas-parchment)">
+              <delve-map static="1" tokens="on" zoom="2.1" focus="17.5,13.8" focus-at=".5,.24" grid="on" view="players" fog-opacity=".9" style="position:absolute; inset:0"></delve-map>
+              <div style="position:absolute; left:0; right:0; bottom:0; height:262px; border-radius:16px 16px 0 0; background:var(--color-surface); box-shadow:var(--shadow-lg); display:flex; flex-direction:column; font-size:13px">
+                <span style="align-self:center; width:32px; height:4px; border-radius:2px; background:var(--color-border-strong); margin:7px 0 6px"></span>
+                <div role="tablist" style="display:flex; gap:2px; padding:0 8px"><span style="flex:1; min-height:44px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border-radius:8px; background:var(--tint-accent-bg); color:var(--color-accent); font-size:11px"><d-icon name="chat" size="18"></d-icon>Chat</span><span style="flex:1; min-height:44px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--color-text-muted); font-size:11px"><d-icon name="dice" size="18"></d-icon>Turn</span><span style="flex:1; min-height:44px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--color-text-muted); font-size:11px"><d-icon name="notes" size="18"></d-icon>Sheet</span></div>
+                <div style="flex:1; padding:8px 12px; display:flex; flex-direction:column; gap:8px; overflow:hidden">
+                  <span><span style="color:var(--color-text-muted)">Brannoc</span> I check the altar.</span>
+                  <span style="display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; background:var(--color-surface-2); box-shadow:inset 0 0 0 1px var(--color-border-strong)"><code style="flex:1; font-family:var(--font-mono); font-size:11.5px; color:var(--color-text-muted)">/r 1d20+4</code><span style="font-family:var(--font-numeral); font-size:19px">17</span></span>
+                </div>
+                <div style="display:flex; gap:6px; padding:8px 10px 20px; box-shadow:inset 0 1px 0 var(--color-border)"><span class="input" style="display:flex; align-items:center; min-height:44px; font-size:15px; color:var(--color-text-faint); border-color:var(--color-control-border)">Message</span><span class="btn btn-primary" style="width:44px; height:44px; padding:0; flex:none"><d-icon name="send" size="18"></d-icon></span></div>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <span style="font-size:12.5px; color:var(--color-text-muted)">Sheet stops: peek 168 px (tabs plus the last line), half screen, and full height minus 96 px. Drag the handle or tap a tab to raise it, swipe down to lower it. The board stays interactive above the sheet.</span>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:10px"><span style="font-family:var(--font-display); font-size:24px">Empty, loading, live and offline</span></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap:20px">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--color-bg); color:var(--color-text); border-radius:14px; padding:20px 22px; box-shadow:0 0 0 1px var(--color-border); min-width:0; font-size:13px; display:flex; flex-direction:column; gap:18px">
+            <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px">
+              <div style="border-radius:10px; background:var(--color-surface); box-shadow:var(--shadow-sm); padding:22px; display:flex; flex-direction:column; align-items:flex-start; gap:8px">
+                <d-icon name="layers" size="22" style="color:var(--color-text-faint)"></d-icon>
+                <span style="font-family:var(--font-display); font-size:20px">No maps yet</span>
+                <span style="color:var(--color-text-muted); text-wrap:pretty">Start from a blank sheet, or bring in a Dungeon Scrawl file.</span>
+                <div style="display:flex; gap:6px; padding-top:4px"><button class="btn btn-primary" style="height:30px; font-size:12.5px"><d-icon name="plus" size="14"></d-icon>New map</button><button class="btn btn-secondary" style="height:30px; font-size:12.5px"><d-icon name="upload" size="14"></d-icon>Import .ds</button></div>
+              </div>
+              <div style="border-radius:10px; background:var(--color-surface); box-shadow:var(--shadow-sm); padding:12px; display:flex; flex-direction:column; gap:8px" aria-busy="true" aria-label="Loading maps">
+                <span style="aspect-ratio:16/9; border-radius:6px; background:var(--color-surface-3)"></span>
+                <span style="height:12px; width:62%; border-radius:4px; background:var(--color-surface-3)"></span>
+                <span style="height:10px; width:40%; border-radius:4px; background:var(--color-surface-3)"></span>
+              </div>
+            </div>
+            <div style="height:96px; border-radius:10px; background:var(--canvas-parchment); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--canvas-ink)" role="status">
+              <span style="font-family:var(--font-display); font-style:italic; font-size:18px">Unrolling the map…</span>
+              <span style="width:180px; height:3px; border-radius:2px; background:rgba(43,36,29,.18); overflow:hidden"><span style="display:block; width:64%; height:100%; background:var(--canvas-ink)"></span></span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; font-size:12.5px">
+              <span style="display:inline-flex; align-items:center; gap:7px; color:var(--color-text-muted)"><span style="width:7px; height:7px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent)"></span>Live</span>
+              <span style="display:inline-flex; align-items:center; gap:7px; color:var(--color-warning)"><span style="width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--color-warning)"></span>Connecting…</span>
+              <span style="display:inline-flex; align-items:center; gap:7px; color:var(--color-danger)"><span style="width:7px; height:7px; border-radius:50%; background:var(--color-danger); box-shadow:0 0 0 3px color-mix(in srgb, var(--color-danger) 25%, transparent)"></span>Offline · retrying in 4 s</span>
+              <span class="tag" style="gap:6px; padding:2px 8px; background:var(--tint-accent-bg); color:var(--tint-accent-fg)"><span style="width:6px; height:6px; border-radius:50%; background:var(--color-accent)"></span>Claude editing</span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; font-size:12.5px">
+              <span style="display:inline-flex; align-items:center; gap:5px; color:var(--color-text-muted)"><d-icon name="check" size="14"></d-icon>Saved</span>
+              <span style="display:inline-flex; align-items:center; gap:5px; color:var(--color-text-muted)"><d-icon name="upload" size="14"></d-icon>Saving…</span>
+              <span style="display:inline-flex; align-items:center; gap:5px; color:var(--color-warning)"><d-icon name="alert" size="14"></d-icon>Unsaved changes</span>
+              <span style="display:inline-flex; align-items:center; gap:5px; color:var(--color-warning)"><d-icon name="offline" size="14"></d-icon>3 changes queued</span>
+            </div>
+            <span style="font-size:12px; color:var(--color-text-muted)">Status always pairs colour with a word and a shape (filled, ring or icon), so it never depends on colour alone.</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-for>
+  </section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;dark&quot;, &quot;light&quot;], &quot;default&quot;: &quot;dark&quot;, &quot;tsType&quot;: &quot;'dark' | 'light'&quot;}}">
+const lum = h => { const c = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(v => (v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4))); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; };
+const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+const SURF = { dark: '#1C1F28', light: '#F6F5F1' };
+const COLORS = [
+  ['Ground & surface', '--color-bg', '#13151C', '#E9E7E1', 'App ground', null],
+  [null, '--color-surface', '#1C1F28', '#F6F5F1', 'Panels, bars, cards', null],
+  [null, '--color-surface-2', '#252935', '#FCFBF8', 'Menus, inputs, raised', null],
+  [null, '--color-surface-3', '#2E3240', '#EDEBE5', 'Tooltips, tracks', null],
+  ['Text', '--color-text', '#E9E7E2', '#1F2027', 'Primary text', 'text'],
+  [null, '--color-text-muted', '#A6A9B6', '#565965', 'Labels, meta', 'text'],
+  [null, '--color-text-faint', '#8A8E9C', '#62656F', 'Hints, key letters', 'text'],
+  ['Lines', '--color-border', '#2C303C', '#D9D6CD', 'Panel edges', null],
+  [null, '--color-border-strong', '#3E4352', '#C4C0B5', 'Separators, kbd', null],
+  [null, '--color-control-border', '#6A7082', '#8F8B80', 'Input & checkbox edges', 'ui'],
+  ['Accent: violet ink', '--color-accent', '#9D92E4', '#5546A8', 'Focus, selection, active', 'text'],
+  [null, '--color-accent-text', '#C9C2FA', '#45378F', 'Accent in body copy', 'text'],
+  [null, '--tint-accent-bg', '#2D2948', '#E6E2F8', 'Selected fills', null],
+  ['Status', '--color-danger', '#E2685D', '#A8322A', 'Errors, delete, offline', 'text'],
+  [null, '--color-warning', '#E5A93B', '#8A5B00', 'Unsaved, queued', 'text'],
+  [null, '--color-info', '#6AA5E8', '#1F5FA8', 'Info, whispers', 'text']
+];
+const CANVAS = [['--canvas-parchment', '#EADCBB', 'Ground'], ['--canvas-floor', '#F4ECD7', 'Room floors'], ['--canvas-ink', '#2B241D', 'Walls, text'], ['--canvas-hatch', '#4A3F33', 'Hatching'], ['--canvas-parchment-deep', '#DCC9A2', 'Map edge, wells'], ['--canvas-grid', 'rgba(74,63,51,.25)', 'Grid lines'], ['--canvas-select', '#4F40A6', 'Selection on map'], ['--canvas-fog', 'rgba(36,31,26,.84)', 'Fog of war']];
+const TYPE = [
+  ['--display-xl', 'IM Fell English · 46 / 1.0', 'var(--font-display)', '46px', '0', 'The Sunken Abbey', 'Page titles, library header'],
+  ['--display-lg', 'IM Fell English · 34 / 1.1', 'var(--font-display)', '34px', '0', 'Delve Table · Session 12', 'Screen titles'],
+  ['--display-md', 'IM Fell English · 26 / 1.15', 'var(--font-display)', '26px', '0', 'Delete storey −1?', 'Dialogs, sheet titles'],
+  ['--display-sm', 'IM Fell English · 20 / 1.15', 'var(--font-display)', '20px', '0', 'Chapter house', 'Inspector, cards, panels'],
+  ['--font-numeral', 'Marcellus SC · 17–32', 'var(--font-numeral)', '30px', '.02em', '3 · 12 · −1 · 0 · 2 · 23', 'Rooms, storeys, dice totals'],
+  ['--text-xl', 'System sans · 17 / 1.4', 'var(--font-ui)', '17px', '0', 'Players join with an invite link', 'Phone headings'],
+  ['--text-lg', 'System sans · 15 / 1.5', 'var(--font-ui)', '15px', '0', 'Body text on phones and long notes', 'Phone body, notes'],
+  ['--text-md', 'System sans · 13 / 1.4', 'var(--font-ui)', '13px', '0', 'Desktop UI text, fields, menus, chat', 'Default desktop UI'],
+  ['--text-sm', 'System sans · 12 / 1.4', 'var(--font-ui)', '12px', '0', 'Labels, meta, timestamps', 'Field labels'],
+  ['--text-xs', 'System sans · 11 / 1.3 · caps +.08em', 'var(--font-ui)', '11px', '.08em', 'SECTION LABEL · ROOM · STOREY 0', 'Kickers, table heads'],
+  ['--font-mono', 'ui-monospace · 13', 'var(--font-mono)', '14px', '0', '/r 2d20kh1+5   /w gm the door is warm', 'Dice notation, codes']
+];
+const SPACES = [['--space-1', 3], ['--space-2', 6], ['--space-3', 8], ['--space-4', 12], ['--space-5', 16], ['--space-6', 20], ['--space-8', 24], ['--space-10', 32], ['--space-12', 48]];
+const RADII = [['--radius-xs', '3px'], ['--radius-sm', '4px'], ['--radius-md', '8px'], ['--radius-lg', '14px'], ['--radius-pill', '28px']];
+const BRAND = ['chat', 'corridor', 'door', 'download', 'eraser', 'eye', 'eye-off', 'fit', 'grid', 'label', 'layers', 'lock', 'unlock', 'pan', 'pillar', 'polygon', 'prop', 'redo', 'undo', 'room', 'select', 'send', 'settings', 'stairs', 'stop', 'terrain', 'trash', 'upload', 'zoom-in', 'zoom-out'];
+const ADDED = ['marker', 'image', 'segment', 'fog', 'dice', '3d', 'play', 'admin', 'notes'];
+const UTIL = ['shape-rect', 'shape-circle', 'shape-oval', 'shape-triangle', 'shape-hexagon', 'shape-octagon', 'shape-freehand', 'chevron-down', 'chevron-right', 'x', 'plus', 'minus', 'search', 'check', 'more', 'users', 'link', 'screen', 'brush', 'rotate', 'rotate-ccw', 'copy', 'external', 'alert', 'info', 'offline', 'keyboard', 'ping', 'skull', 'sun', 'moon'];
+const ON = { bg: 'var(--tint-accent-bg)', fg: 'var(--color-accent)', ring: 'inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent)' };
+const OFF = { bg: 'transparent', fg: 'var(--color-text-muted)', ring: 'none' };
+
+class Component extends DCLogic {
+  state = { rough: { dark: 4, light: 7 }, dice: { dark: true, light: false } };
+  renderVals() {
+    const S = this.state;
+    const themes = ['dark', 'light'].map(id => {
+      const colors = COLORS.map(r => {
+        const v = id === 'dark' ? r[2] : r[3];
+        let txt = '', fg = 'var(--color-text-faint)';
+        if (r[5]) { const q = ratio(v, SURF[id]); const pass = r[5] === 'text' ? q >= 4.5 : q >= 3; txt = q.toFixed(1) + ' : 1 ' + (pass ? (r[5] === 'text' ? 'AA' : 'UI 3:1') : 'fail'); fg = pass ? 'var(--color-text-muted)' : 'var(--color-danger)'; }
+        return { isHead: !!r[0], group: r[0] || '', name: r[1], val: v, use: r[4], ratio: txt, ratioFg: fg };
+      });
+      const rv = S.rough[id], f = (rv - 1) / 9, on = S.dice[id];
+      return {
+        id, label: id === 'dark' ? 'Dark · slate' : 'Light · limestone', icon: id === 'dark' ? 'moon' : 'sun', colors,
+        roughVal: rv, roughPos: 'calc(7px + (100% - 14px) * ' + f.toFixed(3) + ')', setRough: e => { const v = +e.target.value; this.setState(s => ({ rough: { ...s.rough, [id]: v } })); },
+        diceAria: on ? 'true' : 'false', toggleDice: () => this.setState(s => ({ dice: { ...s.dice, [id]: !s.dice[id] } })),
+        diceJustify: on ? 'flex-end' : 'flex-start', diceTrack: on ? 'var(--color-accent)' : 'var(--color-surface-3)', diceRing: on ? 'none' : 'inset 0 0 0 1px var(--color-control-border)', diceKnob: on ? 'var(--color-bg)' : 'var(--color-text-muted)'
+      };
+    });
+    const railDemo = [
+      ['select', 'V', 'default'], ['room', 'R', 'hover'], ['corridor', 'C', 'active'], ['door', 'D', 'default'], ['stairs', 'S', 'focus'], ['fog', 'F', 'disabled']
+    ].map(([icon, key, s]) => ({ icon, key, tip: s === 'hover', bg: s === 'active' ? ON.bg : s === 'hover' ? 'var(--color-hover)' : 'transparent', fg: s === 'active' ? ON.fg : s === 'hover' ? 'var(--color-text)' : 'var(--color-text-muted)', ring: s === 'active' ? ON.ring : 'none', outline: s === 'focus' ? '2px solid var(--color-accent)' : 'none', op: s === 'disabled' ? '.45' : '1' }));
+    const shapeDemo = ['rect', 'circle', 'oval', 'triangle', 'hexagon', 'octagon', 'freehand'].map((s, i) => ({ icon: 'shape-' + s, num: String(i + 1), ...(s === 'octagon' ? ON : OFF) }));
+    const checkDemo = [['Unchecked', false, 'default', 1, false], ['Hidden from players', true, 'checked', 1, false], ['Snap to grid', false, 'focus', 1, true], ['Locked layer', true, 'disabled', .45, false]].map(([label, c, state, op, foc]) => ({ label, checked: c, state, op: String(op), bg: c ? 'var(--color-accent)' : 'transparent', ring: c ? 'none' : 'inset 0 0 0 1.5px var(--color-control-border)', outline: foc ? '2px solid var(--color-accent)' : 'none' }));
+    return {
+      pageTheme: this.props.theme ?? 'dark',
+      themes, themesPair: [1], railDemo, shapeDemo, checkDemo,
+      canvas: CANVAS.map(c => ({ name: c[0], val: c[1], use: c[2] })),
+      typeScale: TYPE.map(t => ({ token: t[0], spec: t[1], font: t[2], size: t[3], track: t[4], sample: t[5], use: t[6] })),
+      spaces: SPACES.map(s => ({ name: s[0], px: s[1] + 'px' })),
+      radii: RADII.map(r => ({ name: r[0], px: r[1] })),
+      iconGroups: [
+        { title: 'Brand set · 30', note: 'Stand-ins until the originals are dropped in', icons: BRAND, ring: 'inset 0 0 0 1px var(--color-border)' },
+        { title: 'New for Delve · 9', note: 'marker, image, segment, fog, dice, 3D, play, admin, notes', icons: ADDED, ring: 'inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent)' },
+        { title: 'Utility and room shapes', note: 'Chevrons, actions, status and the seven Room tool shapes', icons: UTIL, ring: 'inset 0 0 0 1px var(--color-border)' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

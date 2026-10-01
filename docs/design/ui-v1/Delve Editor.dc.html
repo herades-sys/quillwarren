@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link rel="stylesheet" href="_ds/nocturne-e6f200f3-aa6b-461e-928f-4e9cf9a04da9/styles.css">
+  <link rel="stylesheet" href="delve-tokens.css">
+  <script src="_ds/nocturne-e6f200f3-aa6b-461e-928f-4e9cf9a04da9/_ds_bundle.js"></script>
+  <script src="delve-icons.js"></script>
+  <script src="delve-map.js"></script>
+  <style>body{margin:0;background:#0C0D12} a{color:var(--color-accent)} a:hover{color:var(--color-accent-text)} kbd{font-family:inherit}</style>
+</helmet>
+<div data-theme="dark" style="padding:56px; display:flex; flex-direction:column; gap:56px; width:max-content; background:#0C0D12; font-family:var(--font-ui)">
+
+  <header style="display:flex; align-items:flex-end; gap:48px; max-width:1894px">
+    <div style="display:flex; flex-direction:column; gap:6px">
+      <span style="font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--color-text-muted)">Delve · Screen 2 of 5</span>
+      <h1 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:52px; line-height:1; letter-spacing:0">Map editor</h1>
+    </div>
+    <p style="margin:0 0 6px; max-width:720px; font-size:14px; line-height:1.55; color:var(--color-text-muted); text-wrap:pretty">This board is a working prototype. Click a tool or press its letter, drag and scroll the map, switch GM and Players views, open Export, collapse Claude. Keyboard shortcuts go to whichever board you clicked last. Tokens and components are on the <a href="Delve Design System.dc.html">design system page</a>.</p>
+  </header>
+
+  <sc-for list="{{ rows }}" as="row" hint-placeholder-count="2">
+  <div style="display:flex; gap:64px; align-items:flex-start">
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:14px">
+        <span style="font-size:13px; letter-spacing:.1em; text-transform:uppercase; color:var(--color-text)">{{ row.d.label }}</span>
+        <span style="font-size:13px; color:var(--color-text-muted)">{{ row.d.note }}</span>
+      </div>
+      <sc-if value="{{ row.first }}">
+        <div aria-hidden="true" style="display:flex; width:1440px; height:22px; font-size:11px; color:var(--color-text-muted)">
+          <div style="width:52px; display:grid; place-items:center; box-shadow:inset 1px 0 0 #4A5062, inset -1px 0 0 #4A5062, inset 0 -1px 0 #4A5062">52</div>
+          <div style="flex:1; display:grid; place-items:center; box-shadow:inset -1px 0 0 #4A5062, inset 0 -1px 0 #4A5062">Canvas · fluid, min 560 · floating controls inset 12</div>
+          <div style="width:288px; display:grid; place-items:center; box-shadow:inset -1px 0 0 #4A5062, inset 0 -1px 0 #4A5062">Inspector / Map · 288</div>
+          <div style="width:344px; display:grid; place-items:center; box-shadow:inset -1px 0 0 #4A5062, inset 0 -1px 0 #4A5062">Claude · 344 · Ctrl .</div>
+        </div>
+      </sc-if>
+
+      <div data-theme="{{ row.d.theme }}" data-screen-label="{{ row.d.label }}" onMouseDown="{{ row.d.activate }}" style="width:1440px; height:900px; position:relative; display:flex; flex-direction:column; overflow:hidden; border-radius:10px; background:var(--color-bg); color:var(--color-text); font-family:var(--font-ui); font-size:13px; line-height:1.4; box-shadow:0 0 0 1px rgba(255,255,255,.07), 0 30px 80px rgba(0,0,0,.5)">
+
+        <div style="height:48px; flex:none; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:12px; padding:0 8px 0 16px; background:var(--color-surface); box-shadow:inset 0 -1px 0 var(--color-border); position:relative; z-index:20">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0">
+            <span style="font-family:var(--font-display); font-size:24px; line-height:1; padding-top:2px">Delve</span>
+            <span style="width:1px; height:20px; background:var(--color-border-strong)"></span>
+            <a href="#" style="color:var(--color-text-muted); text-decoration:none; font-size:13px" style-hover="color:var(--color-text)">Library</a>
+            <d-icon name="chevron-right" size="14" style="color:var(--color-text-faint)"></d-icon>
+            <span style="font-family:var(--font-display); font-size:18px; line-height:1; white-space:nowrap; padding-top:2px">The Sunken Abbey</span>
+            <span role="status" style="display:inline-flex; align-items:center; gap:5px; margin-left:4px; font-size:12px; white-space:nowrap; color:{{ row.d.save.fg }}"><d-icon name="{{ row.d.save.icon }}" size="14"></d-icon>{{ row.d.save.text }}</span>
+            <div style="display:flex; gap:2px; margin-left:6px">
+              <button class="btn btn-icon" title="Undo · Ctrl Z" aria-label="Undo" onClick="{{ row.d.undo }}" style="width:32px; height:32px; color:var(--color-text-muted)" style-hover="background:var(--color-hover); color:var(--color-text)"><d-icon name="undo" size="18"></d-icon></button>
+              <button class="btn btn-icon" title="Redo · Ctrl Shift Z" aria-label="Redo" onClick="{{ row.d.redo }}" style="width:32px; height:32px; color:var(--color-text-muted)" style-hover="background:var(--color-hover); color:var(--color-text)"><d-icon name="redo" size="18"></d-icon></button>
+            </div>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="View as" title="Shift P" style="background:var(--color-bg)">
+            <label class="seg-opt" style="padding:6px 12px"><input type="radio" name="view-{{ row.d.id }}" checked="{{ row.d.isGm }}" onChange="{{ row.d.setGm }}"><d-icon name="eye" size="16"></d-icon>GM view</label>
+            <label class="seg-opt" style="padding:6px 12px"><input type="radio" name="view-{{ row.d.id }}" checked="{{ row.d.isPlayers }}" onChange="{{ row.d.setPlayers }}"><d-icon name="eye-off" size="16"></d-icon>Players</label>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:flex-end; gap:4px; min-width:0">
+            <span role="status" title="{{ row.d.live.title }}" style="display:inline-flex; align-items:center; gap:7px; padding:0 8px; font-size:12px; white-space:nowrap; color:{{ row.d.live.fg }}"><span style="width:7px; height:7px; border-radius:50%; background:{{ row.d.live.dot }}; box-shadow:{{ row.d.live.ring }}"></span>{{ row.d.live.text }}</span>
+            <span style="width:1px; height:20px; background:var(--color-border-strong); margin:0 4px"></span>
+            <button class="btn" title="3D view · Shift 3" style="height:32px; padding:0 10px; color:var(--color-text); font-size:13px" style-hover="background:var(--color-hover)"><d-icon name="3d" size="17"></d-icon>3D</button>
+            <button class="btn btn-primary" title="Open the players' screen in a new window" style="height:32px; padding:0 12px; font-size:13px"><d-icon name="screen" size="17"></d-icon>Players' screen</button>
+            <div style="position:relative">
+              <button class="btn btn-secondary" aria-haspopup="menu" aria-expanded="{{ row.d.menuAria }}" onClick="{{ row.d.toggleMenu }}" style="height:32px; padding:0 8px 0 10px; font-size:13px; background:{{ row.d.menuBg }}"><d-icon name="download" size="17"></d-icon>Export<d-icon name="chevron-down" size="14" style="color:var(--color-text-muted)"></d-icon></button>
+              <sc-if value="{{ row.d.menuOpen }}">
+                <div role="menu" style="position:absolute; right:0; top:40px; width:300px; padding:6px; border-radius:10px; background:var(--color-surface-2); box-shadow:var(--shadow-lg); display:flex; flex-direction:column; gap:2px; z-index:50">
+                  <sc-for list="{{ row.d.exports }}" as="x">
+                    <button role="menuitem" onClick="{{ x.onClick }}" style="display:flex; align-items:flex-start; gap:10px; padding:8px 10px; border:0; border-radius:7px; background:transparent; color:var(--color-text); font:inherit; text-align:left; cursor:pointer" style-hover="background:var(--color-hover)">
+                      <d-icon name="{{ x.icon }}" size="17" style="margin-top:1px; color:var(--color-text-muted)"></d-icon>
+                      <span style="flex:1; display:flex; flex-direction:column; gap:1px"><span style="font-size:13px">{{ x.label }}</span><span style="font-size:12px; color:var(--color-text-muted)">{{ x.sub }}</span></span>
+                      <sc-if value="{{ x.hasKbd }}"><kbd style="display:inline-grid; place-items:center; height:18px; padding:0 5px; border-radius:4px; font-size:10.5px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong); white-space:nowrap">{{ x.kbd }}</kbd></sc-if>
+                    </button>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+            <span style="width:1px; height:20px; background:var(--color-border-strong); margin:0 4px"></span>
+            <button class="btn btn-icon" aria-label="Chat with Claude" aria-pressed="{{ row.d.claudeAria }}" title="Claude · Ctrl ." onClick="{{ row.d.toggleClaude }}" style="width:32px; height:32px; background:{{ row.d.claudeBtn.bg }}; color:{{ row.d.claudeBtn.fg }}; box-shadow:{{ row.d.claudeBtn.ring }}" style-hover="background:var(--color-hover)"><d-icon name="chat" size="18"></d-icon></button>
+            <span title="Mara Venn · GM" style="width:28px; height:28px; margin-left:4px; border-radius:50%; display:grid; place-items:center; background:var(--tint-accent-bg); color:var(--tint-accent-fg); font-size:11px; font-weight:600; letter-spacing:.02em">MV</span>
+          </div>
+        </div>
+
+        <div style="flex:1; min-height:0; display:flex; position:relative">
+          <nav aria-label="Tools" style="width:52px; flex:none; display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 0; background:var(--color-surface); box-shadow:inset -1px 0 0 var(--color-border); position:relative; z-index:15">
+            <sc-for list="{{ row.d.groups }}" as="g">
+              <sc-if value="{{ g.sep }}"><span style="width:24px; height:1px; background:var(--color-border-strong); margin:5px 0; flex:none"></span></sc-if>
+              <sc-for list="{{ g.tools }}" as="t">
+                <div style="position:relative">
+                  <button aria-label="{{ t.label }}" aria-keyshortcuts="{{ t.key }}" aria-pressed="{{ t.pressed }}" onClick="{{ t.onClick }}" onMouseEnter="{{ t.onEnter }}" onMouseLeave="{{ t.onLeave }}" style="width:38px; height:36px; display:grid; place-items:center; border:0; border-radius:8px; cursor:pointer; position:relative; background:{{ t.bg }}; color:{{ t.fg }}; box-shadow:{{ t.ring }}">
+                    <d-icon name="{{ t.icon }}" size="20"></d-icon>
+                    <span style="position:absolute; right:3px; bottom:2px; font-size:9px; line-height:1; font-weight:600; color:var(--color-text-faint)">{{ t.key }}</span>
+                  </button>
+                  <sc-if value="{{ t.tip }}">
+                    <div role="tooltip" style="position:absolute; left:46px; top:50%; transform:translateY(-50%); z-index:40; display:flex; align-items:center; gap:8px; padding:6px 8px 6px 10px; border-radius:7px; background:var(--color-surface-3); box-shadow:var(--shadow-md); white-space:nowrap; font-size:12px; pointer-events:none">
+                      <span>{{ t.label }}</span>
+                      <kbd style="display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:4px; font-size:10.5px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong)">{{ t.key }}</kbd>
+                      <sc-if value="{{ t.hasHint }}"><span style="color:var(--color-text-muted)">{{ t.hint }}</span></sc-if>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </sc-for>
+            <div style="flex:1"></div>
+            <button aria-label="Toggle grid" aria-pressed="{{ row.d.gridAria }}" title="Grid · Shift G" onClick="{{ row.d.toggleGrid }}" style="width:38px; height:36px; display:grid; place-items:center; border:0; border-radius:8px; cursor:pointer; background:transparent; color:{{ row.d.gridFg }}" style-hover="background:var(--color-hover)"><d-icon name="grid" size="19"></d-icon></button>
+            <button aria-label="Keyboard shortcuts" title="Shortcuts · ?" style="width:38px; height:36px; display:grid; place-items:center; border:0; border-radius:8px; cursor:pointer; background:transparent; color:var(--color-text-muted)" style-hover="background:var(--color-hover)"><d-icon name="keyboard" size="19"></d-icon></button>
+          </nav>
+
+          <main style="flex:1; min-width:0; position:relative; z-index:1; overflow:hidden; background:var(--canvas-parchment)">
+            <delve-map id="{{ row.d.mapId }}" view="{{ row.d.view }}" grid="{{ row.d.gridAttr }}" selected="{{ row.d.selAttr }}" ghost="{{ row.d.ghost }}" rough="{{ row.d.mapRough }}" fog-opacity=".72" style="position:absolute; inset:0"></delve-map>
+
+            <div style="position:absolute; top:12px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; height:40px; padding:0 6px 0 12px; border-radius:10px; background:var(--color-surface); box-shadow:var(--shadow-md); white-space:nowrap; z-index:5">
+              <span style="display:inline-flex; align-items:center; gap:7px; font-weight:500; padding-right:4px"><d-icon name="{{ row.d.tool.icon }}" size="16" style="color:var(--color-accent)"></d-icon>{{ row.d.tool.label }}</span>
+              <span style="width:1px; height:20px; background:var(--color-border-strong); margin-right:2px"></span>
+              <sc-if value="{{ row.d.ctx.hasOpts }}">
+                <div role="radiogroup" aria-label="Tool options" style="display:flex; gap:2px">
+                  <sc-for list="{{ row.d.ctx.opts }}" as="o">
+                    <button role="radio" aria-checked="{{ o.checked }}" title="{{ o.title }}" onClick="{{ o.onClick }}" style="height:30px; display:inline-flex; align-items:center; gap:6px; padding:0 8px; border:0; border-radius:6px; cursor:pointer; font:inherit; font-size:12.5px; background:{{ o.bg }}; color:{{ o.fg }}; box-shadow:{{ o.ring }}">
+                      <sc-if value="{{ o.hasDot }}"><span style="width:18px; height:18px; border-radius:50%; display:grid; place-items:center; background:{{ o.dot }}; color:{{ o.dotFg }}; box-shadow:0 0 0 1px var(--marker-ink); font-family:var(--font-numeral); font-size:12px; line-height:1">{{ o.glyph }}</span></sc-if>
+                      <sc-if value="{{ o.hasSwatch }}"><span style="width:14px; height:14px; border-radius:3px; background:{{ o.swatch }}; box-shadow:inset 0 0 0 1px rgba(43,36,29,.4)"></span></sc-if>
+                      <sc-if value="{{ o.hasIcon }}"><d-icon name="{{ o.icon }}" size="17"></d-icon></sc-if>
+                      <sc-if value="{{ o.hasLabel }}"><span>{{ o.label }}</span></sc-if>
+                      <sc-if value="{{ o.hasNum }}"><span style="font-size:10px; color:var(--color-text-faint)">{{ o.num }}</span></sc-if>
+                    </button>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-for list="{{ row.d.ctx.sliders }}" as="s">
+                <label style="display:flex; align-items:center; gap:8px; padding:0 6px; font-size:12px; color:var(--color-text-muted)">
+                  <span>{{ s.label }}</span>
+                  <div style="position:relative; height:20px; width:84px">
+                    <div style="position:absolute; left:0; right:0; top:8px; height:4px; border-radius:2px; background:var(--color-surface-3); box-shadow:inset 0 0 0 1px var(--color-border-strong)"></div>
+                    <div style="position:absolute; left:0; top:8px; height:4px; border-radius:2px; background:var(--color-accent); width:{{ s.pos }}"></div>
+                    <div style="position:absolute; top:3px; left:{{ s.pos }}; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:var(--color-surface-2); box-shadow:0 0 0 2px var(--color-accent)"></div>
+                    <input type="range" aria-label="{{ s.label }}" min="{{ s.min }}" max="{{ s.max }}" step="{{ s.step }}" value="{{ s.val }}" onChange="{{ s.onInput }}" style="position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer">
+                  </div>
+                  <span style="min-width:30px; color:var(--color-text); font-variant-numeric:tabular-nums">{{ s.display }}</span>
+                </label>
+              </sc-for>
+              <sc-if value="{{ row.d.ctx.hasHint }}"><span style="color:var(--color-text-muted); font-size:12.5px; padding:0 4px">{{ row.d.ctx.hint }}</span></sc-if>
+              <sc-for list="{{ row.d.ctx.acts }}" as="a">
+                <button class="btn btn-secondary" onClick="{{ a.onClick }}" style="height:30px; padding:0 10px; font-size:12.5px"><d-icon name="{{ a.icon }}" size="15"></d-icon>{{ a.label }}</button>
+              </sc-for>
+              <sc-for list="{{ row.d.ctx.keys }}" as="k">
+                <span style="display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--color-text-muted); padding:0 4px"><kbd style="display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 5px; border-radius:4px; font-size:10.5px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong)">{{ k.k }}</kbd>{{ k.t }}</span>
+              </sc-for>
+            </div>
+
+            <sc-if value="{{ row.d.isProp }}">
+              <aside aria-label="Prop picker" style="position:absolute; left:12px; top:12px; width:300px; height:536px; display:flex; flex-direction:column; border-radius:12px; background:var(--color-surface); box-shadow:var(--shadow-md); overflow:hidden; z-index:6">
+                <div style="display:flex; align-items:center; gap:8px; padding:12px 12px 8px 14px">
+                  <span style="font-family:var(--font-display); font-size:19px; line-height:1">Props</span>
+                  <span style="font-size:12px; color:var(--color-text-muted)">{{ row.d.propCount }}</span>
+                  <div style="flex:1"></div>
+                  <button class="btn btn-icon" aria-label="Upload a prop image" title="Upload a prop image" style="width:30px; height:30px; color:var(--color-text-muted)" style-hover="background:var(--color-hover)"><d-icon name="upload" size="16"></d-icon></button>
+                </div>
+                <div style="position:relative; padding:0 12px">
+                  <d-icon name="search" size="15" style="position:absolute; left:22px; top:9px; color:var(--color-text-muted); pointer-events:none"></d-icon>
+                  <input class="input" type="search" placeholder="Search props" value="{{ row.d.q }}" onChange="{{ row.d.setQ }}" style="min-height:32px; padding:5px 10px 5px 32px; font-size:13px; border-color:var(--color-control-border); background:var(--color-surface-2)">
+                </div>
+                <div role="tablist" aria-label="Categories" style="display:flex; flex-wrap:wrap; gap:4px; padding:10px 12px">
+                  <sc-for list="{{ row.d.cats }}" as="c">
+                    <button role="tab" aria-selected="{{ c.sel }}" onClick="{{ c.onClick }}" style="height:26px; padding:0 10px; border:0; border-radius:999px; cursor:pointer; font:inherit; font-size:12px; background:{{ c.bg }}; color:{{ c.fg }}; box-shadow:{{ c.ring }}">{{ c.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="flex:1; min-height:0; overflow:auto; padding:2px 12px 12px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; align-content:start">
+                  <sc-for list="{{ row.d.props }}" as="pr">
+                    <button aria-pressed="{{ pr.sel }}" title="{{ pr.name }}" onClick="{{ pr.onClick }}" style="display:flex; flex-direction:column; align-items:center; gap:4px; padding:0; border:0; background:none; cursor:pointer; font:inherit; color:var(--color-text-muted)">
+                      <span style="width:100%; aspect-ratio:1; display:grid; place-items:center; border-radius:8px; background:var(--canvas-floor); box-shadow:{{ pr.ring }}"><delve-prop kind="{{ pr.kind }}" size="46"></delve-prop></span>
+                      <span style="font-size:11px; color:{{ pr.fg }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%">{{ pr.name }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; padding:9px 14px; box-shadow:inset 0 1px 0 var(--color-border); font-size:12px; color:var(--color-text-muted)">
+                  <kbd style="display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:4px; font-size:10.5px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong)">Q</kbd><kbd style="display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:4px; font-size:10.5px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong)">E</kbd>rotate · now {{ row.d.rot }}°
+                </div>
+              </aside>
+            </sc-if>
+
+            <div role="group" aria-label="Storeys" style="position:absolute; left:12px; bottom:12px; display:flex; flex-direction:column; align-items:center; gap:2px; padding:4px; width:46px; border-radius:10px; background:var(--color-surface); box-shadow:var(--shadow-md); z-index:5">
+              <button aria-label="Add storey above" title="Add storey above" onClick="{{ row.d.addAbove }}" style="width:38px; height:28px; display:grid; place-items:center; border:0; border-radius:7px; cursor:pointer; background:transparent; color:var(--color-text-muted)" style-hover="background:var(--color-hover); color:var(--color-text)"><d-icon name="plus" size="15"></d-icon></button>
+              <sc-for list="{{ row.d.storeys }}" as="st">
+                <div style="position:relative">
+                  <button aria-label="{{ st.aria }}" aria-current="{{ st.current }}" onClick="{{ st.onClick }}" style="width:38px; height:34px; border:0; border-radius:7px; cursor:pointer; font-family:var(--font-numeral); font-size:17px; line-height:1; background:{{ st.bg }}; color:{{ st.fg }}; box-shadow:{{ st.ring }}">{{ st.n }}</button>
+                  <sc-if value="{{ st.active }}"><span style="position:absolute; left:48px; top:50%; transform:translateY(-50%); white-space:nowrap; font-size:12px; padding:4px 8px; border-radius:6px; background:var(--color-surface); box-shadow:var(--shadow-sm)">{{ st.name }}</span></sc-if>
+                </div>
+              </sc-for>
+              <button aria-label="Add storey below" title="Add storey below" onClick="{{ row.d.addBelow }}" style="width:38px; height:28px; display:grid; place-items:center; border:0; border-radius:7px; cursor:pointer; background:transparent; color:var(--color-text-muted)" style-hover="background:var(--color-hover); color:var(--color-text)"><d-icon name="plus" size="15"></d-icon></button>
+              <span style="font-size:9.5px; color:var(--color-text-faint); padding:2px 0 1px">PgUp/Dn</span>
+            </div>
+
+            <div style="position:absolute; right:12px; bottom:12px; display:flex; align-items:center; gap:2px; padding:4px; border-radius:10px; background:var(--color-surface); box-shadow:var(--shadow-md); z-index:5">
+              <button aria-label="Zoom out" title="Zoom out · −" onClick="{{ row.d.zoomOut }}" style="width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:7px; cursor:pointer; background:transparent; color:var(--color-text-muted)" style-hover="background:var(--color-hover); color:var(--color-text)"><d-icon name="zoom-out" size="18"></d-icon></button>
+              <span aria-live="polite" style="min-width:46px; text-align:center; font-size:12px; font-variant-numeric:tabular-nums">{{ row.d.zoomPct }}</span>
+              <button aria-label="Zoom in" title="Zoom in · +" onClick="{{ row.d.zoomIn }}" style="width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:7px; cursor:pointer; background:transparent; color:var(--color-text-muted)" style-hover="background:var(--color-hover); color:var(--color-text)"><d-icon name="zoom-in" size="18"></d-icon></button>
+              <span style="width:1px; height:18px; background:var(--color-border-strong); margin:0 2px"></span>
+              <button aria-label="Fit map" title="Fit · Ctrl 0" onClick="{{ row.d.zoomFit }}" style="width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:7px; cursor:pointer; background:transparent; color:var(--color-text-muted)" style-hover="background:var(--color-hover); color:var(--color-text)"><d-icon name="fit" size="18"></d-icon></button>
+            </div>
+
+            <div style="position:absolute; left:50%; bottom:16px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:8px; z-index:7">
+              <sc-if value="{{ row.d.hasToast }}">
+                <div role="status" style="display:flex; align-items:center; gap:10px; max-width:560px; padding:7px 7px 7px 12px; border-radius:10px; background:var(--color-surface-2); box-shadow:var(--shadow-lg); font-size:13px; white-space:nowrap">
+                  <d-icon name="{{ row.d.toast.icon }}" size="17" style="color:{{ row.d.toast.fg }}"></d-icon>
+                  <span>{{ row.d.toast.text }}</span>
+                  <sc-if value="{{ row.d.toast.hasAction }}"><button class="btn btn-ghost" onClick="{{ row.d.toast.onAction }}" style="height:28px; padding:0 8px; font-size:13px">{{ row.d.toast.action }}</button></sc-if>
+                  <button aria-label="Dismiss" onClick="{{ row.d.toast.close }}" style="width:28px; height:28px; display:grid; place-items:center; border:0; border-radius:6px; cursor:pointer; background:transparent; color:var(--color-text-muted)" style-hover="background:var(--color-hover)"><d-icon name="x" size="15"></d-icon></button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ row.d.isPlayers }}">
+                <div style="display:flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; background:var(--color-surface); box-shadow:var(--shadow-md); font-size:12.5px; white-space:nowrap"><d-icon name="eye-off" size="15" style="color:var(--color-accent)"></d-icon>Players' view: markers and secret doors hidden, unexplored rooms fogged<kbd style="display:inline-grid; place-items:center; height:18px; padding:0 5px; border-radius:4px; font-size:10.5px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong)">Shift P</kbd></div>
+              </sc-if>
+            </div>
+          </main>
+
+          <aside aria-label="Properties" style="width:288px; flex:none; display:flex; flex-direction:column; background:var(--color-surface); box-shadow:inset 1px 0 0 var(--color-border); min-height:0">
+            <div role="tablist" style="height:40px; flex:none; display:flex; align-items:stretch; gap:18px; padding:0 16px; box-shadow:inset 0 -1px 0 var(--color-border)">
+              <button role="tab" aria-selected="{{ row.d.tabI.sel }}" onClick="{{ row.d.tabI.onClick }}" style="border:0; background:none; padding:0 1px; font:inherit; font-size:13px; cursor:pointer; color:{{ row.d.tabI.fg }}; box-shadow:{{ row.d.tabI.bar }}">Inspector</button>
+              <button role="tab" aria-selected="{{ row.d.tabM.sel }}" onClick="{{ row.d.tabM.onClick }}" style="border:0; background:none; padding:0 1px; font:inherit; font-size:13px; cursor:pointer; color:{{ row.d.tabM.fg }}; box-shadow:{{ row.d.tabM.bar }}">Map settings</button>
+            </div>
+            <div style="flex:1; overflow:auto; min-height:0">
+
+              <sc-if value="{{ row.d.showInspector }}">
+                <div style="padding:14px 16px 18px; display:flex; flex-direction:column; gap:14px">
+                  <div style="display:flex; align-items:flex-start; gap:10px">
+                    <span style="width:34px; height:34px; flex:none; display:grid; place-items:center; border-radius:8px; background:var(--canvas-floor); color:var(--canvas-ink); font-family:var(--font-numeral); font-size:19px; box-shadow:inset 0 0 0 1.5px var(--canvas-ink)">3</span>
+                    <div style="flex:1; min-width:0">
+                      <div style="font-size:11px; color:var(--color-text-muted); letter-spacing:.06em; text-transform:uppercase">Room · storey 0</div>
+                      <div style="font-family:var(--font-display); font-size:21px; line-height:1.15">Chapter house</div>
+                    </div>
+                    <button class="btn btn-icon" aria-label="Lock" title="Lock · Ctrl L" style="width:30px; height:30px; color:var(--color-text-muted)" style-hover="background:var(--color-hover)"><d-icon name="unlock" size="16"></d-icon></button>
+                  </div>
+                  <div class="field"><label>Shape</label>
+                    <div role="radiogroup" aria-label="Shape" style="display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:2px; padding:2px; border-radius:8px; box-shadow:inset 0 0 0 1px var(--color-border-strong)">
+                      <sc-for list="{{ row.d.shapes }}" as="sh">
+                        <button role="radio" aria-checked="{{ sh.checked }}" title="{{ sh.title }}" onClick="{{ sh.onClick }}" style="height:28px; display:grid; place-items:center; border:0; border-radius:6px; cursor:pointer; background:{{ sh.bg }}; color:{{ sh.fg }}; box-shadow:{{ sh.ring }}"><d-icon name="{{ sh.icon }}" size="16"></d-icon></button>
+                      </sc-for>
+                    </div>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px">
+                    <sc-for list="{{ row.d.dims }}" as="f">
+                      <div class="field"><label>{{ f.label }}</label>
+                        <div style="position:relative"><input class="input" defaultValue="{{ f.val }}" inputMode="decimal" style="min-height:30px; padding:4px 30px 4px 9px; font-size:13px; border-color:var(--color-control-border); font-variant-numeric:tabular-nums"><span style="position:absolute; right:9px; top:7px; font-size:11.5px; color:var(--color-text-muted)">{{ f.unit }}</span></div>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <sc-for list="{{ row.d.inspSliders }}" as="s">
+                    <div style="display:flex; flex-direction:column; gap:6px">
+                      <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:color-mix(in srgb, var(--color-text) 70%, transparent)">
+                        <span style="flex:1">{{ s.label }}</span>
+                        <sc-if value="{{ s.hasKeys }}"><span style="font-size:11px; color:var(--color-text-faint)">{{ s.keys }}</span></sc-if>
+                        <span style="min-width:40px; text-align:right; padding:2px 6px; border-radius:5px; background:var(--color-surface-2); box-shadow:inset 0 0 0 1px var(--color-border-strong); color:var(--color-text); font-variant-numeric:tabular-nums">{{ s.display }}</span>
+                      </div>
+                      <div style="position:relative; height:20px">
+                        <div style="position:absolute; left:0; right:0; top:8px; height:4px; border-radius:2px; background:var(--color-surface-3); box-shadow:inset 0 0 0 1px var(--color-border-strong)"></div>
+                        <div style="position:absolute; left:0; top:8px; height:4px; border-radius:2px; background:var(--color-accent); width:{{ s.pos }}"></div>
+                        <div style="position:absolute; top:3px; left:{{ s.pos }}; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:var(--color-surface-2); box-shadow:0 0 0 2px var(--color-accent), 0 1px 3px rgba(0,0,0,.25)"></div>
+                        <input type="range" aria-label="{{ s.label }}" min="{{ s.min }}" max="{{ s.max }}" step="{{ s.step }}" value="{{ s.val }}" onChange="{{ s.onInput }}" style="position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer">
+                      </div>
+                    </div>
+                  </sc-for>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+                    <div class="field"><label>Walls</label><div style="position:relative"><select class="input" style="appearance:none; min-height:30px; padding:4px 26px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><option>Ink, hatched</option><option>Ink, plain</option><option>Rubble</option><option>Cave</option></select><d-icon name="chevron-down" size="14" style="position:absolute; right:8px; top:8px; color:var(--color-text-muted); pointer-events:none"></d-icon></div></div>
+                    <div class="field"><label>Floor</label><div style="position:relative"><select class="input" style="appearance:none; min-height:30px; padding:4px 26px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><option>Flagstone</option><option>Plain</option><option>Boards</option><option>Earth</option></select><d-icon name="chevron-down" size="14" style="position:absolute; right:8px; top:8px; color:var(--color-text-muted); pointer-events:none"></d-icon></div></div>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:6px">
+                    <sc-for list="{{ row.d.checks }}" as="cb">
+                      <button role="checkbox" aria-checked="{{ cb.aria }}" onClick="{{ cb.toggle }}" style="display:flex; align-items:center; gap:9px; border:0; background:none; padding:3px 0; font:inherit; font-size:13px; color:var(--color-text); cursor:pointer; text-align:left">
+                        <span style="width:16px; height:16px; flex:none; display:grid; place-items:center; border-radius:4px; background:{{ cb.bg }}; box-shadow:{{ cb.ring }}; color:var(--color-bg)"><sc-if value="{{ cb.checked }}"><d-icon name="check" size="12" stroke="2.8"></d-icon></sc-if></span>
+                        <span style="flex:1">{{ cb.label }}</span>
+                        <span style="font-size:11px; color:var(--color-text-faint)">{{ cb.kbd }}</span>
+                      </button>
+                    </sc-for>
+                  </div>
+                  <div class="field"><label>GM note · only you see this</label><textarea class="input" defaultValue="Six chairs, one cracked. The bell rope is frayed: DC 12 to ring it without it snapping." style="min-height:68px; font-size:13px; padding:7px 9px; border-color:var(--color-control-border); line-height:1.45"></textarea></div>
+                  <div style="display:flex; gap:8px; padding-top:2px">
+                    <button class="btn btn-secondary" style="flex:1; height:32px; font-size:13px"><d-icon name="copy" size="15"></d-icon>Duplicate<span style="font-size:11px; color:var(--color-text-faint)">Ctrl D</span></button>
+                    <button class="btn" onClick="{{ row.d.del }}" style="flex:1; height:32px; font-size:13px; color:var(--color-danger); border-color:color-mix(in srgb, var(--color-danger) 70%, transparent)" style-hover="background:color-mix(in srgb, var(--color-danger) 12%, transparent)"><d-icon name="trash" size="15"></d-icon>Delete<span style="font-size:11px; opacity:.8">Del</span></button>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ row.d.showEmpty }}">
+                <div style="padding:40px 24px; display:flex; flex-direction:column; align-items:flex-start; gap:8px">
+                  <d-icon name="select" size="22" style="color:var(--color-text-faint)"></d-icon>
+                  <div style="font-family:var(--font-display); font-size:19px">Nothing selected</div>
+                  <p style="margin:0; font-size:13px; color:var(--color-text-muted); line-height:1.5; text-wrap:pretty">Click a room, door or prop with Select (V) to edit it here. Shift-click adds to the selection.</p>
+                  <button class="btn btn-ghost" onClick="{{ row.d.selectRoom }}" style="font-size:13px; padding-left:0">Select Room 3</button>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ row.d.showMap }}">
+                <div style="padding:14px 16px 18px; display:flex; flex-direction:column; gap:18px">
+                  <div style="display:flex; flex-direction:column; gap:8px">
+                    <span style="font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-muted)">Style preset</span>
+                    <div role="radiogroup" style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px">
+                      <sc-for list="{{ row.d.presets }}" as="ps">
+                        <button role="radio" aria-checked="{{ ps.checked }}" onClick="{{ ps.onClick }}" style="display:flex; flex-direction:column; gap:6px; padding:0; border:0; background:none; cursor:pointer; font:inherit; font-size:12px; color:{{ ps.fg }}; text-align:left">
+                          <span style="width:100%; height:56px; border-radius:8px; display:grid; place-items:center; background:{{ ps.paper }}; box-shadow:{{ ps.ring }}"><span style="width:34px; height:26px; background:var(--canvas-floor); outline:{{ ps.wall }}; box-shadow:{{ ps.hatch }}"></span></span>
+                          {{ ps.label }}
+                        </button>
+                      </sc-for>
+                    </div>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:10px">
+                    <span style="font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-muted)">Grid</span>
+                    <sc-for list="{{ row.d.mapChecks }}" as="cb">
+                      <button role="checkbox" aria-checked="{{ cb.aria }}" onClick="{{ cb.toggle }}" style="display:flex; align-items:center; gap:9px; border:0; background:none; padding:2px 0; font:inherit; font-size:13px; color:var(--color-text); cursor:pointer; text-align:left">
+                        <span style="width:16px; height:16px; flex:none; display:grid; place-items:center; border-radius:4px; background:{{ cb.bg }}; box-shadow:{{ cb.ring }}; color:var(--color-bg)"><sc-if value="{{ cb.checked }}"><d-icon name="check" size="12" stroke="2.8"></d-icon></sc-if></span>
+                        <span style="flex:1">{{ cb.label }}</span>
+                        <span style="font-size:11px; color:var(--color-text-faint)">{{ cb.kbd }}</span>
+                      </button>
+                    </sc-for>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+                      <div class="field"><label>Square</label><div style="position:relative"><select class="input" style="appearance:none; min-height:30px; padding:4px 26px 4px 9px; font-size:13px; border-color:var(--color-control-border)"><option>5 ft</option><option>10 ft</option><option>1.5 m</option></select><d-icon name="chevron-down" size="14" style="position:absolute; right:8px; top:8px; color:var(--color-text-muted); pointer-events:none"></d-icon></div></div>
+                      <div class="field"><label>Lines</label>
+                        <div class="seg" style="display:flex">
+                          <label class="seg-opt" style="flex:1; justify-content:center; padding:5px 8px"><input type="radio" name="gs-{{ row.d.id }}" defaultChecked="{{ true }}">Lines</label>
+                          <label class="seg-opt" style="flex:1; justify-content:center; padding:5px 8px"><input type="radio" name="gs-{{ row.d.id }}">Dots</label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <sc-for list="{{ row.d.mapSliders }}" as="s">
+                    <div style="display:flex; flex-direction:column; gap:6px">
+                      <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:color-mix(in srgb, var(--color-text) 70%, transparent)">
+                        <span style="flex:1">{{ s.label }}</span>
+                        <span style="min-width:40px; text-align:right; padding:2px 6px; border-radius:5px; background:var(--color-surface-2); box-shadow:inset 0 0 0 1px var(--color-border-strong); color:var(--color-text); font-variant-numeric:tabular-nums">{{ s.display }}</span>
+                      </div>
+                      <div style="position:relative; height:20px">
+                        <div style="position:absolute; left:0; right:0; top:8px; height:4px; border-radius:2px; background:var(--color-surface-3); box-shadow:inset 0 0 0 1px var(--color-border-strong)"></div>
+                        <div style="position:absolute; left:0; top:8px; height:4px; border-radius:2px; background:var(--color-accent); width:{{ s.pos }}"></div>
+                        <div style="position:absolute; top:3px; left:{{ s.pos }}; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:var(--color-surface-2); box-shadow:0 0 0 2px var(--color-accent), 0 1px 3px rgba(0,0,0,.25)"></div>
+                        <input type="range" aria-label="{{ s.label }}" min="{{ s.min }}" max="{{ s.max }}" step="{{ s.step }}" value="{{ s.val }}" onChange="{{ s.onInput }}" style="position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer">
+                      </div>
+                    </div>
+                  </sc-for>
+                  <div class="field"><label>Units</label>
+                    <div class="seg" style="display:flex">
+                      <label class="seg-opt" style="flex:1; justify-content:center; padding:5px 8px"><input type="radio" name="u-{{ row.d.id }}" defaultChecked="{{ true }}">Feet</label>
+                      <label class="seg-opt" style="flex:1; justify-content:center; padding:5px 8px"><input type="radio" name="u-{{ row.d.id }}">Metres</label>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </aside>
+
+          <sc-if value="{{ row.d.claudeOpen }}">
+            <aside aria-label="Claude" style="width:344px; flex:none; display:flex; flex-direction:column; background:var(--color-surface); box-shadow:inset 1px 0 0 var(--color-border); min-height:0">
+              <div style="height:40px; flex:none; display:flex; align-items:center; gap:8px; padding:0 8px 0 16px; box-shadow:inset 0 -1px 0 var(--color-border)">
+                <span style="font-family:var(--font-display); font-size:19px; line-height:1">Claude</span>
+                <span class="tag" style="gap:6px; padding:2px 8px; background:var(--tint-accent-bg); color:var(--tint-accent-fg)"><span style="width:6px; height:6px; border-radius:50%; background:var(--color-accent)"></span>Editing live</span>
+                <div style="flex:1"></div>
+                <button class="btn btn-icon" aria-label="Collapse Claude" title="Collapse · Ctrl ." onClick="{{ row.d.toggleClaude }}" style="width:30px; height:30px; color:var(--color-text-muted)" style-hover="background:var(--color-hover)"><d-icon name="chevron-right" size="17"></d-icon></button>
+              </div>
+              <div style="flex:1; min-height:0; overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:16px">
+                <div style="align-self:center; font-size:11.5px; color:var(--color-text-faint)">Claude joined through the map API · 14:02</div>
+                <div style="display:flex; gap:10px">
+                  <span style="width:24px; height:24px; flex:none; border-radius:50%; display:grid; place-items:center; background:var(--tint-accent-bg); color:var(--tint-accent-fg); font-size:10px; font-weight:600">MV</span>
+                  <div style="display:flex; flex-direction:column; gap:3px; min-width:0"><span style="font-size:12px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Mara</span> · 14:03</span><span style="text-wrap:pretty; line-height:1.5">Make the chapter house an octagon and give it a round table with six chairs.</span></div>
+                </div>
+                <div style="display:flex; gap:10px">
+                  <span style="width:24px; height:24px; flex:none; border-radius:50%; display:grid; place-items:center; box-shadow:inset 0 0 0 1.5px var(--color-accent); color:var(--color-accent); font-family:var(--font-display); font-size:14px">C</span>
+                  <div style="display:flex; flex-direction:column; gap:8px; min-width:0; flex:1">
+                    <span style="font-size:12px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Claude</span> · 14:03</span>
+                    <span style="text-wrap:pretty; line-height:1.5">Done. Room 3 is now a 9 × 9 octagon. The west door stays where it was, and a round table with six chairs sits in the middle.</span>
+                    <div style="display:flex; flex-direction:column; gap:1px; border-radius:8px; overflow:hidden; box-shadow:inset 0 0 0 1px var(--color-border-strong)">
+                      <div style="display:flex; align-items:center; gap:8px; padding:7px 10px; font-size:12px"><d-icon name="shape-octagon" size="15" style="color:var(--color-text-muted)"></d-icon><span style="flex:1">Room 3 · rectangle → octagon</span></div>
+                      <div style="display:flex; align-items:center; gap:8px; padding:7px 10px; font-size:12px; box-shadow:inset 0 1px 0 var(--color-border)"><d-icon name="prop" size="15" style="color:var(--color-text-muted)"></d-icon><span style="flex:1">+ 7 props · round table, 6 chairs</span></div>
+                    </div>
+                    <div style="display:flex; gap:4px"><button class="btn btn-ghost" onClick="{{ row.d.selectRoom }}" style="font-size:12.5px; padding:3px 6px">Show on map</button><button class="btn btn-ghost" style="font-size:12.5px; padding:3px 6px">Undo these 2 changes</button></div>
+                  </div>
+                </div>
+                <div style="display:flex; gap:10px">
+                  <span style="width:24px; height:24px; flex:none; border-radius:50%; display:grid; place-items:center; background:var(--tint-accent-bg); color:var(--tint-accent-fg); font-size:10px; font-weight:600">MV</span>
+                  <div style="display:flex; flex-direction:column; gap:3px; min-width:0"><span style="font-size:12px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Mara</span> · 14:05</span><span style="text-wrap:pretty; line-height:1.5">Put a needle trap in the corridor to the sacristy, and scatter a few bones.</span></div>
+                </div>
+                <div style="display:flex; gap:10px">
+                  <span style="width:24px; height:24px; flex:none; border-radius:50%; display:grid; place-items:center; box-shadow:inset 0 0 0 1.5px var(--color-accent); color:var(--color-accent); font-family:var(--font-display); font-size:14px">C</span>
+                  <div style="display:flex; flex-direction:column; gap:8px; min-width:0; flex:1">
+                    <span style="font-size:12px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Claude</span> · working</span>
+                    <div style="display:flex; flex-direction:column; gap:5px; font-size:12.5px">
+                      <span style="display:flex; align-items:center; gap:8px"><d-icon name="check" size="14" style="color:var(--color-accent)"></d-icon>Trap marker in corridor 3 → 5</span>
+                      <span style="display:flex; align-items:center; gap:8px; color:var(--color-text-muted)"><span style="width:14px; display:flex; justify-content:center; gap:2px"><span style="width:3px; height:3px; border-radius:50%; background:currentColor"></span><span style="width:3px; height:3px; border-radius:50%; background:currentColor; opacity:.6"></span><span style="width:3px; height:3px; border-radius:50%; background:currentColor; opacity:.3"></span></span>Placing bones, 1 of 3</span>
+                    </div>
+                    <button class="btn btn-secondary" style="align-self:flex-start; height:28px; padding:0 10px; font-size:12.5px"><d-icon name="stop" size="14"></d-icon>Stop<span style="font-size:11px; color:var(--color-text-faint)">Esc</span></button>
+                  </div>
+                </div>
+              </div>
+              <div style="flex:none; padding:12px 12px 14px; box-shadow:inset 0 1px 0 var(--color-border); display:flex; flex-direction:column; gap:8px">
+                <textarea class="input" aria-label="Message Claude" placeholder="Ask Claude to change the map" value="{{ row.d.draft }}" onChange="{{ row.d.setDraft }}" style="min-height:58px; font-size:13px; padding:8px 10px; resize:none; border-color:var(--color-control-border); background:var(--color-surface-2)"></textarea>
+                <div style="display:flex; align-items:center; gap:8px">
+                  <span style="flex:1; font-size:11.5px; color:var(--color-text-muted); line-height:1.35">Each reply is one undo step. <kbd style="display:inline-grid; place-items:center; height:16px; padding:0 4px; border-radius:4px; font-size:10px; color:var(--color-text-muted); background:var(--color-bg); box-shadow:0 0 0 1px var(--color-border-strong)">/</kbd> focuses chat</span>
+                  <button class="btn btn-primary" aria-label="Send" title="Send · Enter" style="height:30px; padding:0 12px; font-size:13px"><d-icon name="send" size="15"></d-icon>Send</button>
+                </div>
+              </div>
+            </aside>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:baseline; gap:14px">
+        <span style="font-size:13px; letter-spacing:.1em; text-transform:uppercase; color:var(--color-text)">{{ row.p.label }}</span>
+        <span style="font-size:13px; color:var(--color-text-muted)">{{ row.p.note }}</span>
+      </div>
+      <sc-if value="{{ row.first }}"><div style="height:22px"></div></sc-if>
+      <div data-theme="{{ row.p.theme }}" data-screen-label="{{ row.p.label }}" onMouseDown="{{ row.p.activate }}" style="width:390px; height:844px; position:relative; overflow:hidden; border-radius:46px; background:var(--color-bg); color:var(--color-text); font-family:var(--font-ui); font-size:15px; line-height:1.4; box-shadow:0 0 0 9px #050608, 0 0 0 10px #2E3038, 0 30px 80px rgba(0,0,0,.5)">
+        <delve-map id="{{ row.p.mapId }}" view="{{ row.p.view }}" selected="{{ row.p.selAttr }}" focus="{{ row.p.focus }}" focus-at="{{ row.p.focusAt }}" zoom="{{ row.p.zoom }}" fog-opacity=".72" style="position:absolute; inset:0"></delve-map>
+
+        <div style="position:absolute; left:0; right:0; top:0; z-index:10; background:var(--color-surface); box-shadow:inset 0 -1px 0 var(--color-border)">
+          <div style="height:46px; display:flex; align-items:flex-end; justify-content:space-between; padding:0 30px 8px 34px; font-size:15px; font-weight:600">
+            <span>9:41</span>
+            <span style="display:flex; align-items:center; gap:3px"><span style="width:22px; height:11px; border-radius:3px; box-shadow:inset 0 0 0 1.2px var(--color-text-muted); padding:2px; display:flex"><span style="width:70%; background:var(--color-text); border-radius:1px"></span></span></span>
+          </div>
+          <div style="height:52px; display:flex; align-items:center; gap:0; padding:0 4px">
+            <button aria-label="Back to library" style="width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:10px; background:transparent; color:var(--color-text)"><d-icon name="chevron-left" size="22"></d-icon></button>
+            <div style="flex:1; min-width:0">
+              <div style="font-family:var(--font-display); font-size:19px; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">The Sunken Abbey</div>
+              <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--color-text-muted)"><span style="width:6px; height:6px; border-radius:50%; background:var(--color-accent)"></span>Live · saved</div>
+            </div>
+            <button aria-label="Storey 0, change storey" style="width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:10px; background:transparent"><span style="width:30px; height:30px; display:grid; place-items:center; border-radius:8px; box-shadow:inset 0 0 0 1px var(--color-accent); color:var(--color-accent); font-family:var(--font-numeral); font-size:17px">0</span></button>
+            <button aria-label="Undo" style="width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:10px; background:transparent; color:var(--color-text-muted)"><d-icon name="undo" size="21"></d-icon></button>
+            <button aria-label="Redo" style="width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:10px; background:transparent; color:var(--color-text-muted)"><d-icon name="redo" size="21"></d-icon></button>
+            <button aria-label="More: export, 3D, players' screen, settings" style="width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:10px; background:transparent; color:var(--color-text-muted)"><d-icon name="more" size="22"></d-icon></button>
+          </div>
+        </div>
+
+        <div class="seg" role="radiogroup" aria-label="View as" style="position:absolute; top:110px; right:12px; z-index:8; background:var(--color-surface); box-shadow:var(--shadow-md)">
+          <label class="seg-opt" style="min-height:40px; padding:0 12px; font-size:13px"><input type="radio" name="pview-{{ row.p.id }}" checked="{{ row.p.isGm }}" onChange="{{ row.p.setGm }}"><d-icon name="eye" size="17"></d-icon>GM</label>
+          <label class="seg-opt" style="min-height:40px; padding:0 12px; font-size:13px"><input type="radio" name="pview-{{ row.p.id }}" checked="{{ row.p.isPlayers }}" onChange="{{ row.p.setPlayers }}"><d-icon name="eye-off" size="17"></d-icon>Players</label>
+        </div>
+
+        <sc-if value="{{ row.p.sheetInspector }}">
+          <section aria-label="Inspector" style="position:absolute; left:0; right:0; bottom:80px; z-index:9; border-radius:18px 18px 0 0; background:var(--color-surface); box-shadow:var(--shadow-lg); padding:8px 16px 16px; display:flex; flex-direction:column; gap:14px">
+            <span style="align-self:center; width:36px; height:5px; border-radius:3px; background:var(--color-border-strong)"></span>
+            <div style="display:flex; align-items:center; gap:12px">
+              <span style="width:38px; height:38px; flex:none; display:grid; place-items:center; border-radius:9px; background:var(--canvas-floor); color:var(--canvas-ink); font-family:var(--font-numeral); font-size:21px; box-shadow:inset 0 0 0 1.5px var(--canvas-ink)">3</span>
+              <div style="flex:1; min-width:0"><div style="font-family:var(--font-display); font-size:22px; line-height:1.1">Chapter house</div><div style="font-size:13px; color:var(--color-text-muted)">Octagon · 9 × 9 squares</div></div>
+              <button aria-label="Close inspector" onClick="{{ row.p.closeSheet }}" style="width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:10px; background:var(--color-surface-2); color:var(--color-text-muted)"><d-icon name="x" size="19"></d-icon></button>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px">
+              <button class="btn btn-secondary" style="height:48px; flex-direction:column; gap:2px; font-size:11.5px; padding:0"><d-icon name="rotate-ccw" size="19"></d-icon>Rotate</button>
+              <button class="btn btn-secondary" style="height:48px; flex-direction:column; gap:2px; font-size:11.5px; padding:0"><d-icon name="rotate" size="19"></d-icon>Rotate</button>
+              <button class="btn btn-secondary" style="height:48px; flex-direction:column; gap:2px; font-size:11.5px; padding:0"><d-icon name="copy" size="19"></d-icon>Duplicate</button>
+              <button class="btn" style="height:48px; flex-direction:column; gap:2px; font-size:11.5px; padding:0; color:var(--color-danger); border-color:color-mix(in srgb, var(--color-danger) 70%, transparent)"><d-icon name="trash" size="19"></d-icon>Delete</button>
+            </div>
+            <sc-for list="{{ row.p.sliders }}" as="s">
+              <div style="display:flex; align-items:center; gap:12px; min-height:44px">
+                <span style="width:86px; font-size:14px">{{ s.label }}</span>
+                <div style="position:relative; height:44px; flex:1">
+                  <div style="position:absolute; left:0; right:0; top:20px; height:4px; border-radius:2px; background:var(--color-surface-3); box-shadow:inset 0 0 0 1px var(--color-border-strong)"></div>
+                  <div style="position:absolute; left:0; top:20px; height:4px; border-radius:2px; background:var(--color-accent); width:{{ s.pos }}"></div>
+                  <div style="position:absolute; top:11px; left:{{ s.pos }}; width:22px; height:22px; margin-left:-11px; border-radius:50%; background:var(--color-surface-2); box-shadow:0 0 0 2px var(--color-accent), 0 1px 4px rgba(0,0,0,.3)"></div>
+                  <input type="range" aria-label="{{ s.label }}" min="{{ s.min }}" max="{{ s.max }}" step="{{ s.step }}" value="{{ s.val }}" onChange="{{ s.onInput }}" style="position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0">
+                </div>
+                <span style="width:44px; text-align:right; font-size:14px; font-variant-numeric:tabular-nums">{{ s.display }}</span>
+              </div>
+            </sc-for>
+            <button role="switch" aria-checked="{{ row.p.hidden.aria }}" onClick="{{ row.p.hidden.toggle }}" style="display:flex; align-items:center; gap:12px; min-height:44px; border:0; background:none; padding:0; font:inherit; font-size:14px; color:var(--color-text); text-align:left">
+              <span style="flex:1">Hidden from players</span>
+              <span style="width:44px; height:26px; border-radius:13px; padding:3px; display:flex; justify-content:{{ row.p.hidden.justify }}; background:{{ row.p.hidden.track }}; box-shadow:{{ row.p.hidden.ring }}"><span style="width:20px; height:20px; border-radius:50%; background:{{ row.p.hidden.knob }}"></span></span>
+            </button>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ row.p.sheetClaude }}">
+          <section aria-label="Claude" style="position:absolute; left:0; right:0; top:196px; bottom:80px; z-index:9; border-radius:18px 18px 0 0; background:var(--color-surface); box-shadow:var(--shadow-lg); display:flex; flex-direction:column">
+            <span style="align-self:center; width:36px; height:5px; border-radius:3px; background:var(--color-border-strong); margin-top:8px"></span>
+            <div style="display:flex; align-items:center; gap:10px; padding:6px 8px 8px 18px">
+              <span style="font-family:var(--font-display); font-size:22px; line-height:1">Claude</span>
+              <span class="tag" style="gap:6px; padding:2px 8px; background:var(--tint-accent-bg); color:var(--tint-accent-fg)"><span style="width:6px; height:6px; border-radius:50%; background:var(--color-accent)"></span>Editing live</span>
+              <div style="flex:1"></div>
+              <button aria-label="Close Claude" onClick="{{ row.p.closeSheet }}" style="width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:10px; background:transparent; color:var(--color-text-muted)"><d-icon name="chevron-down" size="22"></d-icon></button>
+            </div>
+            <div style="flex:1; min-height:0; overflow:auto; padding:6px 18px 12px; display:flex; flex-direction:column; gap:16px; font-size:15px">
+              <div style="display:flex; flex-direction:column; gap:3px"><span style="font-size:13px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Mara</span> · 14:12</span><span style="line-height:1.5; text-wrap:pretty">Add a storey below with a flooded crypt, reachable from the sacristy stairs.</span></div>
+              <div style="display:flex; flex-direction:column; gap:8px"><span style="font-size:13px; color:var(--color-text-muted)"><span style="color:var(--color-text); font-weight:500">Claude</span> · 14:12</span><span style="line-height:1.5; text-wrap:pretty">Added storey −1, “Flooded crypt”: four rooms, ankle-deep water, and the stairs from Room 5 linked to it.</span>
+                <div style="display:flex; gap:8px"><button class="btn btn-secondary" style="min-height:44px; padding:0 14px; font-size:14px">Go to storey −1</button><button class="btn btn-ghost" style="min-height:44px; padding:0 10px; font-size:14px">Undo</button></div>
+              </div>
+            </div>
+            <div style="padding:10px 12px 12px; box-shadow:inset 0 1px 0 var(--color-border); display:flex; gap:8px; align-items:flex-end">
+              <textarea class="input" aria-label="Message Claude" placeholder="Ask Claude to change the map" value="{{ row.p.draft }}" onChange="{{ row.p.setDraft }}" style="min-height:44px; height:44px; font-size:16px; padding:10px 12px; resize:none; border-color:var(--color-control-border); background:var(--color-surface-2)"></textarea>
+              <button class="btn btn-primary" aria-label="Send" style="width:44px; height:44px; padding:0; flex:none"><d-icon name="send" size="19"></d-icon></button>
+            </div>
+          </section>
+        </sc-if>
+
+        <div style="position:absolute; left:0; right:0; bottom:0; z-index:10; padding:6px 0 22px; background:var(--color-surface); box-shadow:inset 0 1px 0 var(--color-border); display:flex; align-items:center">
+          <div role="toolbar" aria-label="Tools" style="flex:1; min-width:0; display:flex; gap:2px; overflow-x:auto; padding:0 6px 0 8px; scrollbar-width:none">
+            <sc-for list="{{ row.p.tools }}" as="t">
+              <button aria-label="{{ t.label }}" aria-pressed="{{ t.pressed }}" onClick="{{ t.onClick }}" style="flex:none; width:54px; height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:0; border-radius:10px; cursor:pointer; font:inherit; font-size:10.5px; background:{{ t.bg }}; color:{{ t.fg }}; box-shadow:{{ t.ring }}"><d-icon name="{{ t.icon }}" size="22"></d-icon>{{ t.short }}</button>
+            </sc-for>
+          </div>
+          <span style="width:1px; height:32px; background:var(--color-border-strong); flex:none"></span>
+          <button aria-label="Claude" aria-pressed="{{ row.p.claudeBtn.pressed }}" onClick="{{ row.p.toggleClaude }}" style="flex:none; width:58px; height:52px; margin:0 6px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:0; border-radius:10px; cursor:pointer; font:inherit; font-size:10.5px; background:{{ row.p.claudeBtn.bg }}; color:{{ row.p.claudeBtn.fg }}; box-shadow:{{ row.p.claudeBtn.ring }}"><d-icon name="chat" size="22"></d-icon>Claude</button>
+          <span style="position:absolute; left:50%; bottom:7px; width:134px; height:5px; margin-left:-67px; border-radius:3px; background:var(--color-text); opacity:.85"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-for>
+
+  <section aria-label="Annotations" style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:48px; max-width:1894px; padding-top:8px">
+    <div style="display:flex; flex-direction:column; gap:14px">
+      <h2 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:28px; letter-spacing:0">Layout grid</h2>
+      <div style="display:flex; flex-direction:column; gap:10px; font-size:14px; line-height:1.55; color:var(--color-text-muted)">
+        <p style="margin:0"><span style="color:var(--color-text)">4 px base, 8 px rhythm.</span> Spacing runs 3 · 6 · 8 · 12 · 16 · 20 · 24 · 32 · 48. That is Nocturne's 0.7× density, rounded to whole pixels.</p>
+        <p style="margin:0"><span style="color:var(--color-text)">Desktop editor:</span> top bar 48 · tool rail 52 · canvas fluid (min 560) · inspector 288 · Claude 344. Floating canvas controls sit 12 px in from the canvas edge and never cover more than a third of it.</p>
+        <p style="margin:0"><span style="color:var(--color-text)">Controls:</span> 28 / 32 / 36 px on desktop. Tool buttons are 38 × 36. Every touch target is at least 44 × 44.</p>
+        <p style="margin:0"><span style="color:var(--color-text)">Phone:</span> status 46 + top bar 52 · map full bleed · toolbar 52 + 28 safe area · sheets rise from the toolbar with an 18 px radius and stop 196 px from the top, so the map always stays visible.</p>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:14px">
+      <h2 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:28px; letter-spacing:0">What collapses, and when</h2>
+      <div style="display:flex; flex-direction:column; font-size:14px; line-height:1.5">
+        <sc-for list="{{ breakpoints }}" as="bp">
+          <div style="display:grid; grid-template-columns:110px minmax(0,1fr); gap:14px; padding:10px 0; box-shadow:inset 0 -1px 0 var(--color-border)">
+            <span style="font-family:var(--font-numeral); font-size:15px; color:var(--color-text)">{{ bp.w }}</span>
+            <span style="color:var(--color-text-muted); text-wrap:pretty">{{ bp.t }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:14px">
+      <h2 style="margin:0; font-family:var(--font-display); font-weight:400; font-size:28px; letter-spacing:0">Shortcuts in the UI</h2>
+      <p style="margin:0; font-size:14px; line-height:1.55; color:var(--color-text-muted)">Letters sit in the corner of each rail button and appear again in tooltips, menus and the context bar. Press <span style="color:var(--color-text)">?</span> to see the whole list.</p>
+      <div style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:4px 24px; font-size:13px">
+        <sc-for list="{{ shortcuts }}" as="sc">
+          <div style="display:flex; align-items:center; gap:10px; padding:4px 0">
+            <kbd style="display:inline-grid; place-items:center; min-width:22px; height:20px; padding:0 6px; border-radius:4px; font-size:11px; color:var(--color-text); background:var(--color-surface); box-shadow:0 0 0 1px var(--color-border-strong); white-space:nowrap">{{ sc.k }}</kbd>
+            <span style="color:var(--color-text-muted)">{{ sc.t }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const TOOLS = [
+  [['select','select','Select','V'],['pan','pan','Pan','H','or hold Space']],
+  [['room','room','Room','R','1–7 change shape'],['corridor','corridor','Corridor','C'],['door','door','Door','D'],['stairs','stairs','Stairs','S'],['pillar','pillar','Pillar / cutout','I']],
+  [['prop','prop','Prop','P','Q / E rotate'],['terrain','terrain','Terrain','G'],['label','label','Label','T']],
+  [['marker','marker','GM marker','M'],['fog','fog','Fog reveal','F']],
+  [['image','image','Image upload','U'],['segment','segment','Segment','B']]
+];
+const FLAT = TOOLS.flat();
+const KEYMAP = {}; FLAT.forEach(t => { KEYMAP[t[3].toLowerCase()] = t[0]; });
+const SHAPES = [['rect','Rectangle'],['circle','Circle'],['oval','Oval'],['triangle','Triangle'],['hexagon','Hexagon'],['octagon','Octagon'],['freehand','Freehand']];
+const STOREYS = [['1','Upper gallery'],['0','Ground · The Abbey'],['−1','Flooded crypt']];
+const PROPS = [['barrel','Barrel','Containers'],['crate','Crate','Containers'],['chest','Chest','Containers'],['table','Table','Furniture'],['roundtable','Round table','Furniture'],['chair','Chair','Furniture'],['bed','Bed','Furniture'],['bench','Bench','Furniture'],['shelf','Bookshelf','Furniture'],['altar','Altar','Shrine'],['brazier','Brazier','Shrine'],['statue','Statue','Shrine'],['sarcophagus','Sarcophagus','Shrine'],['candle','Candle','Shrine'],['bones','Bones','Debris'],['rubble','Rubble','Debris'],['well','Well','Features'],['rug','Rug','Features']];
+const CATS = ['All','Furniture','Containers','Shrine','Debris','Features'];
+const HINTS = {
+  select: ['Click to select · Shift-click adds · drag for marquee', [['Del','delete'],['Ctrl D','duplicate']]],
+  pan: ['Drag to pan · scroll to zoom', [['Ctrl 0','fit'],['+ −','zoom']]],
+  corridor: ['Click to start, click to bend, double-click to finish', [['Shift','45° only'],['Esc','cancel']]],
+  stairs: ['Drag along the flight · links to the storey below', [['Q / E','rotate']]],
+  pillar: ['Click to place a pillar', [['Alt','cut a hole instead']]],
+  label: ['Click to place text', [['Enter','commit'],['Esc','cancel']]],
+  image: ['or drop a PNG or JPG anywhere on the canvas', []]
+};
+const BREAKPOINTS = [
+  { w: '≥ 1280', t: 'Everything docked: rail, canvas, inspector, Claude.' },
+  { w: '1024–1279', t: 'Claude floats over the canvas instead of taking width. The inspector stays docked. Top-bar buttons keep their labels.' },
+  { w: '768–1023', t: 'The inspector becomes a 320 px drawer that opens on selection. Top-bar labels collapse to icons with tooltips, and Export, 3D and Players’ screen move into a ⋯ menu.' },
+  { w: '< 768', t: 'Phone layout. The rail becomes a scrolling bottom toolbar. Inspector and Claude become bottom sheets. Storeys move to a top-bar button. Pinch to zoom. Context options sit in a strip above the toolbar.' }
+];
+const SHORTCUTS = [
+  { k: 'V', t: 'Select' }, { k: 'H', t: 'Pan (or hold Space)' }, { k: 'R', t: 'Room · 1–7 shape' }, { k: 'C', t: 'Corridor' }, { k: 'D', t: 'Door' }, { k: 'S', t: 'Stairs' },
+  { k: 'I', t: 'Pillar / cutout' }, { k: 'P', t: 'Prop' }, { k: 'G', t: 'Terrain' }, { k: 'T', t: 'Label' }, { k: 'M', t: 'GM marker' }, { k: 'F', t: 'Fog reveal' },
+  { k: 'U', t: 'Image upload' }, { k: 'B', t: 'Segment' }, { k: 'Q / E', t: 'Rotate 15°' }, { k: 'Del', t: 'Delete selection' }, { k: 'Ctrl Z', t: 'Undo · Shift to redo' }, { k: 'Ctrl D', t: 'Duplicate' },
+  { k: 'Ctrl 0', t: 'Fit map · + − zoom' }, { k: 'PgUp / PgDn', t: 'Storey up / down' }, { k: 'Shift P', t: 'GM / Players view' }, { k: 'Shift G', t: 'Grid on / off' }, { k: 'Ctrl .', t: 'Show / hide Claude' }, { k: '/', t: 'Focus Claude chat' }
+];
+const ON = { bg: 'var(--tint-accent-bg)', fg: 'var(--color-accent)', ring: 'inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent)' };
+const OFF = { bg: 'transparent', fg: 'var(--color-text-muted)', ring: 'none' };
+const st = a => (a ? ON : OFF);
+const BASE = { tool: 'select', shape: 'octagon', sel: 'r3', panel: 'inspector', claude: true, view: 'gm', storey: '0', menu: false, hover: null, zoom: null, grid: true, rough: 4, rot: 0, scale: 100, hidden: false, snap: true, toast: null, live: 'live', save: 'saved', brush: true, spacing: 2, scatter: 30, brushSize: 3, cat: 'All', prop: 'barrel', q: '', marker: 'discover', terrain: 'water', door: 'door', fog: 'reveal', preset: 'ink', gridOp: 60, mapRough: 4, texture: true, draft: '' };
+
+class Component extends DCLogic {
+  state = {
+    active: 'dd',
+    b: {
+      dd: { ...BASE },
+      dl: { ...BASE, tool: 'prop', sel: null, panel: 'map', claude: false, live: 'offline', save: 'queued', toast: { tone: 'danger', icon: 'offline', text: 'Connection lost. 3 changes are queued and will sync when you reconnect.', action: 'Retry now', sticky: true } }
+    },
+    p: {
+      pd: { tool: 'select', sel: 'r3', sheet: 'inspector', view: 'gm', rough: 4, scale: 100, hidden: false, draft: '' },
+      pl: { tool: 'room', sel: null, sheet: 'claude', view: 'gm', rough: 4, scale: 100, hidden: false, draft: '' }
+    }
+  };
+
+  setB(id, p) { this.setState(s => ({ b: { ...s.b, [id]: { ...s.b[id], ...(typeof p === 'function' ? p(s.b[id]) : p) } } })); }
+  setP(id, p) { this.setState(s => ({ p: { ...s.p, [id]: { ...s.p[id], ...(typeof p === 'function' ? p(s.p[id]) : p) } } })); }
+  toast(id, t) { this.setB(id, { toast: t }); clearTimeout(this['tt' + id]); if (!t.sticky) this['tt' + id] = setTimeout(() => this.setB(id, { toast: null }), 3800); }
+  cmd(id, c) { window.dispatchEvent(new CustomEvent('delve-map-cmd', { detail: { id: 'map-' + id, cmd: c } })); }
+
+  componentDidMount() {
+    this.onKey = e => {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+      const id = this.state.active; if (!this.state.b[id]) return;
+      const b = this.state.b[id], k = e.key, mod = e.ctrlKey || e.metaKey;
+      if (mod && k.toLowerCase() === 'z') { e.preventDefault(); this.toast(id, { tone: 'neutral', icon: e.shiftKey ? 'redo' : 'undo', text: e.shiftKey ? 'Redid: move Room 3' : 'Undid: move Room 3' }); return; }
+      if (mod && k === '.') { e.preventDefault(); this.setB(id, { claude: !b.claude }); return; }
+      if (mod && k === '0') { e.preventDefault(); this.cmd(id, 'fit'); return; }
+      if (mod || e.altKey) return;
+      if (k === 'Escape') { this.setB(id, { menu: false, sel: null }); return; }
+      if (k === 'Delete' || k === 'Backspace') { if (b.sel) this.del(id); return; }
+      if (k === '+' || k === '=') { this.cmd(id, 'in'); return; }
+      if (k === '-') { this.cmd(id, 'out'); return; }
+      if (k === 'PageUp' || k === 'PageDown') { e.preventDefault(); const o = STOREYS.map(s => s[0]); let i = o.indexOf(b.storey); i = k === 'PageUp' ? Math.max(0, i - 1) : Math.min(o.length - 1, i + 1); this.setB(id, { storey: o[i] }); return; }
+      if (e.shiftKey && k.toLowerCase() === 'p') { this.setB(id, { view: b.view === 'gm' ? 'players' : 'gm' }); return; }
+      if (e.shiftKey && k.toLowerCase() === 'g') { this.setB(id, { grid: !b.grid }); return; }
+      if (b.tool === 'room' && /^[1-7]$/.test(k)) { this.setB(id, { shape: SHAPES[+k - 1][0] }); return; }
+      if ((k === 'q' || k === 'e') && (b.tool === 'prop' || b.sel)) { this.setB(id, s => ({ rot: (((s.rot + (k === 'e' ? 15 : -15)) % 360) + 360) % 360 })); return; }
+      if (k === '/') { e.preventDefault(); this.setB(id, { claude: true }); return; }
+      const t = KEYMAP[k.toLowerCase()]; if (t && !e.shiftKey) this.setB(id, { tool: t, hover: null });
+    };
+    this.onZoom = e => { const d = e.detail || {}; const m = /^map-(\w+)$/.exec(d.id || ''); if (!m || !this.state.b[m[1]]) return; if (this.state.b[m[1]].zoom !== d.pct) this.setB(m[1], { zoom: d.pct }); };
+    window.addEventListener('keydown', this.onKey);
+    window.addEventListener('delve-map-zoom', this.onZoom);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this.onKey); window.removeEventListener('delve-map-zoom', this.onZoom); }
+
+  del(id) { this.setB(id, { sel: null }); this.toast(id, { tone: 'neutral', icon: 'trash', text: 'Room 3 deleted', action: 'Undo', onAction: () => this.setB(id, { sel: 'r3', toast: null }) }); }
+
+  slider(label, val, min, max, step, onSet, fmt, keys) {
+    const f = Math.max(0, Math.min(1, (val - min) / (max - min)));
+    return { label, val, min, max, step, display: fmt ? fmt(val) : String(val), pos: 'calc(7px + (100% - 14px) * ' + f.toFixed(3) + ')', onInput: e => onSet(+e.target.value), hasKeys: !!keys, keys: keys || '' };
+  }
+  check(label, checked, toggle, kbd) {
+    return { label, kbd: kbd || '', checked, aria: checked ? 'true' : 'false', bg: checked ? 'var(--color-accent)' : 'transparent', ring: checked ? 'none' : 'inset 0 0 0 1.5px var(--color-control-border)', toggle };
+  }
+
+  ctx(id, s) {
+    const set = p => this.setB(id, p);
+    const chip = o => { const a = !!o.active; return { ...st(a), checked: a ? 'true' : 'false', hasIcon: !!o.icon, hasLabel: !!o.label, hasNum: !!o.num, hasDot: !!o.dot, hasSwatch: !!o.swatch, title: o.title || o.label || '', ...o }; };
+    const out = { opts: [], sliders: [], acts: [], keys: [], hint: '' };
+    if (s.tool === 'room') {
+      out.opts = SHAPES.map((sh, i) => chip({ icon: 'shape-' + sh[0], num: String(i + 1), title: sh[1] + ' · ' + (i + 1), active: s.shape === sh[0], onClick: () => set({ shape: sh[0] }) }));
+      out.keys = [['Shift', 'square'], ['Alt', 'from centre']];
+    } else if (s.tool === 'prop') {
+      out.opts = [chip({ icon: 'prop', label: 'Stamp', active: !s.brush, onClick: () => set({ brush: false }) }), chip({ icon: 'brush', label: 'Brush', active: s.brush, onClick: () => set({ brush: true }) })];
+      if (s.brush) out.sliders = [this.slider('Spacing', s.spacing, 1, 6, .5, v => set({ spacing: v }), v => v + ' sq'), this.slider('Scatter', s.scatter, 0, 100, 5, v => set({ scatter: v }), v => v + '%')];
+    } else if (s.tool === 'terrain') {
+      out.opts = [['water', 'Water', '#9DB0B2'], ['grass', 'Grass', '#AEB383'], ['lava', 'Lava', '#C9734A'], ['mud', 'Mud', '#9C8466'], ['chasm', 'Chasm', '#3E352C']].map(t => chip({ swatch: t[2], label: t[1], active: s.terrain === t[0], onClick: () => set({ terrain: t[0] }) }));
+      out.sliders = [this.slider('Brush', s.brushSize, 1, 8, 1, v => set({ brushSize: v }), v => v + ' sq')];
+      out.keys = [['Alt', 'erase']];
+    } else if (s.tool === 'marker') {
+      out.opts = [['discover', 'Discover', 'var(--marker-discover)', 'var(--marker-ink)', '?'], ['interact', 'Interact', 'var(--marker-interact)', 'var(--canvas-floor)', '!'], ['trap', 'Trap', 'var(--marker-trap)', 'var(--canvas-floor)', '×']].map(m => chip({ dot: m[2], dotFg: m[3], glyph: m[4], label: m[1], active: s.marker === m[0], onClick: () => set({ marker: m[0] }) }));
+      out.hint = 'Click to drop · the note opens';
+    } else if (s.tool === 'door') {
+      out.opts = ['Door', 'Double', 'Secret', 'Portcullis'].map(d => chip({ label: d, active: s.door === d.toLowerCase(), onClick: () => set({ door: d.toLowerCase() }) }));
+      out.hint = 'Click a wall';
+    } else if (s.tool === 'fog') {
+      out.opts = [chip({ icon: 'eye', label: 'Reveal', active: s.fog === 'reveal', onClick: () => set({ fog: 'reveal' }) }), chip({ icon: 'eye-off', label: 'Hide', active: s.fog === 'hide', onClick: () => set({ fog: 'hide' }) })];
+      out.acts = [{ icon: 'eye', label: 'Reveal all', onClick: () => this.toast(id, { tone: 'neutral', icon: 'eye', text: 'Whole storey revealed to players', action: 'Undo' }) }, { icon: 'fog', label: 'Reset explored', onClick: () => this.toast(id, { tone: 'neutral', icon: 'fog', text: 'Explored areas reset', action: 'Undo' }) }];
+    } else if (s.tool === 'segment') {
+      out.acts = [{ icon: 'segment', label: 'Save selection', onClick: () => {} }, { icon: 'download', label: 'Place', onClick: () => {} }, { icon: 'grid', label: 'Fill area', onClick: () => {} }];
+      out.hint = 'Saved: Cell block 4 × 4';
+    } else if (s.tool === 'image') {
+      out.acts = [{ icon: 'upload', label: 'Upload image', onClick: () => {} }];
+      out.hint = HINTS.image[0];
+    } else {
+      const h = HINTS[s.tool] || ['', []]; out.hint = h[0]; out.keys = h[1];
+    }
+    out.keys = out.keys.map(k => ({ k: k[0], t: k[1] }));
+    out.hasOpts = out.opts.length > 0; out.hasHint = !!out.hint;
+    return out;
+  }
+
+  desk(id, theme, label, note, first) {
+    const s = this.state.b[id], set = p => this.setB(id, p);
+    const groups = TOOLS.map((g, gi) => ({ sep: gi > 0, tools: g.map(([tid, icon, lab, key, hint]) => { const a = s.tool === tid; return { id: tid, icon, label: lab, key, hint: hint || '', hasHint: !!hint, ...st(a), pressed: a ? 'true' : 'false', tip: s.hover === tid, onClick: () => set({ tool: tid }), onEnter: () => set({ hover: tid }), onLeave: () => set({ hover: null }) }; }) }));
+    const t = FLAT.find(x => x[0] === s.tool);
+    const live = s.live === 'live'
+      ? { dot: 'var(--color-accent)', ring: '0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent)', text: 'Live', fg: 'var(--color-text-muted)', title: 'Connected · Claude and 1 viewer' }
+      : { dot: 'var(--color-danger)', ring: '0 0 0 3px color-mix(in srgb, var(--color-danger) 25%, transparent)', text: 'Offline · retrying in 4 s', fg: 'var(--color-danger)', title: 'Disconnected from the server' };
+    const save = { saved: { icon: 'check', text: 'Saved', fg: 'var(--color-text-muted)' }, queued: { icon: 'alert', text: '3 changes queued', fg: 'var(--color-warning)' } }[s.save];
+    const q = s.q.trim().toLowerCase();
+    const props = PROPS.filter(p => (s.cat === 'All' || p[2] === s.cat) && (!q || p[1].toLowerCase().includes(q))).map(p => { const a = s.prop === p[0]; return { kind: p[0], name: p[1], sel: a ? 'true' : 'false', ring: a ? '0 0 0 2px var(--color-accent)' : 'inset 0 0 0 1px var(--color-border)', fg: a ? 'var(--color-text)' : 'var(--color-text-muted)', onClick: () => set({ prop: p[0] }) }; });
+    const toast = s.toast ? { ...s.toast, fg: s.toast.tone === 'danger' ? 'var(--color-danger)' : 'var(--color-text-muted)', hasAction: !!s.toast.action, onAction: s.toast.onAction || (() => set({ toast: null })), close: () => set({ toast: null }) } : null;
+    const tab = (k, ) => ({ sel: s.panel === k ? 'true' : 'false', fg: s.panel === k ? 'var(--color-text)' : 'var(--color-text-muted)', bar: s.panel === k ? 'inset 0 -2px 0 var(--color-accent)' : 'none', onClick: () => set({ panel: k }) });
+    const presets = [['ink', 'Ink & hatch', 'var(--canvas-parchment)', '2.5px solid var(--canvas-ink)', '0 0 0 5px rgba(74,63,51,.35)'], ['sepia', 'Sepia wash', '#E2CDA2', '2.5px solid #6B4E2E', '0 0 0 5px rgba(107,78,46,.25)'], ['clean', 'Clean line', '#F1EADA', '1.5px solid var(--canvas-ink)', 'none']].map(p => { const a = s.preset === p[0]; return { label: p[1], paper: p[2], wall: p[3], hatch: p[4], checked: a ? 'true' : 'false', fg: a ? 'var(--color-text)' : 'var(--color-text-muted)', ring: a ? '0 0 0 2px var(--color-accent)' : 'inset 0 0 0 1px var(--color-border-strong)', onClick: () => set({ preset: p[0] }) }; });
+    return {
+      id, theme, label, note, mapId: 'map-' + id, activate: () => { if (this.state.active !== id) this.setState({ active: id }); },
+      groups, tool: { icon: t[1], label: t[2] }, live, save,
+      isGm: s.view === 'gm', isPlayers: s.view === 'players', view: s.view,
+      setGm: () => set({ view: 'gm' }), setPlayers: () => set({ view: 'players' }),
+      undo: () => this.toast(id, { tone: 'neutral', icon: 'undo', text: 'Undid: move Room 3', action: 'Redo' }),
+      redo: () => this.toast(id, { tone: 'neutral', icon: 'redo', text: 'Redid: move Room 3' }),
+      menuOpen: s.menu, menuAria: s.menu ? 'true' : 'false', menuBg: s.menu ? 'var(--color-press)' : 'transparent', toggleMenu: () => set({ menu: !s.menu }),
+      exports: [['download', 'PNG for Roll20', '70 px per square, grid-aligned', 'Ctrl Shift E'], ['download', 'SVG', 'Vector, layers kept', ''], ['download', 'Dungeon Scrawl .ds', 'Opens again in Dungeon Scrawl', ''], ['notes', 'Parchment handout', 'Printable PDF of the players’ view, no grid', '']].map(x => ({ icon: x[0], label: x[1], sub: x[2], kbd: x[3], hasKbd: !!x[3], onClick: () => { set({ menu: false }); this.toast(id, { tone: 'neutral', icon: 'check', text: 'Exported “The Sunken Abbey” · ' + x[1], action: 'Show file' }); } })),
+      claudeOpen: s.claude, claudeAria: s.claude ? 'true' : 'false', toggleClaude: () => set({ claude: !s.claude }),
+      claudeBtn: s.claude ? ON : { bg: 'transparent', fg: 'var(--color-text-muted)', ring: 'none' },
+      gridAria: s.grid ? 'true' : 'false', gridFg: s.grid ? 'var(--color-accent)' : 'var(--color-text-muted)', toggleGrid: () => set({ grid: !s.grid }), gridAttr: s.grid ? 'on' : 'off',
+      selAttr: s.sel || '', ghost: s.tool === 'room' ? 'room' : '', mapRough: String(s.sel ? s.rough : s.mapRough),
+      ctx: this.ctx(id, s),
+      isProp: s.tool === 'prop', props, propCount: props.length + ' of ' + PROPS.length, q: s.q, setQ: e => set({ q: e.target.value }), rot: s.rot,
+      cats: CATS.map(c => { const a = s.cat === c; return { label: c, sel: a ? 'true' : 'false', ...(a ? ON : { bg: 'var(--color-surface-2)', fg: 'var(--color-text-muted)', ring: 'inset 0 0 0 1px var(--color-border)' }), onClick: () => set({ cat: c }) }; }),
+      storeys: STOREYS.map(([n, name]) => { const a = s.storey === n; return { n, name, active: a, current: a ? 'true' : 'false', aria: 'Storey ' + n + ', ' + name, ...(a ? ON : { bg: 'transparent', fg: 'var(--color-text-muted)', ring: 'none' }), onClick: () => set({ storey: n }) }; }),
+      addAbove: () => this.toast(id, { tone: 'neutral', icon: 'layers', text: 'Added storey 2 above', action: 'Undo' }),
+      addBelow: () => this.toast(id, { tone: 'neutral', icon: 'layers', text: 'Added storey −2 below', action: 'Undo' }),
+      zoomPct: (s.zoom || '—') + (s.zoom ? '%' : ''), zoomIn: () => this.cmd(id, 'in'), zoomOut: () => this.cmd(id, 'out'), zoomFit: () => this.cmd(id, 'fit'),
+      hasToast: !!toast, toast: toast || { icon: 'check', text: '', fg: '', hasAction: false },
+      tabI: tab('inspector'), tabM: tab('map'),
+      showInspector: s.panel === 'inspector' && !!s.sel, showEmpty: s.panel === 'inspector' && !s.sel, showMap: s.panel === 'map',
+      selectRoom: () => set({ sel: 'r3', panel: 'inspector', tool: 'select' }), del: () => this.del(id),
+      shapes: SHAPES.map((sh, i) => { const a = sh[0] === 'octagon'; return { icon: 'shape-' + sh[0], title: sh[1], checked: a ? 'true' : 'false', ...st(a), onClick: () => {} }; }),
+      dims: [['X', '30', 'sq'], ['Y', '8.5', 'sq'], ['Width', '9', 'sq'], ['Height', '9', 'sq']].map(d => ({ label: d[0], val: d[1], unit: d[2] })),
+      inspSliders: [
+        this.slider('Rotation', s.rot, 0, 345, 15, v => set({ rot: v }), v => v + '°', 'Q / E'),
+        this.slider('Scale', s.scale, 25, 400, 5, v => set({ scale: v }), v => v + '%'),
+        this.slider('Roughness', s.rough, 1, 10, 1, v => set({ rough: v }), v => String(v), '1 smooth · 10 crumbling')
+      ],
+      checks: [this.check('Hidden from players', s.hidden, () => set({ hidden: !s.hidden })), this.check('Snap to grid', s.snap, () => set({ snap: !s.snap }), 'hold Alt to ignore')],
+      presets,
+      mapChecks: [this.check('Show grid', s.grid, () => set({ grid: !s.grid }), 'Shift G'), this.check('Parchment texture', s.texture, () => set({ texture: !s.texture }))],
+      mapSliders: [this.slider('Grid opacity', s.gridOp, 0, 100, 5, v => set({ gridOp: v }), v => v + '%'), this.slider('Roughness for new walls', s.mapRough, 1, 10, 1, v => set({ mapRough: v }), v => String(v))],
+      claudeOpenState: s.claude, draft: s.draft, setDraft: e => set({ draft: e.target.value })
+    };
+  }
+
+  phone(id, theme, label, note) {
+    const s = this.state.p[id], set = p => this.setP(id, p);
+    const tools = [['select', 'select', 'Select'], ['room', 'room', 'Room'], ['corridor', 'corridor', 'Corridor'], ['door', 'door', 'Door'], ['stairs', 'stairs', 'Stairs'], ['prop', 'prop', 'Prop'], ['terrain', 'terrain', 'Terrain'], ['label', 'label', 'Label'], ['marker', 'marker', 'Marker'], ['fog', 'fog', 'Fog'], ['pillar', 'pillar', 'Pillar'], ['segment', 'segment', 'Segment']].map(([tid, icon, lab]) => {
+      const a = s.tool === tid; return { label: lab, short: lab, icon, pressed: a ? 'true' : 'false', ...(a ? ON : { bg: 'transparent', fg: 'var(--color-text-muted)', ring: 'none' }), onClick: () => set(tid === 'select' ? { tool: tid, sel: 'r3', sheet: 'inspector' } : { tool: tid, sheet: s.sheet === 'inspector' ? null : s.sheet }) };
+    });
+    const insp = s.sheet === 'inspector' && !!s.sel;
+    const sl = (l, v, mn, mx, stp, on, fmt) => { const f = (v - mn) / (mx - mn); return { label: l, val: v, min: mn, max: mx, step: stp, display: fmt(v), pos: 'calc(11px + (100% - 22px) * ' + f.toFixed(3) + ')', onInput: e => on(+e.target.value) }; };
+    return {
+      id, theme, label, note, mapId: 'map-' + id, activate: () => { if (this.state.active !== id) this.setState({ active: id }); },
+      view: s.view, isGm: s.view === 'gm', isPlayers: s.view === 'players', setGm: () => set({ view: 'gm' }), setPlayers: () => set({ view: 'players' }),
+      selAttr: insp ? 'r3' : '', focus: insp ? '34.5,13' : '24,12', focusAt: insp ? '.5,.33' : '.5,.17', zoom: insp ? '2.3' : '1.5',
+      tools, sheetInspector: insp, sheetClaude: s.sheet === 'claude',
+      closeSheet: () => set({ sheet: null, sel: s.sheet === 'inspector' ? null : s.sel }),
+      toggleClaude: () => set({ sheet: s.sheet === 'claude' ? null : 'claude' }),
+      claudeBtn: s.sheet === 'claude' ? { ...ON, pressed: 'true' } : { bg: 'transparent', fg: 'var(--color-text-muted)', ring: 'none', pressed: 'false' },
+      sliders: [sl('Roughness', s.rough, 1, 10, 1, v => set({ rough: v }), v => String(v)), sl('Scale', s.scale, 25, 400, 5, v => set({ scale: v }), v => v + '%')],
+      hidden: { aria: s.hidden ? 'true' : 'false', toggle: () => set({ hidden: !s.hidden }), justify: s.hidden ? 'flex-end' : 'flex-start', track: s.hidden ? 'var(--color-accent)' : 'var(--color-surface-3)', ring: s.hidden ? 'none' : 'inset 0 0 0 1px var(--color-control-border)', knob: s.hidden ? 'var(--color-bg)' : 'var(--color-text-muted)' },
+      draft: s.draft, setDraft: e => set({ draft: e.target.value })
+    };
+  }
+
+  renderVals() {
+    return {
+      rows: [
+        { first: true, d: this.desk('dd', 'dark', 'Desktop 1440 · dark', 'Select tool · Room 3 selected · Claude open · live'), p: this.phone('pd', 'dark', 'Phone 390 · dark', 'Room selected · inspector sheet') },
+        { first: false, d: this.desk('dl', 'light', 'Desktop 1440 · light', 'Prop tool + picker · Map settings · offline, changes queued'), p: this.phone('pl', 'light', 'Phone 390 · light', 'Claude sheet open') }
+      ],
+      breakpoints: BREAKPOINTS, shortcuts: SHORTCUTS
+    };
+  }
+}
+</script>
+</body>
+</html>
