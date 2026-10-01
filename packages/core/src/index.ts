@@ -83,6 +83,7 @@ export { handoutSvg, PAPERS, type Paper, type HandoutOptions, type Handout } fro
 export { MARKERS, MARKER_RADIUS, MIN_MARKER_RADIUS, markerGlyph, markerAt, markerRadius, type MarkerInfo } from './markers.ts';
 export { imageUrl, imageFit, imageBounds, onImage, imageCentre } from './images.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
+export { hashString } from './render/rng.ts';
 
 import type { DelveMap } from './schema.ts';
 import { buildScene, type RenderOptions } from './render/scene.ts';

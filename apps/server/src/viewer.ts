@@ -406,8 +406,8 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
   });
 
   // viewer.js: the viewer and editor; stack.js: the 3D view (with three.js, so only that page loads it);
-  // table-dice.js: the table's 3D dice, which table.js imports on the first roll.
-  for (const name of ['viewer.js', 'stack.js', 'screen.js', 'trace.js', 'trace-worker.js', 'table.js', 'table-dice.js']) {
+  // table-dice.js: the table's 3D dice, which table.js imports on the first roll; table3d.js: the 3D table view.
+  for (const name of ['viewer.js', 'stack.js', 'screen.js', 'trace.js', 'trace-worker.js', 'table.js', 'table-dice.js', 'table3d.js']) {
     app.get(`/assets/${name}`, async (_req, reply) => {
       let script = scripts.get(name);
       if (script === undefined) {

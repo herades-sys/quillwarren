@@ -246,6 +246,7 @@ export function tablePage(o: TablePageOptions): string {
   ${gm ? `<label class="layer" title="The layer you select and move tokens on"><span>Layer</span><select id="layer-select"><option value="map">Map</option><option value="tokens" selected>Tokens</option><option value="gm">GM only</option></select></label>` : ''}
   <span class="me" id="me"><span class="dot" id="me-dot"></span><span id="me-name">${esc(o.me.name)}</span><span class="role muted">· ${gm ? 'GM' : 'Player'}</span></span>
   ${account}
+  <a class="btn" id="to-3d" href="/play/${encodeURIComponent(o.gameId)}/3d" title="The table in 3D (the same game, live)">3D</a>
   <button type="button" class="btn" id="side-toggle" aria-pressed="true" aria-controls="side" title="Show or hide the panel">Panel<span class="badge" id="side-badge" hidden></span></button>
 </header>
 <div id="main">

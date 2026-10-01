@@ -106,6 +106,9 @@ The result is `{ expr, total, terms }`: each dice term lists every die `{value, 
 | `POST /games/:id/assets` (raw body) | GM | Upload an image, returns `{url}` |
 | `GET /games/:id/assets/:file` | members | The image |
 | `GET /games/:id/live` (WebSocket) | members | The sync channel |
+| `GET /games/:id/pages/:pageId/background.png?view=players\|gm` | members | A Delve page's picture in the page's frame (players: their own page, players' view with fog) |
+| `GET /games/:id/pages/:pageId/scene3d.json?view=players\|gm` | members | The 3D view's scene, filtered for the viewer (see "3D table view") |
+| `GET /play/:id/3d` (page, not under `/api/v1`) | members | The table in 3D |
 | `GET /auth/discord?next=` (page, not under `/api/v1`) | anyone | Start a Discord login; afterwards back to `next` |
 | `GET /auth/discord/callback` (page) | Discord | The end of the login |
 | `POST /auth/logout {next?}` (page) | anyone | End the Discord login on this device (`GET` shows a button for it) |
@@ -158,4 +161,39 @@ Players can log in with Discord, so their seat is tied to their Discord account 
   - Nothing is thrown for a GM roll's hidden copy (it has no rolls), for the backlog in a `hello`, or while the tab is hidden.
   - With a Discord login, the header says "Logged in as <name> · Log out".
 - **Theming:** use Delve's viewer tokens (dark and light). Everything works with mouse and touch (pointer events).
+- The header's **3D** button opens the same game in 3D (`/play/:gameId/3d`, see below).
+
+## 3D table view (`/play/:gameId/3d`)
+
+The same live game as the 2D table, for the GM and the players, with the page as a model on the table and the tokens as minis. A move in 3D shows on everyone's 2D table at once, and the other way round. The **2D** button goes back.
+
+- **Access:** exactly as `/play/:gameId` (the GM's editor login or co-GM Discord login, a member's player cookie or Discord seat); everyone else gets the same "Not at this table" page. Public mode lets `/play/*` and `/api/v1/games/*` through, so the game's own member check is what keeps both routes closed (tested through the tunnel headers).
+- **Code:** server `apps/server/src/table/scene3d.ts` (routes, `revealedRegion`, `delveGeometry`, `scene3d`) and `page3d.ts` (the HTML); client `apps/web/src/table3d.ts` (entry, bundled as `/assets/table3d.js` with three.js, so the 2D table never loads it) and `apps/web/src/table/{app3d,view3d,minis3d,textures3d,scene3d-logic}.ts`. The scene's types are `Scene3D` in `packages/table/src/scene3d.ts`.
+- **Same sync code:** the 3D page opens the same WebSocket (`net.ts`), keeps its view with the same `reduce`, optimistic moves and `needsReload` (`logic.ts`), and sends the same intents (`token.move`, `page.view`, `page.activate`). The server can't tell the two apart.
+
+### The scene: `GET /api/v1/games/:id/pages/:pageId/scene3d.json`
+
+- **Who:** members only, by the same page rules as `background.png`: players only the page they're on (any other page id, existing or not, is 403) and always the players' view; the GM may ask for `view=gm` (the default is `players`, as for `background.png`).
+- **What:** `{ pageId, view, kind, bounds, floor, walls, doors, stairs, region, focus }` in page cells:
+  - Delve pages: `floor` is the members-only `background.png?view=…` URL (the players' one draws only what they've seen); `walls` are segments built the way the 2D picture is (same rough floor, door gaps); `doors` `{a, b, style, open?}`; `stairs` `{box, direction}`.
+  - Picture pages: `floor` is the picture and the cells it covers. Blank pages: `floor` is null (the client draws a grid plane).
+  - `region` is `'all'` or the polygons the viewer may see; `focus` is what the camera frames first (the page, or the seen part; null when nothing is seen yet).
+- **Filtering (server-side, one place):** `revealedRegion(state, page, map, {member, view})` decides what a viewer may see: `'all'` for the GM's own view; the Delve map's fog (revealed rooms and corridors, `show` minus `hide`, the same area the players' picture uses) for players and for the GM looking as them; `'all'` without fog. `delveGeometry` then cuts walls to that region and leaves out doors and stairs outside it, so nothing outside it is sent. Players never get secret doors (they're plain wall: no gap, a wall across), gm-layer tokens (the WebSocket's `viewFor` already strips them) or labels. The state the players get still has no `page.walls`.
+- **Following the map:** a page from a Delve map is sent again (`page.upsert`) when the map changes, and the 3D view fetches its scene and picture again, so a revealed room appears in 3D within a second.
+
+### In the browser
+
+- **The model:** the page is a board on the table (`--slab`), the floor picture on top, grid lines when the page shows its grid, walls extruded from the segments (height slider in the View tab, 0 to 2.5 cells, default 0.9), doors as frames with a leaf (shut, or swung open; two for double doors, iron bars for a portcullis, nothing in an archway; the GM sees secret doors as a translucent violet leaf), stairs as steps rising toward their direction.
+- **Light:** a hemisphere light plus a sun from the north-west with soft shadows (switch: View tab). Background and board follow the light and dark theme.
+- **Camera:** drag to orbit, right-drag or Shift-drag to pan over the table, wheel or pinch to zoom (to the cursor). **Top** looks straight down, **Fit** frames the page (players: what they've seen), **Follow** keeps the selected mini in the middle (or the member's own when nothing is selected; selecting another mini follows that one). Double-click a mini to look at it. Keys: F fit, T top, L follow, arrows move the selected minis, Escape clears the selection. Switching away from a page and back returns to where its camera was (until the page reloads).
+- **Minis:** every token is a standee: its picture on an upright card that turns to face the camera, on a round base in the controlling member's colour (light stone for "all", dark stone for GM-only), sized by `w`/`h` (an ellipse for tokens that aren't square). **Flat** lays them down as discs seen from above; looking nearly straight down does that by itself. Map-layer tokens always lie flat on the floor and never catch the pointer. Name plates and bars are HTML over the canvas, as on the 2D table (names with `showName`, hovered or selected; bars when the mini is at least 14 px wide). The GM sees gm-layer tokens translucent.
+- **Moving:** drag a mini over the floor. It snaps to cells like the 2D board (`dragTargets`; Alt moves freely), the selection moves together, it's shown at once and snaps back if the server refuses. Players can only grab the minis they control (`canMove`); the server checks anyway. Holding still on the floor for 600 ms pings.
+- **Pages:** players follow the page the GM moves them to (a fresh `hello` loads its scene). The GM gets a page picker (★ marks the players' page; it sends `page.view`, so the GM's 2D tab follows too), "Bring them here" when the players are elsewhere, and the **GM view / Players' view** toggle: it fetches the players' scene and hides gm-layer tokens, so the GM sees exactly what the players get. It isn't remembered across loads, like the 2D one.
+- **Side panel:** a **Minis** tab (every mini on the page; select, look at, follow) and a **View** tab (walls, flat, shadows; kept per browser in `localStorage` `delve-table3d-*`). On phones it's a bottom sheet, and the camera buttons move above it.
+- **No token tools in 3D:** the GM adds characters on the 2D table (Tokens tab); they appear in 3D at once.
+
+### For the next steps (line of sight, notes, Discord)
+
+- **Line of sight and light:** replace the body of `revealedRegion()`; the scene's walls, doors and stairs for players follow it. The floor picture still comes from `background.png`, which follows the map's fog, so an explored-by-sight area also needs its picture masked (or an overlay). The client's `view.lights.setSources([{id, x, y, height?, color?, intensity?, range?, castShadow?}])` places point lights (at most 12, nearest to the view), and `view.lights.setAmbient(0..1)` dims the sun and sky for dark dungeons. `view.overlays.set(name, mesh)` / `view.overlays.polygons(polys, color, opacity)` is the layer just over the floor for darkness or explored areas; `Scene3D.region` carries the seen polygons. Today tokens on the tokens layer are visible to players anywhere on their page (as in 2D), even in unrevealed rooms.
+- **Notes:** `startTable3d()` returns a `Table3dCtx` (`state`, `page`, `tokens`, `scene`, `selected`, `act`, `on`, `view`); `ctx.addPanel(id, label)` adds a tab to the side panel and returns its empty panel.
 - **Shared:** `apps/server/src/table/page.ts` exports `tablePage(opts: { gameId: string; gameName: string; version: string; me: { id: string; name: string; role: 'gm' | 'player' } }): string`.

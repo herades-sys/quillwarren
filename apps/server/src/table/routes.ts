@@ -27,6 +27,7 @@ import { ACCOUNT_COOKIE, avatarUrl, discordLoginUrl, registerDiscord, type Disco
 import { joinPage, lobbyPage, messagePage, notGmPage, type DiscordLogin } from './html.ts';
 import { registerLive, TableHub } from './live.ts';
 import { tablePage } from './page.ts';
+import { registerTable3d } from './scene3d.ts';
 import { newGameId, TableStore, type Account } from './store.ts';
 
 export interface TableDeps {
@@ -171,6 +172,8 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
     t.addContentTypeParser(/^image\//, { parseAs: 'buffer', bodyLimit: MAX_ASSET_BYTES }, (_req, body, done) => done(null, body));
 
     registerLive(t, hub, store, access);
+    // the 3D table view: /play/:id/3d and the members-only scene3d.json
+    registerTable3d(t, { store, access, maps: deps.maps, version: deps.version, discord: Boolean(discord), accountOf });
 
     // ---------- Discord login ----------
 

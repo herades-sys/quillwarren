@@ -85,6 +85,7 @@ The browser editor has two kinds of account, **admin** and **GM**. Both can edit
 - **Open without a login:** `/play/*`, `/api/v1/games/*` (the table's own membership checks), `/auth/*`, `/login`, `/logout`, `/account/setup`, `/api/v1/session`, `/health`, and static files (`/assets/*`, `/fonts/*`, `/favicon.svg`).
   - **Everything else needs an editor login** (admin or GM account). Pages redirect to `/login?next=…`; the API answers 401.
   - **Players' map pictures** come from `GET /api/v1/games/:id/pages/:pageId/background.png?view=players|gm`. It is for members only: players get only their own page in the players' view, and only the GM may ask for `view=gm`.
+  - **The 3D table** (`/play/:id/3d`) and its scene, `GET /api/v1/games/:id/pages/:pageId/scene3d.json?view=players|gm`, follow the same rules; the players' scene holds only the walls, doors and stairs they have seen (docs/TABLE.md, "3D table view").
 - **Proxy headers:** Fastify trusts `X-Forwarded-*` from loopback only (`trustProxy`), so links and cookies are https. The login lockout uses `CF-Connecting-IP` only from loopback.
 - **Live connections:** the map and table WebSockets check the login again for every change, so a login that ended (logout, "log out everywhere") can't keep writing.
 
