@@ -1,7 +1,9 @@
 // GM markers: coloured badges pinned to a spot, each with a note for the GM.
 // "?" something to discover, "!" something to interact with, a skull for a
 // trap. They only exist in the GM view, and can be struck through when done.
-import type { Marker, MarkerKind } from './schema.ts';
+import { assetInfo, propBounds } from './assets/catalog.ts';
+import { onImage } from './images.ts';
+import type { MapImage, Marker, MarkerKind, Prop } from './schema.ts';
 
 export interface MarkerInfo {
   /** Short word for text descriptions. */
@@ -16,8 +18,40 @@ export const MARKERS: Record<MarkerKind, MarkerInfo> = {
   trap: { symbol: 'trap', name: 'A trap', color: '#C43A2F' },
 };
 
-/** Badge radius in squares. */
+/** Badge radius in squares, on open floor. */
 export const MARKER_RADIUS = 0.34;
+/** The smallest badge (on a tiny prop), still big enough to read and click. */
+export const MIN_MARKER_RADIUS = 0.08;
+/** On a prop or picture, the badge is at most this share of the item's shorter side across, so the item stays visible. */
+const ON_ITEM = 0.3;
+
+type Placed = { type: string; at?: unknown };
+
+/** The shorter side (in squares) of the prop or picture under p, or null when it isn't on one. */
+function itemUnder(o: Placed, p: readonly [number, number]): number | null {
+  if (o.type === 'prop') {
+    const prop = o as Prop;
+    const b = propBounds(prop);
+    if (p[0] < b.x0 || p[0] > b.x1 || p[1] < b.y0 || p[1] > b.y1) return null;
+    const info = assetInfo(prop.asset);
+    return Math.min(info?.w ?? 1, info?.h ?? 1) * (prop.scale ?? 1);
+  }
+  if (o.type === 'image') {
+    const img = o as MapImage;
+    return onImage(img, [p[0], p[1]]) ? Math.min(img.w, img.h) : null;
+  }
+  return null;
+}
+
+/** A marker's badge radius: MARKER_RADIUS, or smaller to sit well inside the smallest prop or picture it is placed on. */
+export function markerRadius(objects: readonly Placed[], m: Pick<Marker, 'at'>): number {
+  let r = MARKER_RADIUS;
+  for (const o of objects) {
+    const side = itemUnder(o, m.at);
+    if (side !== null) r = Math.min(r, (ON_ITEM * side) / 2);
+  }
+  return Math.max(MIN_MARKER_RADIUS, r);
+}
 
 /**
  * A marker badge as SVG, centred on 0,0 with radius 1 (scale it to size).
@@ -40,14 +74,14 @@ export function markerGlyph(kind: MarkerKind, done = false): string {
 }
 
 /** The topmost marker under p (within its badge, plus `tol` squares), if any. */
-export function markerAt(objects: readonly { type: string }[], p: readonly [number, number], tol = 0): Marker | null {
+export function markerAt(objects: readonly Placed[], p: readonly [number, number], tol = 0): Marker | null {
   let best: Marker | null = null;
   let bd = Infinity;
   for (const o of objects) {
     if (o.type !== 'marker') continue;
     const m = o as Marker;
     const d = Math.hypot(m.at[0] - p[0], m.at[1] - p[1]);
-    if (d <= MARKER_RADIUS + tol && d <= bd) {
+    if (d <= markerRadius(objects, m) + tol && d <= bd) {
       bd = d;
       best = m;
     }

@@ -137,7 +137,7 @@ function layerSvg(layer: Layer, prefix: string): string {
         layer.items
           .map(
             (m) =>
-              `<g class="marker" data-marker="${esc(m.id)}" data-kind="${m.kind}"${m.done ? ' data-done=""' : ''} transform="translate(${n(m.at[0])} ${n(m.at[1])}) scale(${n(layer.radius)})">${markerGlyph(m.kind, m.done)}</g>`,
+              `<g class="marker" data-marker="${esc(m.id)}" data-kind="${m.kind}"${m.done ? ' data-done=""' : ''} transform="translate(${n(m.at[0])} ${n(m.at[1])}) scale(${n(m.r)})">${markerGlyph(m.kind, m.done)}</g>`,
           )
           .join(''),
       );

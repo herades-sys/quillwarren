@@ -80,7 +80,7 @@ export { DRAW_SHAPES, PRESET_SHAPES, OVAL_POINTS, shapeFromBox, shapeFromDrag, d
 export { solidCutouts } from './geometry/solid.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
 export { handoutSvg, PAPERS, type Paper, type HandoutOptions, type Handout } from './render/handout.ts';
-export { MARKERS, MARKER_RADIUS, markerGlyph, markerAt, type MarkerInfo } from './markers.ts';
+export { MARKERS, MARKER_RADIUS, MIN_MARKER_RADIUS, markerGlyph, markerAt, markerRadius, type MarkerInfo } from './markers.ts';
 export { imageUrl, imageFit, imageBounds, onImage, imageCentre } from './images.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
 
