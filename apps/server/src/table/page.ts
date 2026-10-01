@@ -106,7 +106,7 @@ const CSS = `
   .list li.page-item { display: grid; gap: 6px; }
 
   /* chat */
-  #panel-chat { grid-template-rows: minmax(0, 1fr) auto auto; align-content: stretch; gap: 0; padding: 0; overflow: hidden; }
+  #panel-chat { grid-template-rows: minmax(0, 1fr) auto auto auto; align-content: stretch; gap: 0; padding: 0; overflow: hidden; }
   #chat-log { overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
   .cm { padding: 5px 8px; border-radius: 8px; overflow-wrap: anywhere; line-height: 1.45; }
   .cm.cont { margin-top: -4px; padding-top: 0; }
@@ -146,8 +146,10 @@ const CSS = `
   .iroll:hover::after, .iroll:focus::after { content: attr(data-breakdown); position: absolute; left: 50%; bottom: calc(100% + 5px); transform: translateX(-50%); white-space: pre; padding: 4px 8px; border-radius: 6px; background: var(--ink); color: var(--bar); font: 400 12px ui-monospace, Consolas, monospace; z-index: 3; pointer-events: none; }
   #chat-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 8px 12px 4px; border-top: 1px solid var(--line); align-items: end; }
   #chat-input { min-height: 40px; max-height: 30vh; font: inherit; }
-  #chat-hint { padding: 0 12px 10px; font-size: 11.5px; }
+  #chat-hint { padding: 0 12px 4px; font-size: 11.5px; }
   #chat-hint code { font: 11px ui-monospace, Consolas, monospace; }
+  .chat-opts { display: flex; gap: 12px; padding: 0 12px 9px; }
+  .chat-opts .check { font-size: 12.5px; color: var(--muted); cursor: pointer; }
 
   /* turn order */
   .turns li.current { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -269,6 +271,7 @@ export function tablePage(o: TablePageOptions): string {
         <button class="btn primary" type="submit">Send</button>
       </form>
       <p class="hint" id="chat-hint"></p>
+      <div class="chat-opts"><label class="check" title="Throw 3D dice onto the table for every roll you can see"><input type="checkbox" id="dice-toggle"> 3D dice</label></div>
     </section>
     <section class="panel" id="panel-turn" data-panel="turn" role="tabpanel" aria-labelledby="tab-turn" hidden></section>
     ${gm ? `<section class="panel" id="panel-pages" data-panel="pages" role="tabpanel" aria-labelledby="tab-pages" hidden></section>

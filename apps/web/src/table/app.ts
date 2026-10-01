@@ -1,11 +1,12 @@
 // Delve Table in the browser: holds this member's view of the game, applies the
 // server's events to it, lays optimistic token moves over it, and wires the
 // board, the side panels, the header and the keyboard together.
-import type { GameEvent, Intent, Layer, Member, ServerMessage, Token } from '@delve/table';
+import type { ChatMessage, GameEvent, Intent, Layer, Member, ServerMessage, Token } from '@delve/table';
 import { createBoard, type Board } from './board.ts';
 import { initTableMarkers, type TableMarkers } from './gm-markers.ts';
 import { initChat } from './chat.ts';
 import type { Change, TableCtx } from './ctx.ts';
+import { initDice } from './dice.ts';
 import { openTokenDialog } from './dialog.ts';
 import { $, store, toast } from './dom.ts';
 import { initLibrary } from './library.ts';
@@ -55,6 +56,7 @@ export function startTable(initial: Initial): void {
   /** The GM can look at a Delve page as the players see it. */
   let seeAs: 'gm' | 'players' = gm ? 'gm' : 'players';
   let tableMarkers: TableMarkers | null = null;
+  let dice: ReturnType<typeof initDice> | null = null;
 
   function select(ids: string[]): void {
     selection = new Set(ids);
@@ -127,8 +129,10 @@ export function startTable(initial: Initial): void {
         if (!state) return;
         const changes = new Set<Change>();
         let reload = false;
+        const rolled: ChatMessage[] = [];
         for (const ev of msg.events) {
           const before = page();
+          if (ev.type === 'chat' && ev.message.rolls?.length && !state.chat.some((m) => m.id === ev.message.id)) rolled.push(ev.message);
           state = reduce(state, ev);
           changes.add(CHANGE[ev.type]);
           if (ev.type === 'game' && ev.playerPageId) changes.add('pages');
@@ -149,6 +153,7 @@ export function startTable(initial: Initial): void {
         if (changes.has('game') || changes.has('members')) showHeader();
         if (changes.has('pages') || changes.has('game')) showBanner();
         emit(changes);
+        for (const m of rolled) dice?.message(m); // only live rolls: a hello's backlog throws nothing
         break;
       }
       case 'error':
@@ -303,6 +308,7 @@ export function startTable(initial: Initial): void {
   };
 
   const chat = initChat(ctx, chatVisible, showUnread);
+  dice = initDice(ctx, initial.version, $('stage'));
   initTurns(ctx);
   if (gm) {
     initPages(ctx);

@@ -151,6 +151,11 @@ Players can log in with Discord, so their seat is tied to their Discord account 
     - Tokens: upload an image, add it to the page, pick a Delve prop as a token.
     - Players: invite link, member list, remove, and (with Discord login set up) "Players must log in with Discord".
   - Members show their Discord picture (when they have one) in the member list and on their chat lines, else their colour dot.
+- **3D dice:** every roll a member can see (`/r`, a GM roll's full copy, inline `[[…]]`) is also thrown as three.js dice over the board, in the roller's colour. The roll card stays the source of truth.
+  - `apps/web/src/table/dice.ts` (in table.js) holds the "3D dice" switch under the chat (per browser, in localStorage `delve-table-dice3d`; off by default with `prefers-reduced-motion`). On the first roll with the switch on, it imports `/assets/table-dice.js` (three.js + cannon-es 0.20.0, `apps/web/src/table-dice.ts`). Switched off, nothing loads.
+  - How a throw shows the server's values: `dice3d-sim.ts` simulates it first (cannon-es, fixed 1/60 s steps, seeded from the message id and time), then `dice3d-logic.ts` reads the face on top of each die and swaps labels so that face carries the rolled value (the opposite face is swapped too, so opposite faces still add up). The overlay (`dice3d.ts`) then replays the recorded motion.
+  - d4, d6, d8, d10, d12, d20, d100 (a tens and a units d10) and dF; other sizes get no die. At most 20 dice, then "+N more dice". Dropped dice dim once they land; rerolled ones aren't thrown. Dice rest about 2.5 s, then fade; throws may overlap.
+  - Nothing is thrown for a GM roll's hidden copy (it has no rolls), for the backlog in a `hello`, or while the tab is hidden.
   - With a Discord login, the header says "Logged in as <name> · Log out".
 - **Theming:** use Delve's viewer tokens (dark and light). Everything works with mouse and touch (pointer events).
 - **Shared:** `apps/server/src/table/page.ts` exports `tablePage(opts: { gameId: string; gameName: string; version: string; me: { id: string; name: string; role: 'gm' | 'player' } }): string`.
