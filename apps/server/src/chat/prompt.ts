@@ -242,7 +242,7 @@ export function chatContext({ map, rev, selection = [], view, levels = [] }: Cha
         lines.push(`Rooms span x ${n(Math.min(...b.map((x) => x.x0)))} to ${n(Math.max(...b.map((x) => x.x1)))}, y ${n(Math.min(...b.map((x) => x.y0)))} to ${n(Math.max(...b.map((x) => x.y1)))}.`);
       }
     }
-    lines.push(`Summary:\n${describeMap(map)}`);
+    lines.push(`Summary:\n${describeMap(map, { notesMax: 300 })}`);
     const objects = map.objects.map(objectLine).join('\n');
     lines.push(
       objects.length <= MAX_OBJECT_TEXT

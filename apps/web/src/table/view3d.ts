@@ -107,6 +107,14 @@ export interface View3d {
   following(): string | null;
   /** Point the camera at a mini. */
   focusToken(id: string): void;
+  /** Point the camera at a spot on the floor (cells). */
+  focusPoint(x: number, y: number): void;
+  /** A click (no drag, no mini under it) on the floor at x, y (cells). */
+  onFloorClick(cb: (x: number, y: number) => void): void;
+  /** Where a spot on the floor is in the stage's pixels now, or null (behind the camera). */
+  project(x: number, y: number, height?: number): [number, number] | null;
+  /** After every frame drawn (the camera may have moved): place your own HTML over the view. */
+  onFrame(cb: () => void): void;
   setFlat(flat: boolean): void;
   setWallHeight(h: number): void;
   setShadows(on: boolean): void;
@@ -533,8 +541,11 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     if (stepPings(now)) more = true;
     minis.face(camera, canvas.clientWidth, canvas.clientHeight);
     renderer.render(scene, camera);
+    for (const f of frameHooks) f();
     if (more) requestRender();
   }
+  const frameHooks: (() => void)[] = [];
+  const floorClicks: ((x: number, y: number) => void)[] = [];
 
   function resize(): void {
     const w = Math.max(1, stage.clientWidth);
@@ -664,6 +675,8 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     if (!p.hit) {
       if (!e.shiftKey) host.setSelection([]);
       lastClick = null;
+      const at = p.floor;
+      if (at) for (const f of floorClicks) f(at[0], at[1]);
       return;
     }
     if (!p.toggled) host.setSelection([p.hit]);
@@ -736,6 +749,22 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
       const v = viewNow();
       const d: Vec3 = [goal[0] - v.target[0], goal[1] - v.target[1], goal[2] - v.target[2]];
       animateTo({ position: [v.position[0] + d[0], v.position[1] + d[1], v.position[2] + d[2]], target: goal }, 350);
+    },
+    focusPoint(x, y) {
+      const v = viewNow();
+      const d: Vec3 = [x - v.target[0], -v.target[1], y - v.target[2]];
+      animateTo({ position: [v.position[0] + d[0], v.position[1] + d[1], v.position[2] + d[2]], target: [x, 0, y] }, 350);
+    },
+    onFloorClick(cb) {
+      floorClicks.push(cb);
+    },
+    project(x, y, height = 0) {
+      const v = new Vector3(x, height, y).project(camera);
+      if (v.z > 1 || v.z < -1) return null;
+      return [((v.x + 1) / 2) * canvas.clientWidth, ((1 - v.y) / 2) * canvas.clientHeight];
+    },
+    onFrame(cb) {
+      frameHooks.push(cb);
     },
     setFlat(on) {
       flat = on;

@@ -87,3 +87,27 @@ export function translateShape(shape: Shape, dx: number, dy: number): Shape {
 export function containsPoint(b: Bounds, [x, y]: Point, eps = EPS): boolean {
   return x >= b.x0 - eps && x <= b.x1 + eps && y >= b.y0 - eps && y <= b.y1 + eps;
 }
+
+/** Is p inside the ring (even-odd)? */
+export function pointInRing(p: Point, ring: readonly Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]!;
+    const [xj, yj] = ring[j]!;
+    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Is p inside the shape (its edge counts as inside)? */
+export function pointInShape(shape: Shape, p: Point): boolean {
+  if ('rect' in shape) {
+    const [x, y, w, h] = shape.rect;
+    return p[0] >= x && p[0] <= x + w && p[1] >= y && p[1] <= y + h;
+  }
+  if ('circle' in shape) {
+    const [cx, cy, r] = shape.circle;
+    return Math.hypot(p[0] - cx, p[1] - cy) <= r;
+  }
+  return pointInRing(p, shape.poly);
+}

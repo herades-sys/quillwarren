@@ -118,9 +118,22 @@ describe('eventFor: tokens', () => {
 
   it('strips gmNotes from visible tokens', () => {
     const s = table();
-    const [got] = deliver(s, { type: 'token.update', id: 'k6', set: { gmNotes: 'the axle is very cursed' } }, 'p1').got;
-    expect(got).toMatchObject({ type: 'token.upsert', token: { id: 'k6' } });
+    const [got] = deliver(s, { type: 'token.update', id: 'k6', set: { gmNotes: 'the axle is very cursed', name: 'Old cart' } }, 'p1').got;
+    expect(got).toMatchObject({ type: 'token.upsert', token: { id: 'k6', name: 'Old cart' } });
     expect(JSON.stringify(got)).not.toContain('cursed');
+  });
+
+  it('sends players nothing when only the GM notes changed; the GM gets them without the routing flag', () => {
+    const s = table();
+    const notes = { type: 'token.update', id: 'k6', set: { gmNotes: 'the axle is very cursed' } } as const;
+    const out = run(s, 'gm', notes);
+    expect(out.events).toMatchObject([{ type: 'token.upsert', gmOnly: true }]);
+    expect(deliver(s, notes, 'p1').got).toEqual([null]);
+    expect(deliver(s, notes, 'p2').got).toEqual([null]);
+    const gm = deliver(s, notes, 'gm').got[0];
+    expect(gm).toEqual({ type: 'token.upsert', token: expect.objectContaining({ id: 'k6', gmNotes: 'the axle is very cursed' }) });
+    // a change players can see is sent as before, without the notes
+    expect(run(s, 'gm', { type: 'token.update', id: 'k6', set: { gmNotes: 'x', x: 4 } }).events[0]).not.toHaveProperty('gmOnly');
   });
 
   it('only sends tokens on the page the member looks at', () => {

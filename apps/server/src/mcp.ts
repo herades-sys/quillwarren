@@ -61,6 +61,7 @@ Room and cutout shapes: rect, circle, poly, or preset {kind: oval|triangle|hexag
 Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
 Wall roughness: set_map roughness 1 (smooth) to 10 (caves); rooms, corridors and cutouts can have their own (update {"roughness": 9}). Rows of props (trees along a road): add_props_along.
 GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.
+GM notes: rooms, corridors and terrain carry notes (a description, monsters, loot) for the GM: add_room notes, or update {"notes": "..."} on any of them. They are never drawn or exported; the GM reads them in the editor and on Delve Table, and describe_map lists them.
 Segments: save_segment saves part of a map under a name (rooms 1–5 as "Temple of Efferd", a patch of trees and grass as "Mixed forest"); place_segment adds a renumbered copy anywhere, turned if asked; fill_with_segment tiles one over the land around the rooms, keeping the floor clear. list_segments shows what is saved.
 The user's own pictures (uploaded in the editor): list_images gives their src, and add_image places one by src (a table in the middle of room 3, a rug, a mosaic on the floor).`;
 
@@ -659,7 +660,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'update',
     {
       title: 'Update object',
-      description: 'Set or remove fields of one object, e.g. {"name": "Armoury"} or {"style": "locked"} on a door. id and type can\'t change.',
+      description: 'Set or remove fields of one object, e.g. {"name": "Armoury"}, {"style": "locked"} on a door, or {"notes": "Two ogres; a chest with 40 gp"} on a room, corridor or terrain (GM notes: never drawn, only the GM sees them; unset ["notes"] removes them). id and type can\'t change.',
       inputSchema: { map: mapId, id: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional() },
     },
     (a) => guarded(() => change(a.map, [{ op: 'update', id: a.id, set: a.set, unset: a.unset }], `Updated ${a.id}.`)),

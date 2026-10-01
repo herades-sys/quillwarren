@@ -1,7 +1,7 @@
 export * from './schema.ts';
 export { validateMap, ValidationError } from './validate.ts';
 export { applyOps, parseOps, OpError, OpSchema, MAP_FIELDS, type Op, type ApplyResult } from './ops.ts';
-export { describeMap } from './describe.ts';
+export { describeMap, type DescribeOptions } from './describe.ts';
 export { nextId, nextLabel, doorAtEnd, connectOps, withAttachedDoors, ConnectError, type ConnectOptions, type ConnectPlan } from './build.ts';
 export {
   toDungeonScrawl,
@@ -21,6 +21,8 @@ export {
   shapeBounds,
   shapeArea,
   translateShape,
+  pointInShape,
+  pointInRing,
   type Ring,
   type Polygon,
   type Bounds,
@@ -81,6 +83,21 @@ export { solidCutouts } from './geometry/solid.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
 export { handoutSvg, PAPERS, type Paper, type HandoutOptions, type Handout } from './render/handout.ts';
 export { MARKERS, MARKER_RADIUS, MIN_MARKER_RADIUS, markerGlyph, markerAt, markerRadius, type MarkerInfo } from './markers.ts';
+export {
+  NOTES_MAX,
+  NOTE_AREA_TYPES,
+  isNoteArea,
+  hasNotes,
+  areaContains,
+  noteAreasAt,
+  noteAreaAt,
+  areaTitle,
+  noteAnchor,
+  notedAreas,
+  notesOnly,
+  notesOps,
+  type NoteArea,
+} from './notes.ts';
 export { imageUrl, imageFit, imageBounds, onImage, imageCentre } from './images.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
 export { hashString } from './render/rng.ts';

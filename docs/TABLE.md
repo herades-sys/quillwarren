@@ -55,7 +55,8 @@ The message and state types are in `packages/table/src/protocol.ts`, and that fi
     - send chat, ping, and end their own turn.
   - A player can't change `layer`, `controlledBy`, `gmNotes`, images, `light` or `sight`, and can't open doors.
 - **`viewFor(state, member)`** / **`eventFor(state, member, event)`** strip what the member may not see before anything is sent:
-  - `gm`-layer tokens and every token's `gmNotes`;
+  - `gm`-layer tokens and every token's `gmNotes` (a change of nothing but `gmNotes` sends players nothing at all: the event carries the routing flag `gmOnly`);
+  - the GM's notes: the session notebook and room notes (see "GM notes");
   - on a dynamic-vision page, tokens the party doesn't see, and other players' tokens' `sight` and `light` (see "Vision and light");
   - a page's `walls`, `doors`, `doorState` and `lights`;
   - pages other than the player's current one;
@@ -149,6 +150,7 @@ Black where the party has never looked, dimmed (55 %) where it looked before, a 
   - `chat(game_id, seq, at, json)`: the message log (the last 200 go into `hello`).
   - `seats(game_id, member_id, nonce)`: what player cookies are signed against.
   - `explored(game_id, page_id, version, data)`: a dynamic-vision page's explored fog (`data` is `{polys}` or `{all: true}`), written with the game state's debounced flush.
+  - `notebook(game_id, id, title, text, created, updated)`: the GM's session notebook (see "GM notes"), written at once, apart from the game state.
   - `accounts(id, discord_id, username, name, avatar, avatar_file, created, seen)` and `account_sessions(token_hash, account_id, created, expires)`: Discord logins (see below).
 - **Uploaded images:** `${DELVE_DATA}/table-assets/<sha256>.<ext>`. Accepted: PNG, JPEG, WebP or GIF (checked by magic bytes), at most 10 MB, by the GM. They are served to members only at `/api/v1/games/:id/assets/<sha>.<ext>`.
 
@@ -169,6 +171,10 @@ Black where the party has never looked, dimmed (55 %) where it looked before, a 
 | `GET /games/:id/live` (WebSocket) | members | The sync channel |
 | `GET /games/:id/pages/:pageId/background.png?view=players\|gm` | members | A Delve page's picture in the page's frame (players: their own page, players' view with fog) |
 | `GET /games/:id/pages/:pageId/scene3d.json?view=players\|gm` | members | The 3D view's scene, filtered for the viewer (see "3D table view") |
+| `GET /games/:id/notebook` | GM | The session notebook `{entries: [{id, title, text, created, updated}]}`, the latest change first (see "GM notes") |
+| `POST /games/:id/notebook {title?, text?}` | GM | A new entry, `201 {entry}` |
+| `PATCH /games/:id/notebook/:entryId {title?, text?}` | GM | Change an entry, `{entry}` |
+| `DELETE /games/:id/notebook/:entryId` | GM | `204` |
 | `GET /play/:id/3d` (page, not under `/api/v1`) | members | The table in 3D |
 | `GET /auth/discord?next=` (page, not under `/api/v1`) | anyone | Start a Discord login; afterwards back to `next` |
 | `GET /auth/discord/callback` (page) | Discord | The end of the login |
@@ -214,6 +220,7 @@ Players can log in with Discord, so their seat is tied to their Discord account 
     - Pages: switch, "move players here", new page from a Delve map, rename, delete.
     - Tokens: upload an image, add it to the page, pick a Delve prop as a token.
     - Players: invite link, member list, remove, and (with Discord login set up) "Players must log in with Discord".
+    - Notes: room notes, notes on characters and NPCs, and the session notebook (see "GM notes"). The page banner has the Notes mode button, and rooms with notes a pin.
   - Members show their Discord picture (when they have one) in the member list and on their chat lines, else their colour dot.
 - **3D dice:** every roll a member can see (`/r`, a GM roll's full copy, inline `[[…]]`) is also thrown as three.js dice over the board, in the roller's colour. The roll card stays the source of truth.
   - `apps/web/src/table/dice.ts` (in table.js) holds the "3D dice" switch under the chat (per browser, in localStorage `delve-table-dice3d`; off by default with `prefers-reduced-motion`). On the first roll with the switch on, it imports `/assets/table-dice.js` (three.js + cannon-es 0.20.0, `apps/web/src/table-dice.ts`). Switched off, nothing loads.
@@ -250,7 +257,7 @@ The same live game as the 2D table, for the GM and the players, with the page as
 - **Minis:** every token is a standee: its picture on an upright card that turns to face the camera, on a round base in the controlling member's colour (light stone for "all", dark stone for GM-only), sized by `w`/`h` (an ellipse for tokens that aren't square). **Flat** lays them down as discs seen from above; looking nearly straight down does that by itself. Map-layer tokens always lie flat on the floor and never catch the pointer. Name plates and bars are HTML over the canvas, as on the 2D table (names with `showName`, hovered or selected; bars when the mini is at least 14 px wide). The GM sees gm-layer tokens translucent.
 - **Moving:** drag a mini over the floor. It snaps to cells like the 2D board (`dragTargets`; Alt moves freely), the selection moves together, it's shown at once and snaps back if the server refuses. Players can only grab the minis they control (`canMove`); the server checks anyway. Holding still on the floor for 600 ms pings.
 - **Pages:** players follow the page the GM moves them to (a fresh `hello` loads its scene). The GM gets a page picker (★ marks the players' page; it sends `page.view`, so the GM's 2D tab follows too), "Bring them here" when the players are elsewhere, and the **GM view / Players' view** toggle: it fetches the players' scene and hides gm-layer tokens, so the GM sees exactly what the players get. It isn't remembered across loads, like the 2D one.
-- **Side panel:** a **Minis** tab (every mini on the page; select, look at, follow) and a **View** tab (walls, flat, shadows; kept per browser in `localStorage` `delve-table3d-*`). On phones it's a bottom sheet, and the camera buttons move above it.
+- **Side panel:** a **Minis** tab (every mini on the page; select, look at, follow), a **View** tab (walls, flat, shadows; kept per browser in `localStorage` `delve-table3d-*`) and, for the GM, a **Notes** tab (see "GM notes"). On phones it's a bottom sheet, and the camera buttons move above it.
 - **No token tools in 3D:** the GM adds characters on the 2D table (Tokens tab); they appear in 3D at once.
 
 ### With dynamic vision (line of sight)
@@ -259,7 +266,43 @@ The same live game as the 2D table, for the GM and the players, with the page as
 - The 3D client keeps the `vision` messages (`vision-view.ts` `mergeVision`): when the explored fog grows it fetches the scene again (at most about once a second), and it dims what the party saw before but doesn't see now (`darknessPolygons` on `view.overlays`). The GM's Players' view shows only the tokens the party sees (`previewTokens`).
 - Not yet: point lights in 3D. `view.lights.setSources([{id, x, y, height?, color?, intensity?, range?, castShadow?}])` (at most 12) and `view.lights.setAmbient(0..1)` are ready; give players only lights inside `visible`, because map light positions would give away rooms nobody has seen.
 
-### For the next steps (notes, Discord)
+### For the next steps (Discord)
 
-- **Notes:** `startTable3d()` returns a `Table3dCtx` (`state`, `page`, `tokens`, `scene`, `selected`, `act`, `on`, `view`); `ctx.addPanel(id, label)` adds a tab to the side panel and returns its empty panel.
+- **Panels:** `startTable3d()` returns a `Table3dCtx` (`state`, `page`, `tokens`, `scene`, `selected`, `act`, `on`, `onMessage`, `seeAs`, `view`); `ctx.addPanel(id, label)` adds a tab to the side panel and returns its empty panel, `ctx.showPanel(id)` opens it, `ctx.onBanner(fn)` adds controls to the page banner. The view has `onFloorClick`, `project` and `onFrame` for HTML over the scene (the notes' pins use them).
 - **Shared:** `apps/server/src/table/page.ts` exports `tablePage(opts: { gameId: string; gameName: string; version: string; me: { id: string; name: string; role: 'gm' | 'player' } }): string`.
+
+## GM notes
+
+Step 3 of the 3D GM view request: the GM keeps notes apart from the players, in three kinds. All of it is the GM's alone; players never load the code, and the server never sends them a byte of it.
+
+### Notes on rooms, corridors and terrain (prep that travels with the map)
+
+- **Where they live:** the Delve map's own `notes` field on rooms, corridors and terrain (docs/API.md, "GM notes"), so the editor, Claude (`describe_map`, MCP `update {"notes"}`) and every GM tab share them. Markers keep their `text`.
+- **Never to players:** notes are never drawn, so no picture, 3D scene, players' screen or export has them, and players' pages carry no map id. The GM's client reads them from `GET /api/v1/maps/:id` (`apps/web/src/table/gm-map.ts`, shared with the GM markers) and writes them as map ops (`POST /api/v1/maps/:id/ops`, `by: "table"`) with the editor login. Without it (a co-GM through Discord) they are read only, with a note saying so; from the internet the map API needs the editor login anyway.
+- **Which area a click picks** (core `noteAreasAt`): the rooms whose shape holds the point, the topmost (the last in the map) first, then corridors (path and width, butt ends, square corners), then terrain (minus its holes). The note box lists the others under the same spot ("Also here"), so a room inside a room, a pool in a hall, or a corridor mouth is one click away.
+- **The pins:** a small note pin (`note-pins.ts`) sits beside the room number of every room with notes (corridors half way along, terrain in its middle), in the GM's own view only: never in the "Players' view". Zoomed far out they shrink. A click on a pin opens the notes.
+- **On the 2D board** (`room-notes.ts`): the GM's note box, like the markers' one. Two ways in, so it never fights token selection:
+  - click a pin;
+  - **Notes mode** (the "Notes" button in the page banner, or N; Esc or N again stops): a click on a room's floor opens its notes. Tokens, markers and doors keep their clicks, and dragging still pans.
+  - The box saves a moment (0.7 s) after typing stops and on leaving the field; blank notes are removed. On phones it sits at the bottom.
+- **In 3D** (`notes3d.ts`): the **Notes** tab of the side panel. A click on a room's floor while the tab is showing (or on a pin, any time) opens that room's notes there; the banner's **Notes** button opens the tab. Clicking a room in the tab's list points the camera at it.
+- **Map changes don't wake the players:** a change of nothing but notes (core `notesOnly`) sends no `page.upsert` (so no player picture or 3D scene is fetched again) and no players' screen `changed`; the GM's connections get `{type: 'map.notes', mapId}` instead and fetch the map for its notes (`TableHub.toGms`). Any other change in the same 0.8 s wait still follows the map as before.
+
+### The session notebook (per game)
+
+- **Entries** `{id, title, text, created, updated}` (`NotebookEntry` in `protocol.ts`; limits in `packages/table/src/notebook.ts`: title 120 characters on one line, blank becomes "Untitled"; text 100 000 characters, plain with line breaks; 500 entries per game). Stored in `table.db` (table `notebook`), deleted with the game.
+- **Over REST, not intents** (`apps/server/src/table/notebook.ts`): the notebook isn't game state, so it isn't saved with every change of it, isn't in any `hello`, and has nothing to filter per member; a long session log is fetched once instead of on every reconnect. Only the GM may call it (`memberOf(...).role === 'gm'`: a player gets 403, the GM testing as a player too, anyone else 401; writes with the cookie need the page's own origin). After every write the GM's live connections get `{type: 'notebook', entry}` or `{type: 'notebook', removed}`, so another tab (the 3D view, a second screen) follows; players' connections never do. There are no notebook intents: a `notebook.*` intent is refused as unknown.
+- **The tab** (2D sidebar and 3D panel, Notebook section): search (every word, title and text), New, open an entry to rename it or write, autosave while typing (0.8 s), "Insert time stamp" (`[Thu 1 Oct 21:04]` on a line of its own at the cursor), and Delete with a confirmation. The last open entry is remembered per browser. Typing is never overwritten by what another tab saves; the last save wins.
+
+### Notes on characters and NPCs
+
+- **The field:** the token's `gmNotes` (at most 5000 characters), as before never sent to players (`tokenForPlayer`). A change of nothing but `gmNotes` sends players nothing at all, not even a token update (`gmOnly` on the event; the live hub skips it for players before the dynamic-vision bookkeeping, so it can't take a token away from them either).
+- **The tab's Characters section:** the selected token's (or mini's) notes, saved through `token.update` (so `can()` and the filters apply as for the token dialog, which edits them too), and a list of every token on the page with notes (click: select it, and look at it).
+
+### Code
+
+- Core: `packages/core/src/notes.ts` (picking, titles, pins' spots, `notesOnly`, `notesOps`), `describe.ts` (the "GM notes" section).
+- Table package: `protocol.ts` (`NotebookEntry`, the `map.notes` and `notebook` messages, `gmOnly`), `notebook.ts`, `rules.ts` / `views.ts` (`gmOnly`).
+- Server: `apps/server/src/table/notebook.ts` (REST), `store.ts` (table `notebook`), `live.ts` (`toGms`, `gmOnly`), `routes.ts` (notes-only map changes), `notes-css.ts` (both pages); `apps/server/src/service.ts` (`onChange` says `notesOnly`; screens aren't woken).
+- Client: `apps/web/src/table/{gm-map,area-note,room-notes,note-pins,notes-panel,notes-logic,notes3d}.ts`; the editor's inspector has the GM notes box for rooms, corridors and terrain.
+- Tests: `apps/server/test/notes.test.ts` (nothing reaches players: pictures byte for byte, 3D scenes, the live channel, the players' screen and its socket, `.ds`, handout; the notebook's access and GM-only messages; `gmNotes`), `packages/core/test/notes.test.ts`, `apps/web/test/notes-logic.test.ts`, `packages/table/test/views.test.ts`.

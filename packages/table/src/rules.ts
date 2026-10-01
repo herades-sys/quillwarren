@@ -556,9 +556,12 @@ function apply(state: GameState, memberId: string, intent: Intent, ctx: ApplyCon
           ? { x: num(intent.x, 'Token x', -1000, 10000), y: num(intent.y, 'Token y', -1000, 10000) }
           : tokenPatch(state, needObj(intent.set, 'set'));
       const token = patched(old, patch);
+      // nothing but the GM's notes changed: players needn't hear of it at all
+      const keys = Object.keys(patch);
+      const gmOnly = intent.type === 'token.update' && keys.length > 0 && keys.every((k) => k === 'gmNotes');
       return {
         state: { ...state, tokens: state.tokens.map((t) => (t.id === old.id ? token : t)) },
-        events: [{ type: 'token.upsert', token, prevLayer: old.layer }],
+        events: [{ type: 'token.upsert', token, prevLayer: old.layer, ...(gmOnly ? { gmOnly: true } : {}) }],
       };
     }
     case 'token.delete': {

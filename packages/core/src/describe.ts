@@ -7,6 +7,7 @@ import { assetInfo } from './assets/catalog.ts';
 import { fogSummary } from './fog.ts';
 import { floorText, isConnector } from './floors.ts';
 import { MARKERS } from './markers.ts';
+import { areaTitle, hasNotes, isNoteArea } from './notes.ts';
 import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Point, Prop, Room, Terrain } from './schema.ts';
 
 const fmt = (n: number): string => String(Math.round(n * 100) / 100);
@@ -18,7 +19,12 @@ function unitOf(map: DelveMap): { size: number; name: string } {
 
 const roomName = (r: Room): string => [r.label, r.name ?? '(unnamed)'].filter(Boolean).join(' ');
 
-export function describeMap(map: DelveMap): string {
+export interface DescribeOptions {
+  /** Cut each GM note to this many characters (default: whole notes). */
+  notesMax?: number;
+}
+
+export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
   const unit = unitOf(map);
   const ft = (sq: number): string => `${fmt(sq * unit.size)} ${unit.name}`;
   const rooms = map.objects.filter((o): o is Room => o.type === 'room');
@@ -153,6 +159,17 @@ export function describeMap(map: DelveMap): string {
     const counts = new Map<string, number>();
     for (const o of others) counts.set(o.type, (counts.get(o.type) ?? 0) + 1);
     lines.push(`Also: ${[...counts].map(([t, n]) => `${n} ${t}`).join(', ')}`);
+  }
+  // the GM's prep (descriptions, monsters, loot): for the GM and Claude, never drawn
+  const noted = map.objects.filter(hasNotes);
+  if (noted.length) {
+    const max = opts.notesMax ?? Infinity;
+    const cut = (s: string): string => (s.length > max ? `${s.slice(0, Math.max(0, max - 1))}…` : s);
+    lines.push('GM notes (GM only, never drawn):');
+    for (const o of noted) {
+      const title = isNoteArea(o) ? areaTitle(map, o) : `${o.type}${o.name ? ` ${o.name}` : ''}`;
+      lines.push(`  ${title} [${o.id}]: ${JSON.stringify(cut(o.notes!.trim()))}`);
+    }
   }
   const fog = fogSummary(map);
   if (fog) lines.push(fog);

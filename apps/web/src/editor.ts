@@ -16,6 +16,7 @@ import {
   MARKERS,
   nextId,
   nextLabel,
+  NOTES_MAX,
   PRESETS,
   propBounds,
   propCentre,
@@ -1021,6 +1022,14 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       },
     });
   const field = (label: string, input: HTMLElement) => h('label', { class: 'field' }, h('span', {}, label), input);
+  /** The GM's notes on a room, corridor or terrain (a description, monsters, loot): never drawn; the GM reads them on Delve Table too. */
+  const gmNotes = (o: MapObject) => {
+    const area = text(o.id, 'notes', o.notes, { area: true });
+    area.setAttribute('rows', '6');
+    area.setAttribute('maxlength', String(NOTES_MAX));
+    area.setAttribute('placeholder', 'A description, monsters, loot… Only you see this, here and on Delve Table.');
+    return field('GM notes (never shown to players)', area);
+  };
   const pair = (...kids: HTMLElement[]) => h('div', { class: 'pair' }, ...kids);
 
   function shapeFields(o: MapObject & { shape: Shape }): HTMLElement[] {
@@ -1053,7 +1062,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     if (o.type !== 'label' && o.type !== 'marker') out.push(field('Name', text(id, 'name', o.name)));
     switch (o.type) {
       case 'room':
-        out.push(field('Room number', text(id, 'label', o.label)), field('GM notes (never drawn)', text(id, 'notes', o.notes, { area: true })), roughnessPick(o), ...shapeFields(o));
+        out.push(field('Room number', text(id, 'label', o.label)), gmNotes(o), roughnessPick(o), ...shapeFields(o));
         break;
       case 'cutout': {
         const fill = (e: Event) => {
@@ -1073,6 +1082,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       case 'corridor':
         out.push(
           field('Width', number(o.width, 0.5, (v) => v > 0 && upd({ width: v }))),
+          gmNotes(o),
           roughnessPick(o),
           h('p', { class: 'hint' }, `Connects ${o.from ?? '?'} and ${o.to ?? '?'}. ${o.path ? `Custom path, ${o.path.length} points.` : 'Routed automatically; it follows its rooms.'}`),
         );
@@ -1112,7 +1122,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         break;
       }
       case 'terrain':
-        out.push(field('Terrain', h('select', { onchange: (e: Event) => upd({ asset: (e.target as HTMLSelectElement).value }) }, ...assetOptions(TILES, o.asset))), ...shapeFields(o));
+        out.push(field('Terrain', h('select', { onchange: (e: Event) => upd({ asset: (e.target as HTMLSelectElement).value }) }, ...assetOptions(TILES, o.asset))), gmNotes(o), ...shapeFields(o));
         break;
       case 'marker':
         out.push(

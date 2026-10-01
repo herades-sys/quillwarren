@@ -100,6 +100,22 @@ describe('MCP endpoint', () => {
     expect((await call('describe_map', { map: 'map_nope' })).text).toContain('no map with id "map_nope"');
   });
 
+  it('writes GM notes on rooms, corridors and terrain, and lists them in describe_map', async () => {
+    const id = /id (map_[0-9a-f]+)/.exec((await call('create_map', { name: 'Noted', template: 'test-dungeon' })).text)![1]!;
+    expect((await call('update', { map: id, id: 'c1', set: { notes: 'Oil on the floor: DC 10 or fall' } })).isError).toBeFalsy();
+    expect((await call('update', { map: id, id: 'r5', unset: ['notes'] })).isError).toBeFalsy();
+    await call('add_terrain', { map: id, asset: 'water-shallow', rect: [8, 26, 2, 2] });
+    const terrain = JSON.parse((await call('get_map', { map: id })).text).map.objects.find((o: { type: string }) => o.type === 'terrain');
+    await call('update', { map: id, id: terrain.id, set: { notes: 'The key lies at the bottom' } });
+    const text = (await call('describe_map', { map: id })).text;
+    expect(text).toContain('GM notes (GM only, never drawn):');
+    expect(text).toContain('  Corridor 1–2 [c1]: "Oil on the floor: DC 10 or fall"');
+    expect(text).toContain(`[${terrain.id}]: "The key lies at the bottom"`);
+    expect(text).not.toContain('Cult leader');
+    const { tools } = await client.listTools();
+    expect(tools.find((t) => t.name === 'update')?.description).toContain('"notes"');
+  });
+
   it('focus reaches an open viewer', async () => {
     const id = /id (map_[0-9a-f]+)/.exec((await call('create_map', { name: 'Watched', template: 'test-dungeon' })).text)![1]!;
     const ws = new WebSocket(`${base.replace('http', 'ws')}/api/v1/maps/${id}/live`);

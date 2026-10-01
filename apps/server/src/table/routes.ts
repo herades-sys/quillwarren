@@ -26,6 +26,7 @@ import { ASSET_FILE, MAX_ASSET_BYTES, sniffImage, TableAssets } from './assets.t
 import { ACCOUNT_COOKIE, avatarUrl, discordLoginUrl, registerDiscord, type DiscordConfig } from './discord.ts';
 import { joinPage, lobbyPage, messagePage, notGmPage, type DiscordLogin } from './html.ts';
 import { registerLive, TableHub } from './live.ts';
+import { registerNotebook } from './notebook.ts';
 import { tablePage } from './page.ts';
 import { registerTable3d } from './scene3d.ts';
 import { newGameId, TableStore, type Account } from './store.ts';
@@ -41,7 +42,7 @@ export interface TableDeps {
   /** The data dir (DELVE_DATA, via buildApp). Without it games live in memory and uploads in a temp dir (tests). */
   dataDir?: string;
   /** Subscribe to changes of Delve maps (MapService.onChange), so pages drawn from a map follow it. */
-  onMapChange?: (cb: (mapId: string) => void) => void;
+  onMapChange?: (cb: (mapId: string, change?: { notesOnly: boolean }) => void) => void;
   /** Discord login for players (DELVE_DISCORD_CLIENT_ID/SECRET). Without it there's no Discord anywhere. */
   discord?: DiscordConfig;
 }
@@ -123,7 +124,6 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
   // reloads its picture. When the map's walls, doors or lights changed, the page
   // takes the new ones (a page.update, so vision follows); otherwise nothing
   // about the page itself changes, so no rev bump.
-  const following = new Map<string, ReturnType<typeof setTimeout>>();
   const followMap = (mapId: string) => {
     let map: DelveMap | null = null;
     try {
@@ -156,19 +156,37 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
       if (state && pages.length) hub.publish(state, pages.map((page) => ({ type: 'page.upsert', page })));
     }
   };
-  deps.onMapChange?.((mapId) => {
-    if (following.has(mapId)) return;
-    following.set(
-      mapId,
-      setTimeout(() => {
+  // A change of nothing but notes (GM notes are never drawn) changes no picture: the
+  // pages aren't sent again, so players' pictures and 3D scenes stay as they are;
+  // only the GM's connections hear "map.notes" and fetch the map for its notes.
+  const notesChanged = (mapId: string) => {
+    for (const g of store.list()) {
+      const state = store.get(g.id);
+      if (state?.pages.some((p) => p.background.kind === 'delve' && p.background.mapId === mapId)) hub.toGms(state.id, { type: 'map.notes', mapId });
+    }
+  };
+  /** Changes of a map within one wait, and whether any of them was more than notes. */
+  const following = new Map<string, { timer: ReturnType<typeof setTimeout>; full: boolean }>();
+  deps.onMapChange?.((mapId, change) => {
+    const full = !change?.notesOnly;
+    const pending = following.get(mapId);
+    if (pending) {
+      pending.full ||= full;
+      return;
+    }
+    const entry = {
+      full,
+      timer: setTimeout(() => {
         following.delete(mapId);
-        followMap(mapId);
+        if (entry.full) followMap(mapId);
+        else notesChanged(mapId);
       }, MAP_FOLLOW_MS),
-    );
+    };
+    following.set(mapId, entry);
   });
 
   app.addHook('onClose', async () => {
-    for (const t of following.values()) clearTimeout(t);
+    for (const f of following.values()) clearTimeout(f.timer);
     hub.close();
     store.close();
     assets.close();
@@ -202,6 +220,8 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
     t.addContentTypeParser(/^image\//, { parseAs: 'buffer', bodyLimit: MAX_ASSET_BYTES }, (_req, body, done) => done(null, body));
 
     registerLive(t, hub, store, access);
+    // the GM's session notebook (GM notes)
+    registerNotebook(t, { store, hub, access });
     // the 3D table view: /play/:id/3d and the members-only scene3d.json
     registerTable3d(t, { store, access, maps: deps.maps, version: deps.version, discord: Boolean(discord), accountOf, vision: hub.vision });
 

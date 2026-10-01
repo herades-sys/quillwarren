@@ -1,6 +1,8 @@
 // The table page (/play/:gameId): the HTML shell and CSS around the client in
 // apps/web/src/table (built to /assets/table.js). The script draws the board,
 // fills the panels and keeps everything live; this only lays the page out.
+import { NOTES_CSS } from './notes-css.ts';
+
 export interface TablePageOptions {
   gameId: string;
   gameName: string;
@@ -235,7 +237,7 @@ export function tablePage(o: TablePageOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(o.gameName)} · Delve Table</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>${CSS}</style>
+<style>${CSS}${gm ? NOTES_CSS : ''}</style>
 </head>
 <body class="${gm ? 'role-gm' : 'role-player'}">
 <header>
@@ -262,7 +264,7 @@ export function tablePage(o: TablePageOptions): string {
     <nav class="tabs" role="tablist">
       ${tab('chat', 'Chat<span class="badge" id="chat-badge" hidden></span>', true)}
       ${tab('turn', 'Turn order')}
-      ${gm ? tab('pages', 'Pages') + tab('tokens', 'Tokens') : ''}
+      ${gm ? tab('pages', 'Pages') + tab('tokens', 'Tokens') + tab('notes', 'Notes') : ''}
       ${tab('players', 'Players')}
     </nav>
     <section class="panel" id="panel-chat" data-panel="chat" role="tabpanel" aria-labelledby="tab-chat">
@@ -276,7 +278,8 @@ export function tablePage(o: TablePageOptions): string {
     </section>
     <section class="panel" id="panel-turn" data-panel="turn" role="tabpanel" aria-labelledby="tab-turn" hidden></section>
     ${gm ? `<section class="panel" id="panel-pages" data-panel="pages" role="tabpanel" aria-labelledby="tab-pages" hidden></section>
-    <section class="panel" id="panel-tokens" data-panel="tokens" role="tabpanel" aria-labelledby="tab-tokens" hidden></section>` : ''}
+    <section class="panel" id="panel-tokens" data-panel="tokens" role="tabpanel" aria-labelledby="tab-tokens" hidden></section>
+    <section class="panel notes-panel" id="panel-notes" data-panel="notes" role="tabpanel" aria-labelledby="tab-notes" hidden></section>` : ''}
     <section class="panel" id="panel-players" data-panel="players" role="tabpanel" aria-labelledby="tab-players"${o.discord ? ' data-discord="1"' : ''}${o.linked ? ' data-linked="1"' : ''} hidden></section>
   </aside>
 </div>

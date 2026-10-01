@@ -44,7 +44,17 @@ export interface Table3dCtx {
   view(): View3d | null;
   /** A new tab in the side panel; returns the (empty) panel to fill. */
   addPanel(id: string, label: string): HTMLElement;
+  /** Switch the side panel to a tab (and open the panel). */
+  showPanel(id: string): void;
+  /** The tab the side panel shows, or null when the panel is closed. */
+  shownPanel(): string | null;
+  /** The page's banner was rebuilt: add your own controls to it (GM notes' button). */
+  onBanner(fn: (banner: HTMLElement) => void): void;
   on(fn: (c: Change) => void): () => void;
+  /** Every message from the server, after the view has handled it. */
+  onMessage(fn: (m: ServerMessage) => void): () => void;
+  /** The GM's own view, or as the players see it (players: always). */
+  seeAs(): 'gm' | 'players';
 }
 
 const CHANGE: Record<GameEvent['type'], Change> = {
@@ -217,7 +227,13 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
 
   // ---------- receiving ----------
 
+  const msgListeners = new Set<(m: ServerMessage) => void>();
   function onMessage(msg: ServerMessage): void {
+    handle(msg);
+    for (const f of [...msgListeners]) f(msg);
+  }
+
+  function handle(msg: ServerMessage): void {
     switch (msg.type) {
       case 'hello': {
         state = { view: msg.view, chat: msg.chat };
@@ -290,6 +306,7 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
   }
 
   let bannerKey = '';
+  const bannerHooks: ((banner: HTMLElement) => void)[] = [];
   function showBanner(): void {
     const v = state?.view;
     const p = page();
@@ -339,6 +356,7 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
     }
     if (ft) kids.push(h('button', { type: 'button', class: 'follow', title: 'Stop following', onclick: () => setFollow(null) }, `Following ${ft.name?.trim() || 'mini'} ×`));
     ui.banner.replaceChildren(...kids);
+    for (const f of bannerHooks) f(ui.banner);
   }
 
   function showConn(s: ConnState, detail?: string): void {
@@ -357,11 +375,16 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
 
   const panels = new Map<string, { tab: HTMLButtonElement; panel: HTMLElement }>();
   let activeTab = store.get<string>(KEY.tab) ?? 'minis';
+  // the tab picked last time, even while it isn't added yet (the Notes tab comes after the view's own)
+  let wantedTab = activeTab;
 
-  function showTab(id: string): void {
+  function showTab(id: string, remember = true): void {
     if (!panels.has(id)) id = panels.keys().next().value ?? id;
     activeTab = id;
-    store.set(KEY.tab, id);
+    if (remember) {
+      wantedTab = id;
+      store.set(KEY.tab, id);
+    }
     for (const [k, p] of panels) {
       p.tab.setAttribute('aria-selected', String(k === id));
       p.panel.hidden = k !== id;
@@ -374,7 +397,8 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
     ui.tabs.append(tab);
     ui.side.append(panel);
     panels.set(id, { tab, panel });
-    showTab(panels.has(activeTab) ? activeTab : (panels.keys().next().value ?? id));
+    if (panels.has(wantedTab)) showTab(wantedTab);
+    else showTab(panels.has(activeTab) ? activeTab : (panels.keys().next().value ?? id), false);
     return panel;
   }
 
@@ -553,9 +577,23 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
     act,
     view: () => view,
     addPanel,
+    showPanel(id) {
+      if (!sideOpen()) setSide(true);
+      showTab(id);
+    },
+    shownPanel: () => (sideOpen() ? activeTab : null),
+    onBanner(fn) {
+      bannerHooks.push(fn);
+      fn(ui.banner);
+    },
     on(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
+    onMessage(fn) {
+      msgListeners.add(fn);
+      return () => msgListeners.delete(fn);
+    },
+    seeAs: () => seeAs,
   };
 }

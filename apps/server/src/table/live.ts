@@ -222,7 +222,9 @@ export class TableHub {
     const touched = new Set<string>();
     const switched = new Set<string>();
     for (const e of events) {
-      if (e.type === 'token.upsert') touched.add(e.token.pageId);
+      if (e.type === 'token.upsert') {
+        if (!e.gmOnly) touched.add(e.token.pageId); // notes don't move anyone's sight
+      }
       else if (e.type === 'token.remove' && e.pageId !== undefined) touched.add(e.pageId);
       else if (e.type === 'page.upsert') {
         touched.add(e.page.id);
@@ -252,6 +254,8 @@ export class TableHub {
       let switched = false;
       let turnShows = false; // a token in the turn order came into sight or left it: its entry changes
       for (const e of events) {
+        // the GM's notes on a token changed and nothing else: not even a removal for players
+        if (e.type === 'token.upsert' && e.gmOnly && me.role !== 'gm') continue;
         const f = eventFor(state, c.memberId, e, filter);
         if (known && e.type === 'token.upsert') {
           // in sight: send it; out of sight: a removal if they hold it, else nothing at all
@@ -288,6 +292,23 @@ export class TableHub {
       if (mine.length) send(c.socket, { type: 'events', rev: state.rev, events: mine });
       if (switched) this.hello(c, state);
     }
+  }
+
+  /**
+   * A GM-only message (the notebook, notes on a page's map) to the game's GM
+   * connections. Players never get these; a GM testing as a player (player
+   * cookie) is a player here too. Returns how many got it.
+   */
+  toGms(gameId: string, msg: Extract<ServerMessage, { type: 'notebook' | 'map.notes' }>): number {
+    const state = this.store.get(gameId);
+    if (!state) return 0;
+    let n = 0;
+    for (const c of this.rooms.get(gameId) ?? []) {
+      if (state.members.find((m) => m.id === c.memberId)?.role !== 'gm') continue;
+      send(c.socket, msg);
+      n++;
+    }
+    return n;
   }
 
   kick(gameId: string, which: (memberId: string) => boolean, reason: string): void {

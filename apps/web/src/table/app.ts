@@ -4,6 +4,9 @@
 import type { ChatMessage, GameEvent, Intent, Layer, Member, ServerMessage, Token } from '@delve/table';
 import { createBoard, type Board } from './board.ts';
 import { initTableMarkers, type TableMarkers } from './gm-markers.ts';
+import { createGmMap } from './gm-map.ts';
+import { initNotesPanel } from './notes-panel.ts';
+import { initRoomNotes, type RoomNotes } from './room-notes.ts';
 import { initChat } from './chat.ts';
 import type { Change, TableCtx } from './ctx.ts';
 import { initDice } from './dice.ts';
@@ -59,6 +62,11 @@ export function startTable(initial: Initial): void {
   let seeAs: 'gm' | 'players' = gm ? 'gm' : 'players';
   let tableMarkers: TableMarkers | null = null;
   let dice: ReturnType<typeof initDice> | null = null;
+  // GM notes (docs/TABLE.md, "GM notes"): the page's Delve map for its notes and markers, the board's pins and note box
+  const gmMap = gm ? createGmMap() : null;
+  let roomNotes: RoomNotes | null = null;
+  let notesPanel: ReturnType<typeof initNotesPanel> | null = null;
+  const msgListeners = new Set<(m: ServerMessage) => void>();
 
   // ---------- dynamic vision (vision-view.ts) ----------
 
@@ -145,6 +153,11 @@ export function startTable(initial: Initial): void {
   // ---------- receiving ----------
 
   function onMessage(msg: ServerMessage): void {
+    handle(msg);
+    for (const f of [...msgListeners]) f(msg);
+  }
+
+  function handle(msg: ServerMessage): void {
     switch (msg.type) {
       case 'hello': {
         const again = state !== null && state.view.pageId === msg.view.pageId;
@@ -154,7 +167,9 @@ export function startTable(initial: Initial): void {
         opt.clear();
         selection = new Set([...selection].filter((id) => msg.view.tokens.some((t) => t.id === id)));
         board?.setPage(page(), again); // a reconnect fetches the picture again: the map may have changed meanwhile
+        gmMap?.setPage(page(), true);
         tableMarkers?.pageChanged(page());
+        roomNotes?.update();
         board?.update();
         showHeader();
         showBanner();
@@ -183,7 +198,10 @@ export function startTable(initial: Initial): void {
         }
         if (changes.has('pages')) {
           board?.setPage(page(), reload);
+          // the page sent again: its Delve map (or the door state) changed, so fetch the map's notes and markers again
+          gmMap?.setPage(page(), msg.events.some((ev) => ev.type === 'page.upsert' && ev.page.id === state?.view.pageId));
           tableMarkers?.pageChanged(page());
+          roomNotes?.update();
         }
         board?.update();
         if (changes.has('game') || changes.has('members')) showHeader();
@@ -194,6 +212,10 @@ export function startTable(initial: Initial): void {
       }
       case 'vision':
         onVision(msg.pageId, msg.vision);
+        break;
+      case 'map.notes':
+        // only notes changed (no picture did): fetch them, leave the picture alone
+        if (gmMap && msg.mapId === gmMap.mapId()) void gmMap.reload();
         break;
       case 'error':
         if (msg.ref === undefined) toast(msg.error);
@@ -249,10 +271,25 @@ export function startTable(initial: Initial): void {
         board?.setPage(page(), true); // same page, other picture
         board?.visionChanged(); // the players' darkness, or the GM's hint of it
         tableMarkers?.pageChanged(page());
+        roomNotes?.update(); // no note pins in the players' view
+        notesPanel?.roomsChanged();
         board?.update();
         showBanner();
       });
       kids.push(b);
+      if (seeAs === 'gm' && roomNotes) {
+        // Notes mode: a click on a room's floor opens its GM notes (pins open them any time)
+        const on = roomNotes.mode();
+        const n = Object.assign(document.createElement('button'), {
+          type: 'button',
+          className: 'see-as notes-mode',
+          textContent: on ? 'Notes: on' : 'Notes',
+          title: on ? 'Click a room, corridor or terrain to read and write its GM notes. Click here (or N, Esc) to stop.' : 'Notes mode (N): click a room to read and write its GM notes. Rooms with notes have a pin.',
+        });
+        n.setAttribute('aria-pressed', String(on));
+        n.addEventListener('click', () => roomNotes?.setMode(!roomNotes.mode()));
+        kids.push(n);
+      }
     }
     if (v && gm && v.playerPageId !== v.pageId) {
       const other = v.pages.find((x) => x.id === v.playerPageId);
@@ -345,6 +382,11 @@ export function startTable(initial: Initial): void {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
+    onMessage(fn) {
+      msgListeners.add(fn);
+      return () => msgListeners.delete(fn);
+    },
+    seeAs: () => seeAs,
   };
 
   const chat = initChat(ctx, chatVisible, showUnread);
@@ -353,6 +395,28 @@ export function startTable(initial: Initial): void {
   if (gm) {
     initPages(ctx);
     initLibrary(ctx);
+    const centre = (t: Token): [number, number] => [t.x + t.w / 2, t.y + t.h / 2];
+    notesPanel = initNotesPanel({
+      gameId: initial.gameId,
+      panel: $('panel-notes'),
+      page,
+      tokens,
+      selected: () => [...selection],
+      select,
+      act,
+      seeAs: () => seeAs,
+      gmMap: gmMap!,
+      openOnBoard: (id, at) => roomNotes?.open(id, at),
+      notesMode: { get: () => roomNotes?.mode() ?? false, set: (on) => roomNotes?.setMode(on) },
+      focus: (at) => board?.focus(at[0], at[1]),
+      focusToken: (id) => {
+        const t = tokens().find((x) => x.id === id);
+        if (t) board?.focus(...centre(t));
+      },
+      where: 'board',
+      on: ctx.on,
+      onMessage: ctx.onMessage,
+    });
   }
   initPlayers(ctx);
   showTab(activeTab);
@@ -369,6 +433,7 @@ export function startTable(initial: Initial): void {
     if (e.key === '+' || e.key === '=') board?.zoom(1.25);
     else if (e.key === '-' || e.key === '_') board?.zoom(0.8);
     else if (e.key === 'f' || e.key === 'F') board?.fit();
+    else if ((e.key === 'n' || e.key === 'N') && roomNotes && page()?.background.kind === 'delve' && seeAs === 'gm') roomNotes.setMode(!roomNotes.mode());
     else if (e.key === 'Escape' && selection.size) select([]);
     else if ((e.key === 'Delete' || e.key === 'Backspace') && gm && sel.length) void act({ type: 'token.delete', ids: sel.map((x) => x.id) });
     else if (arrow && sel.length) {
@@ -409,9 +474,17 @@ export function startTable(initial: Initial): void {
     .then((b) => {
       board = b;
       b.setPage(page(), false);
-      if (gm) {
-        tableMarkers = initTableMarkers({ stage: $('stage'), board: b, seeAs: () => seeAs });
+      if (gm && gmMap) {
+        // markers first: their listener takes a click on a marker before the notes' one sees it
+        tableMarkers = initTableMarkers({ stage: $('stage'), board: b, seeAs: () => seeAs, gmMap });
         tableMarkers.pageChanged(page());
+        roomNotes = initRoomNotes({ stage: $('stage'), board: b, gmMap, page, seeAs: () => seeAs, tokens, me, layer: () => ctx.layer() });
+        roomNotes.onChange(() => {
+          showBanner();
+          notesPanel?.roomsChanged();
+        });
+        roomNotes.update();
+        showBanner();
       }
       b.update();
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => b.retheme());

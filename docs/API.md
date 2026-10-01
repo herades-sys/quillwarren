@@ -149,6 +149,14 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 - **Corridors:** revealing two rooms also reveals a corridor between them.
 - **MCP:** `fog` (`on`, `reveal`, `cover`, `reveal_area`, `cover_area`, `reveal_all`, `reset`). Core: `updateFog`, `visiblePolygons`, `visibleFloor`, `fogShade`, `revealedBounds`.
 
+## GM notes on rooms, corridors and terrain
+
+- **The field:** every object may carry `notes` (text, at most 10 000 characters; schema `common`). On rooms, corridors and terrain they are the GM's prep: a description, the monsters, the loot. (Markers keep their own `text`.)
+- **Who sees them:** the GM and Claude. They are never drawn (in no style or view), so they are never in a picture, the players' screen (`/maps/:id/screen` and its socket), a 3D scene, the handout or a Dungeon Scrawl export, and Delve Table never sends them to players (players' pages carry no map id). `describe_map` (and `GET /maps/:id/describe`) lists them at the end under "GM notes (GM only, never drawn)"; the editor chat's prompt cuts each to 300 characters.
+- **Writing them:** the editor's inspector (a "GM notes" box for a room, corridor or terrain, also props), `add_room notes`, MCP `update {"notes": "…"}` (unset `["notes"]` removes them), or an `update` op from anywhere. On Delve Table the GM edits them by clicking a room (see docs/TABLE.md, "GM notes"), saved as ops through `POST /maps/:id/ops` with the editor login (`by: "table"`), one undo step each.
+- **A change of nothing but notes** (core `notesOnly(ops)`) leaves every picture as it was: the players' screen isn't told (no `changed`), and the table pages drawn from the map aren't sent again; the table tells only the GM's connections (`map.notes`).
+- **Core:** `notes.ts`: `noteAreasAt(map, p)` (the rooms under a point, the topmost first, then corridors, then terrain; terrain holes and corridor ends left out), `noteAreaAt`, `areaTitle`, `noteAnchor` (where the GM's pin goes), `notedAreas`, `notesOps(id, text)` (blank removes them), `notesOnly`; `pointInShape` in `geometry/shapes.ts`.
+
 ## 3D view: `/maps/:id/3d`
 
 All storeys of a place stacked like a cutaway model: the **3D** button on the map page.
@@ -347,7 +355,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | Tool | Does |
 |---|---|
 | `list_maps`, `create_map` (`name`, `style?`, `template?`) | Find or start maps. Returns the viewer link |
-| `get_map`, `describe_map` | Full JSON / plain-text summary |
+| `get_map`, `describe_map` | Full JSON / plain-text summary (with the GM notes of rooms, corridors and terrain) |
 | `add_room` (`rect` \| `poly` \| `circle` \| `preset`, `name?`, `label?`, `notes?`) | The room number defaults to the next free one. `preset` is `{kind: oval/triangle/hexagon/octagon, box: [x, y, w, h]}` |
 | `connect` (`from`, `to`, `width?`=2, `doors?` none/from/to/both, `door_style?`) | Auto-routed corridor that follows its rooms, with doors across its mouths |
 | `add_cutout` (a shape or `preset`, `fill?` solid/rock), `add_door`, `add_stairs`, `add_label` | Details |
@@ -357,7 +365,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `add_level` (`name`, `position?` above/below, `current_name?`) | Adds a storey (a new map in the same group) |
 | `label_stairs` (`map`) | Numbers every stair of the place: 0A, 1A, 2A… (GM view only) |
 | `list_segments`, `save_segment` (`name`, `ids` \| `rect`), `place_segment` (`segment`, `at`, `rotation?`), `fill_with_segment` (`segment`, `rect` \| `around?`=5, `margin?`, `vary?`) | Saved pieces of maps: save, place a renumbered copy, fill the land around the rooms (see "Segments") |
-| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, roughness 1–10, level_name, floor) | Changes; `add_room` also takes `roughness` |
+| `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, roughness 1–10, level_name, floor) | Changes; `add_room` also takes `roughness`. `update {"notes": "…"}` writes GM notes on a room, corridor or terrain (see "GM notes") |
 | `undo`, `redo` | History |
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
 | `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70) | A download link for the user; `handout` links the parchment handout page |

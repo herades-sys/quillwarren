@@ -2,6 +2,8 @@
 // client in apps/web/src/table/app3d.ts (built to /assets/table3d.js, with
 // three.js). The script builds the scene, fills the panel and keeps it live
 // over the same WebSocket as the 2D table; this only lays the page out.
+import { NOTES_CSS } from './notes-css.ts';
+
 export interface Table3dPageOptions {
   gameId: string;
   gameName: string;
@@ -130,7 +132,7 @@ export function table3dPage(o: Table3dPageOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(o.gameName)} in 3D · Delve Table</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>${CSS}</style>
+<style>${CSS}${gm ? NOTES_CSS : ''}</style>
 </head>
 <body class="${gm ? 'role-gm' : 'role-player'}">
 <header>

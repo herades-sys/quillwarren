@@ -1,6 +1,6 @@
 // One path for every change, whether it comes from REST, MCP or the WebSocket:
 // store it, then tell everyone watching the map.
-import { insidePolygons, objectBounds, visiblePolygons, type Bounds, type Op } from '@delve/core';
+import { insidePolygons, notesOnly, objectBounds, visiblePolygons, type Bounds, type Op } from '@delve/core';
 import type { LiveHub } from './live.ts';
 import type { Change, MapStore } from './store.ts';
 
@@ -17,7 +17,8 @@ export class MapService {
     this.hub = hub;
     // Players' screens hear only that the picture changed, and where to look.
     hub.forScreen = (id, msg) => {
-      if (msg.type === 'ops') return { type: 'changed', rev: msg.rev };
+      // notes are never drawn: a change of nothing else leaves the picture as it was
+      if (msg.type === 'ops') return notesOnly(msg.ops as Op[]) ? null : { type: 'changed', rev: msg.rev };
       if (msg.type === 'deleted') return msg;
       if (msg.type === 'focus') {
         const bounds = this.playersFocus(id, msg.ids);
@@ -52,16 +53,21 @@ export class MapService {
     };
   }
 
-  private readonly listeners: ((mapId: string) => void)[] = [];
+  private readonly listeners: ((mapId: string, change?: { notesOnly: boolean }) => void)[] = [];
 
-  /** Hear about every change to any map, and deletions (Delve Table redraws the pages drawn from a map). */
-  onChange(cb: (mapId: string) => void): void {
+  /**
+   * Hear about every change to any map, and deletions (Delve Table redraws the pages
+   * drawn from a map). notesOnly: the change touched nothing but notes, which are
+   * never drawn (no picture changed).
+   */
+  onChange(cb: (mapId: string, change?: { notesOnly: boolean }) => void): void {
     this.listeners.push(cb);
   }
 
   private publish(c: Change): Change {
     this.hub.broadcast(c.mapId, { type: 'ops', rev: c.rev, by: c.by, kind: c.kind, ops: c.ops });
-    for (const l of this.listeners) l(c.mapId);
+    const info = { notesOnly: notesOnly(c.ops) };
+    for (const l of this.listeners) l(c.mapId, info);
     // a storey renamed or renumbered: the other storeys' pickers list it again
     const group = c.map.level?.group;
     if (group && touchesLevel(c.ops)) for (const m of this.store.list()) if (m.level?.group === group && m.id !== c.mapId) this.hub.broadcast(m.id, { type: 'levels' });

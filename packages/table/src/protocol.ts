@@ -194,6 +194,23 @@ export interface GameState {
   requireDiscord?: boolean;
 }
 
+// ---------- the GM's notes (docs/TABLE.md, "GM notes") ----------
+
+/**
+ * One page of the GM's session notebook (a session log, NPCs, to-dos), per game.
+ * GM only: kept in table.db apart from the game state, read and written over
+ * REST by the GM; players never get one, not in a hello or any event.
+ */
+export interface NotebookEntry {
+  id: string;
+  title: string;
+  /** Plain text with line breaks. */
+  text: string;
+  /** Milliseconds since 1970. */
+  created: number;
+  updated: number;
+}
+
 // ---------- dice ----------
 
 /** One die as rolled. Only dice without `dropped` count towards the term's value. */
@@ -306,8 +323,8 @@ export interface GameView {
 // filter events whose subject is already gone; eventFor strips them, so a
 // client never sees them.
 export type GameEvent =
-  /** routing: prevLayer is the token's layer before the change; applyIntent leaves it out only for a new token. */
-  | { type: 'token.upsert'; token: Token; prevLayer?: Layer }
+  /** routing: prevLayer is the token's layer before the change; applyIntent leaves it out only for a new token. gmOnly: only the GM's notes (gmNotes) changed, so players get nothing at all. */
+  | { type: 'token.upsert'; token: Token; prevLayer?: Layer; gmOnly?: boolean }
   /** routing: pageId is the page the tokens were on; hidden means they were on the gm layer. */
   | { type: 'token.remove'; ids: string[]; pageId?: string; hidden?: boolean }
   | { type: 'page.upsert'; page: Page }
@@ -329,5 +346,9 @@ export type ServerMessage =
   | { type: 'ping'; from: string; color: string; pageId: string; x: number; y: number }
   /** Dynamic vision of the page you look at, after a hello and whenever it changes; null: the page has no dynamic vision. */
   | { type: 'vision'; pageId: string; vision: VisionView | null }
+  /** GM only: the notes on this Delve map changed and nothing else did (no picture changed, so pages aren't sent again): fetch the map for its notes. */
+  | { type: 'map.notes'; mapId: string }
+  /** GM only: a notebook entry was saved (`entry`) or deleted (`removed`), in any of the GM's tabs. */
+  | { type: 'notebook'; entry?: NotebookEntry; removed?: string }
   /** You were removed from the game, or it was deleted. */
   | { type: 'bye'; reason: string };

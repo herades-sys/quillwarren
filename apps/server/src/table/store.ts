@@ -6,9 +6,11 @@
 // tokens of which only the SHA-256 is stored.
 // Explored fog (dynamic vision) is one row per page, kept apart from the game
 // state so the GM's view and the page events stay small.
+// The GM's notebook (GM notes) is one row per entry, written at once: it is never
+// part of the game state, so no view or event can carry it to a player.
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import type { ChatMessage, Explored, GameState } from '@delve/table';
+import type { ChatMessage, Explored, GameState, NotebookEntry } from '@delve/table';
 
 type Row = Record<string, unknown>;
 
@@ -57,6 +59,15 @@ CREATE TABLE IF NOT EXISTS explored (
   data    TEXT NOT NULL,
   PRIMARY KEY (game_id, page_id)
 );
+CREATE TABLE IF NOT EXISTS notebook (
+  game_id TEXT NOT NULL,
+  id      TEXT NOT NULL,
+  title   TEXT NOT NULL,
+  text    TEXT NOT NULL,
+  created INTEGER NOT NULL,
+  updated INTEGER NOT NULL,
+  PRIMARY KEY (game_id, id)
+);
 `;
 
 export interface GameSummary {
@@ -99,6 +110,14 @@ const accountFrom = (r: Row): Account => ({
   avatarFile: r.avatar_file === null || r.avatar_file === undefined ? null : String(r.avatar_file),
   created: Number(r.created),
   seen: Number(r.seen),
+});
+
+const entryFrom = (r: Row): NotebookEntry => ({
+  id: String(r.id),
+  title: String(r.title),
+  text: String(r.text),
+  created: Number(r.created),
+  updated: Number(r.updated),
 });
 
 export function newGameId(): string {
@@ -248,8 +267,38 @@ export class TableStore {
     const r = this.db.prepare('DELETE FROM games WHERE id = ?').run(id);
     this.db.prepare('DELETE FROM chat WHERE game_id = ?').run(id);
     this.db.prepare('DELETE FROM seats WHERE game_id = ?').run(id);
+    this.db.prepare('DELETE FROM notebook WHERE game_id = ?').run(id);
     this.dropExplored(id);
     return Number(r.changes) > 0;
+  }
+
+  // ---------- the GM's notebook ----------
+
+  /** Every entry of a game's notebook, the latest changed first. */
+  notebook(gameId: string): NotebookEntry[] {
+    const rows = this.db.prepare('SELECT id, title, text, created, updated FROM notebook WHERE game_id = ? ORDER BY updated DESC, id').all(gameId) as Row[];
+    return rows.map(entryFrom);
+  }
+
+  notebookEntry(gameId: string, id: string): NotebookEntry | undefined {
+    const r = this.db.prepare('SELECT id, title, text, created, updated FROM notebook WHERE game_id = ? AND id = ?').get(gameId, id) as Row | undefined;
+    return r ? entryFrom(r) : undefined;
+  }
+
+  notebookCount(gameId: string): number {
+    const r = this.db.prepare('SELECT COUNT(*) AS n FROM notebook WHERE game_id = ?').get(gameId) as Row | undefined;
+    return Number(r?.n ?? 0);
+  }
+
+  /** Create or replace an entry (written at once). */
+  putNotebookEntry(gameId: string, e: NotebookEntry): void {
+    this.db
+      .prepare('INSERT OR REPLACE INTO notebook (game_id, id, title, text, created, updated) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(gameId, e.id, e.title, e.text, e.created, e.updated);
+  }
+
+  deleteNotebookEntry(gameId: string, id: string): boolean {
+    return Number(this.db.prepare('DELETE FROM notebook WHERE game_id = ? AND id = ?').run(gameId, id).changes) > 0;
   }
 
   // ---------- chat ----------

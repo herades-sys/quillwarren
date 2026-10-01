@@ -6,40 +6,21 @@ import {
   doorSegment,
   markerRadius,
   onImage,
+  pointInRing,
+  pointInShape,
   roomsById,
   shapeArea,
   type Bounds,
   type DelveMap,
   type MapObject,
   type Point,
-  type Shape,
 } from '@delve/core';
 import { objectBounds } from './logic.ts';
 
+export { pointInShape };
+
 export const snap = (v: number, step: number): number => Math.round(v / step) * step;
 export const snapPoint = (p: Point, step: number): Point => [snap(p[0], step), snap(p[1], step)];
-
-function pointInRing(p: Point, ring: readonly Point[]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i]!;
-    const [xj, yj] = ring[j]!;
-    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
-export function pointInShape(shape: Shape, p: Point): boolean {
-  if ('rect' in shape) {
-    const [x, y, w, h] = shape.rect;
-    return p[0] >= x && p[0] <= x + w && p[1] >= y && p[1] <= y + h;
-  }
-  if ('circle' in shape) {
-    const [cx, cy, r] = shape.circle;
-    return Math.hypot(p[0] - cx, p[1] - cy) <= r;
-  }
-  return pointInRing(p, shape.poly);
-}
 
 function distToSegment(p: Point, a: Point, b: Point): number {
   const dx = b[0] - a[0];

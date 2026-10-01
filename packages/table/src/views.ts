@@ -104,6 +104,8 @@ export function eventFor(state: GameState, memberId: string, event: GameEvent, f
       const { token } = event;
       if (token.pageId !== pageId) return null;
       if (gm) return { type: 'token.upsert', token };
+      // only the GM's notes changed: nothing a player sees did
+      if (event.gmOnly) return null;
       if (token.layer === 'gm') {
         // Moved to the gm layer: players drop it. Already there, or new: they never had it.
         return event.prevLayer === undefined || event.prevLayer === 'gm' ? null : { type: 'token.remove', ids: [token.id] };

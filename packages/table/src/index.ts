@@ -9,6 +9,17 @@ export { viewFor, eventFor, chatFor, pageFor, publicMember, pageForPlayer, token
 export { roll, rollInline, MAX_DICE, MAX_EXPR, MAX_INLINE, type Rng } from './dice.ts';
 export { parseChat, HELP, MAX_CHAT, type ParsedChat } from './chat.ts';
 export {
+  notebookPatch,
+  notebookText,
+  notebookTitle,
+  NOTEBOOK_ID,
+  NOTEBOOK_MAX_ENTRIES,
+  NOTEBOOK_TEXT_MAX,
+  NOTEBOOK_TITLE_MAX,
+  UNTITLED,
+  type NotebookPatch,
+} from './notebook.ts';
+export {
   PROP_LIGHTS,
   WALL_HALF,
   visionOf,
