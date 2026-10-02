@@ -143,6 +143,22 @@ Roll20-style dynamic lighting: what the players' characters see is revealed, wal
 
 Black where the party has never looked, dimmed (55 %) where it looked before, a light veil where only dim light or darkvision reaches, clear in bright light. It is painted on a small canvas (up to 16 px per cell) stretched over the page, which softens its edges. Until the first vision message arrives a dynamic page is all black.
 
+## Heights and movement
+
+A Delve map's height areas (docs/API.md, "Heights within a map": ledges, hills, pits, plateaus) come to the table with its page.
+
+- **The picture:** the page shows the edges (ledge lines, rock faces, slopes) in both views; the height labels only in the GM's.
+- **"Respect heights"** (a page option, `page.respectHeights`, **off by default**: it changes play, so the GM turns it on with "Moves: free / Moves: respect heights" in the Pages tab, Delve pages only):
+  - A player's token move (`token.move`, or `token.update` with `x` / `y`) that crosses a cliff or rock edge where no stairs or ladder cross it is refused by the server in `can()` (`packages/table/src/movement.ts`), with the reason: "That move goes over a cliff edge (a 10 ft drop): take the stairs or a ladder, or ask the GM". The client puts the token back and shows it.
+  - With the option on, walls and shut doors hold moves back too ("That move goes through a wall" / "…a shut door"): the page's `walls` (secret doors shut until the GM opens one) and its doors as the table has them (`doorState`, then the map's `open`); a shut portcullis blocks a move though not sight; archways never block. With the option off, walls are not enforced for moves (as before).
+  - The GM is never held back.
+  - A move is checked as the straight line from the token's centre to where its centre lands, like dragging it there: a player goes round a corner in two moves, and landing on an edge counts as crossing it. Bigger tokens are checked by their centre too.
+  - Slopes and steps are walked over. Hidden height areas aren't enforced (refusing a move would give them away).
+- **Page data:** `page.cliffs: [{ a: [x, y], b: [x, y], drop }]` in cells, the blocking edge pieces (core `blockingEdges`), GM only like `walls` and `doors` (`pageForPlayer` strips them). They follow the map like the walls (`followMap`). `respectHeights` reaches players too (it is no secret).
+- **Where you can go, for the GM:** the top bar's **Heights** button (or **K**) on a Delve page with height areas, in the GM view: the same overlay as the editor's Shift K, drawn from the page's map (`apps/web/src/table/movement-view.ts`): ground tinted by height, red dashes on edges nobody can walk over, green crossings. Kept per browser like the editor's.
+- **Line of sight:** cliffs don't block sight, and height doesn't change it: a token on a ledge sees what it would see on the floor (walls and shut doors still block). Seeing over low obstacles from higher ground is not modelled.
+- **3D** (`/play/:id/3d`): `scene3d.json` carries `heights` (core `heightScene`: the bands, the rest of the page at 0, the faces, in cells), cut to what the viewer may see; hidden areas never reach players. The board shows the floor picture as plates at their heights with sheer cliff faces and leaning rock and slope faces; walls and doors stand on the ground beside them; stairs between two heights climb from the low one to the high one; minis stand at the height of the ground under their centre. Picking and dragging still use the floor at 0, and the grid lines lie at 0.
+
 ## Storage
 
 - **Database:** a separate SQLite file, `${DELVE_DATA}/table.db`, via `node:sqlite` as `store.ts` does.

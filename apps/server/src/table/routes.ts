@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { computeFloor, computeWalls, doorSegment, type DelveMap, type Door } from '@delve/core';
+import { blockingEdges, computeFloor, computeWalls, doorSegment, type DelveMap, type Door } from '@delve/core';
 import { addInvite, addMember, isDynamic, newGame, pageFor, removeInvite, TableError, type GameState, type Invite, type Member, type Page } from '@delve/table';
 import { readCookie, sameOrigin } from '../auth.ts';
 import { canLogIn, type EditorAuth } from '../login.ts';
@@ -75,6 +75,7 @@ function cleanName(v: unknown, max: number): string | null {
 export function pageFromMap(map: DelveMap, name?: string): Omit<Page, 'id'> {
   const { bounds } = sceneFor(map, { view: 'players' });
   const { walls, doors, lights } = pageSightData(map);
+  const cliffs = blockingEdges(map);
   return {
     name: name ?? map.name.slice(0, 80),
     width: bounds.x1 - bounds.x0,
@@ -87,6 +88,8 @@ export function pageFromMap(map: DelveMap, name?: string): Omit<Page, 'id'> {
     walls,
     doors,
     lights,
+    // the map's cliff edges, for "Respect heights" (GM only, like the walls)
+    ...(cliffs.length ? { cliffs } : {}),
   };
 }
 
@@ -131,7 +134,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
     } catch {
       map = null; // deleted: the picture route says so
     }
-    const fresh = map ? pageSightData(map) : null;
+    const fresh = map ? { ...pageSightData(map), cliffs: blockingEdges(map) } : null;
     for (const g of store.list()) {
       const pageIds = store.get(g.id)?.pages.filter((p) => p.background.kind === 'delve' && p.background.mapId === mapId).map((p) => p.id) ?? [];
       const same: string[] = [];
@@ -139,7 +142,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
         const state = store.get(g.id);
         const page = state?.pages.find((p) => p.id === id);
         if (!state || !page) continue;
-        const set = fresh ? Object.fromEntries((['walls', 'doors', 'lights'] as const).filter((k) => JSON.stringify(page[k] ?? []) !== JSON.stringify(fresh[k])).map((k) => [k, fresh[k]])) : {};
+        const set = fresh ? Object.fromEntries((['walls', 'doors', 'lights', 'cliffs'] as const).filter((k) => JSON.stringify(page[k] ?? []) !== JSON.stringify(fresh[k])).map((k) => [k, fresh[k]])) : {};
         if (!Object.keys(set).length) {
           same.push(id);
           continue;

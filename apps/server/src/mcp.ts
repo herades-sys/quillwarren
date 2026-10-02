@@ -52,6 +52,7 @@ import { presetArg, shapeOrPreset } from './draw-args.ts';
 import { registerPropTools } from './prop-tools.ts';
 import { render } from './render.ts';
 import { registerSegmentTools } from './segments.ts';
+import { registerHeightTools } from './height-tools.ts';
 import type { MapService } from './service.ts';
 import { labelStairs, labelStairsSummary } from './stair-labels.ts';
 
@@ -70,6 +71,7 @@ Open edges: an archway on the floor's outer edge is drawn as an open end (no hat
 Exports can be cropped: export with crop [x, y, w, h] or around [ids] (plus margin, default 1 square), e.g. rooms 4 and 11 only.
 Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
 Wall roughness: set_map roughness 1 (smooth) to 10 (caves); rooms, corridors and cutouts can have their own (update {"roughness": 9}). Rows of props (trees along a road): add_props_along.
+Heights within one map: add_height raises or sinks the ground under a shape (height in the map's units: +10 a ledge, -10 a sunken arena), over rooms or outdoors over terrain; cliff and rock-face edges are crossed only where stairs or a ladder lie across them, slopes and steps are walked over. describe_map lists the heights and how each is reached.
 GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.
 Handout notes (add_inscription): handwritten text on the players' parchment handout ("Here be dragons"), in an old italic hand and a brown, black, faded or red ink; on_map writes it on the normal map too. Players see them; update and delete change them like any object.
 GM notes: rooms, corridors and terrain carry notes (a description, monsters, loot) for the GM: add_room notes, or update {"notes": "..."} on any of them. They are never drawn or exported; the GM reads them in the editor and on Delve Table, and describe_map lists them.
@@ -968,6 +970,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
 
   registerSegmentTools(server, service, BY);
   if (props) registerPropTools(server, props, store, base, BY);
+  registerHeightTools(server, service, BY);
   return server;
 }
 

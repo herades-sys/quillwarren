@@ -38,6 +38,8 @@ export const SHORTCUTS: [string, string][] = [
   ['S', 'Stairs'],
   ['I', 'Pillar / cutout'],
   ['N', 'Open area: no hatching there'],
+  ['K', 'Height: ledges, hills, pits'],
+  ['Shift K', 'Where you can go (heights)'],
   ['P', 'Prop'],
   ['G', 'Terrain'],
   ['T', 'Label'],

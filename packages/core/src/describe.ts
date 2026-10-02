@@ -8,6 +8,7 @@ import { fogSummary } from './fog.ts';
 import { floorText, isConnector } from './floors.ts';
 import { MARKERS } from './markers.ts';
 import { inscriptionsOf, inscriptionText } from './inscriptions.ts';
+import { describeHeights } from './heights.ts';
 import { areaTitle, hasNotes, isNoteArea } from './notes.ts';
 import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Opening, Point, Prop, Room, Terrain } from './schema.ts';
 import { parseSquareUnit } from './units.ts';
@@ -180,13 +181,15 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
     lines.push("Handout notes (handwritten on the players' parchment handout; players see them):");
     for (const o of inscriptions) lines.push(`  ${inscriptionText(o, roomAt, fmt)}`);
   }
+  // raised and sunken ground (heights.ts): where each area is and how it is reached
+  lines.push(...describeHeights(map));
   const connectors = map.objects.filter(isConnector);
   if (connectors.some((o) => 'label' in o && o.label)) {
     lines.push(`Stair labels (GM view): ${connectors.map((o) => `${o.id} ${('label' in o && o.label) || '(none)'}`).join(', ')}`);
   }
-  if (others.length) {
+  if (others.some((o) => o.type !== 'height')) {
     const counts = new Map<string, number>();
-    for (const o of others) counts.set(o.type, (counts.get(o.type) ?? 0) + 1);
+    for (const o of others) if (o.type !== 'height') counts.set(o.type, (counts.get(o.type) ?? 0) + 1);
     lines.push(`Also: ${[...counts].map(([t, n]) => `${n} ${t}`).join(', ')}`);
   }
   // the GM's prep (descriptions, monsters, loot): for the GM and Claude, never drawn

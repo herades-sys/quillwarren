@@ -150,6 +150,17 @@ export interface Page {
   doorState?: Record<string, boolean>;
   /** Lights from the Delve map's props (they follow the map). GM only. */
   lights?: PageLight[];
+  /** The Delve map's cliff edges that no stairs or ladder cross (core blockingEdges; they follow the map). GM only. */
+  cliffs?: PageCliff[];
+  /** Respect heights: a player's move can't cross a cliff edge without stairs or a ladder, nor a wall or a shut door (movement.ts). Unset: off. */
+  respectHeights?: boolean;
+}
+
+/** A cliff edge of a page's Delve map, in cells; `drop` is the height difference in the map's units (10 for a 10 ft ledge). GM only. */
+export interface PageCliff {
+  a: [number, number];
+  b: [number, number];
+  drop: number;
 }
 
 export interface TurnEntry {

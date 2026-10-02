@@ -73,7 +73,7 @@ export function hitAll(map: DelveMap, p: Point, tol: number): string[] {
     if (outline.some((ring) => pointInRing(p, ring))) out.push(c.id);
   }
   // a click in a terrain's hole (a room inside a filled forest) doesn't hit the terrain
-  const areas = [...of('terrain'), ...of('room')].filter((o) => pointInShape(o.shape, p) && !(o.type === 'terrain' && o.holes?.some((h) => pointInRing(p, h))));
+  const areas = [...of('terrain'), ...of('room'), ...of('height')].filter((o) => pointInShape(o.shape, p) && !(o.type === 'terrain' && o.holes?.some((h) => pointInRing(p, h))));
   areas.sort((a, b) => shapeArea(a.shape) - shapeArea(b.shape) || (a.type === 'terrain' ? -1 : 0) - (b.type === 'terrain' ? -1 : 0));
   out.push(...areas.map((o) => o.id));
   // a floor picture goes before the first area bigger than it: a rug before its room, a backdrop after every room

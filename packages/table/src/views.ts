@@ -19,7 +19,7 @@ export function pageFor(state: GameState, memberId: string): string {
 }
 
 // Walls, doors and lights outline the whole map, unseen parts included, so players don't get them.
-const GM_PAGE_FIELDS = ['walls', 'doors', 'doorState', 'lights'] as const;
+const GM_PAGE_FIELDS = ['walls', 'doors', 'doorState', 'lights', 'cliffs'] as const;
 
 export function pageForPlayer(p: Page): Page {
   // nor the Delve map's id: players draw the page through the game's members-only routes, and from

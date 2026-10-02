@@ -6,6 +6,7 @@ import type { TableCtx } from './ctx.ts';
 import { $, api, button, h, postJson, toast } from './dom.ts';
 import { uploadImage } from './upload.ts';
 import { visionControls } from './vision-panel.ts';
+import { movementControls } from './movement-panel.ts';
 
 interface MapSummary {
   id: string;
@@ -107,6 +108,7 @@ export function initPages(ctx: TableCtx): void {
         }, { class: 'btn small danger', disabled: only, title: only ? 'A game needs at least one page' : undefined }),
       ),
       visionControls(ctx, p),
+      movementControls(ctx, p),
     );
   }
 

@@ -5,6 +5,7 @@
 import { parseChat } from './chat.ts';
 import { TableError } from './errors.ts';
 import { cleanText, defaultPage, ID_PATTERN, memberName, nextNumber } from './game.ts';
+import { isCliff, moveRefusal } from './movement.ts';
 import type {
   Background,
   Bar,
@@ -15,6 +16,7 @@ import type {
   Layer,
   Member,
   Page,
+  PageCliff,
   PageDoor,
   PageLight,
   PageVision,
@@ -110,6 +112,20 @@ function playerToken(state: GameState, me: Member, id: unknown): true | string {
   return true;
 }
 
+/**
+ * Respect heights (movement.ts): on a page with it on, a player's token may not
+ * cross a cliff edge without stairs or a ladder, a wall or a shut door. Bad
+ * numbers pass here and fail in apply's checks.
+ */
+function movable(state: GameState, id: unknown, x: unknown, y: unknown): true | string {
+  const t = findToken(state, id);
+  if (!t) return true;
+  const nx = x === undefined ? t.x : x;
+  const ny = y === undefined ? t.y : y;
+  if (typeof nx !== 'number' || typeof ny !== 'number' || !Number.isFinite(nx) || !Number.isFinite(ny)) return true;
+  return moveRefusal(state.pages.find((p) => p.id === t.pageId), t, nx, ny) ?? true;
+}
+
 /** true if `memberId` may do `intent`, otherwise the reason (for the error reply). */
 export function can(state: GameState, memberId: string, intent: Intent): true | string {
   const me = findMember(state, memberId);
@@ -121,14 +137,15 @@ export function can(state: GameState, memberId: string, intent: Intent): true | 
     case 'chat.send':
       return true;
     case 'token.move':
-      return playerToken(state, me, intent.id);
+      return playerToken(state, me, intent.id) === true ? movable(state, intent.id, intent.x, intent.y) : playerToken(state, me, intent.id);
     case 'token.update': {
       const ok = playerToken(state, me, intent.id);
       if (ok !== true || !isObj(intent.set)) return ok;
       for (const key of Object.keys(intent.set)) {
         if (!PLAYER_TOKEN_FIELDS.has(key)) return `Only the GM can change a token's ${key}`;
       }
-      return true;
+      // a move by setting x or y: the same height rule as token.move
+      return 'x' in intent.set || 'y' in intent.set ? movable(state, intent.id, intent.set.x, intent.set.y) : true;
     }
     case 'turn.add': {
       const entry = intent.entry as unknown;
@@ -301,6 +318,14 @@ function doorStates(v: unknown): Record<string, boolean> {
   return out;
 }
 
+function pageCliffs(v: unknown): PageCliff[] {
+  if (!Array.isArray(v) || v.length > 50000) fail('cliffs must be a list of at most 50000 edges');
+  return v.map((c) => {
+    if (!isCliff(c)) fail('A cliff is {a: [x, y], b: [x, y], drop}');
+    return { a: [c.a[0], c.a[1]], b: [c.b[0], c.b[1]], drop: c.drop };
+  });
+}
+
 type Patch<T> = { [K in keyof T]?: T[K] | undefined };
 
 /** Check the token fields in `set`; undefined removes an optional field. */
@@ -432,6 +457,12 @@ function pagePatch(set: Obj): Patch<Page> {
         break;
       case 'doorState':
         out.doorState = v === undefined || v === null ? undefined : doorStates(v);
+        break;
+      case 'cliffs':
+        out.cliffs = v === undefined ? undefined : pageCliffs(v);
+        break;
+      case 'respectHeights':
+        out.respectHeights = v === undefined || v === null ? undefined : bool(v, 'respectHeights');
         break;
       case 'id':
         fail("A page's id can't be changed");

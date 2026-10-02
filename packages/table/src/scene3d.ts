@@ -55,4 +55,18 @@ export interface Scene3D {
   region: 'all' | ScenePolygon[];
   /** What the camera should frame first: the page, or what has been seen of it; null when nothing has been seen yet. */
   focus: SceneBox | null;
+  /** Raised and sunken ground of the Delve map (its height areas), cut to `region`; left out when it has none. */
+  heights?: SceneHeights;
+}
+
+/**
+ * Height areas in 3D (core heightScene), every number in cells, heights too (a
+ * 10 ft ledge on a 5 ft grid is 2 up). `bands` are the raised and sunken parts,
+ * `base` the rest of the page at 0. Walking along an edge's points, its low
+ * side is on the right; a slope or rock face reaches `run` cells out there.
+ */
+export interface SceneHeights {
+  bands: { h: number; polygons: ScenePolygon[] }[];
+  base: ScenePolygon[];
+  edges: { points: ScenePoint[]; closed: boolean; hi: number; lo: number; kind: 'cliff' | 'rock' | 'slope' | 'step'; run: number }[];
 }

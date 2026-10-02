@@ -7,6 +7,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { applyOps, buildScene, computeFloor, computeWalls, doorSegment, revealedBounds, stairLinks, visibleFloor, visiblePolygons, type Bounds, type Connector, type DelveMap, type Door, type Op, type StairPlan } from '@delve/core';
 import { clipSegments, insidePolygons, intersect, startView, storeyHeights, texturePpg, unionOf, wallBox } from './stack-logic.ts';
+import { hasHeights, heightPlan, heightScene, polygonsOf, stairsUphill, type HeightScene, type Polygon } from '@delve/core';
+import { heightMeshes, type FaceKind } from './heights3d.ts';
+import { wallBase } from './heights3d-logic.ts';
 
 interface Storey {
   id: string;
@@ -140,8 +143,11 @@ function build(l: Loaded): void {
   const fogged = view === 'players' && Boolean(map.fog?.on);
   const fullFloor = computeFloor(map);
   const floor = fogged ? visibleFloor(map) : fullFloor;
-  if (floor.length) {
-    const shapes = floor.map((p) => {
+  // Height areas (core heightScene): the floor picture cut into plates at their heights, faces between them
+  const hs = hasHeights(map, view) ? heightScene(map, { view, frame: buildScene(map, { view, ...(view === 'players' ? { fog: 'hide' as const } : {}) }).bounds, ...(fogged ? { region: visiblePolygons(map) } : {}) }) : null;
+  const slabFloor = hs ? floorOutsidePits(floor, hs) : floor;
+  if (slabFloor.length) {
+    const shapes = slabFloor.map((p) => {
       const s = new THREE.Shape(p.outer.map(([x, y]) => new THREE.Vector2(x, y)));
       for (const h of p.holes) s.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
       return s;
@@ -163,11 +169,24 @@ function build(l: Loaded): void {
   const tex = loader.load(url);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = maxAniso;
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  const floorMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  if (hs) {
+    for (const mesh of heightMeshes(hs, { box: b, floor: floorMat, faces: faceMats, lift: 0.02 })) {
+      mesh.userData.storey = l.storey.id;
+      if (mesh.userData.plate) mesh.renderOrder = 1;
+      l.group.add(mesh);
+    }
+    for (const slab of pitSlabs(hs)) {
+      slab.userData.storey = l.storey.id;
+      l.group.add(slab);
+    }
+  }
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h).rotateX(-Math.PI / 2), floorMat);
   plane.position.set(b.x0 + w / 2, 0.02, b.y0 + h / 2);
   plane.userData.storey = l.storey.id;
   plane.renderOrder = 1;
-  l.group.add(plane);
+  if (!hs) l.group.add(plane);
+  else plane.geometry.dispose(); // the plates stand in for it
 
   // Walls: the floor's edge minus door gaps; for players, secret doors stay shut.
   let segs = computeWalls(map, fullFloor);
@@ -182,7 +201,7 @@ function build(l: Loaded): void {
     segs.forEach((seg, i) => {
       const wb = wallBox(seg, t);
       q.setFromAxisAngle(up, wb.angle);
-      m.compose(new THREE.Vector3(wb.x, wallHeight / 2, wb.z), q, new THREE.Vector3(wb.length, wallHeight, t));
+      m.compose(new THREE.Vector3(wb.x, wallBase(hs, seg[0], seg[1]) + wallHeight / 2, wb.z), q, new THREE.Vector3(wb.length, wallHeight, t));
       walls.setMatrixAt(i, m);
     });
     l.group.add(walls);
@@ -198,6 +217,42 @@ function build(l: Loaded): void {
   l.group.visible = !hidden.has(l.storey.id);
 }
 
+// ---------- heights ----------
+
+const faceMats: Record<FaceKind, THREE.Material> = {
+  cliff: new THREE.MeshStandardMaterial({ color: 0x7a7166, roughness: 0.95, side: THREE.DoubleSide }),
+  step: new THREE.MeshStandardMaterial({ color: 0x7a7166, roughness: 0.95, side: THREE.DoubleSide }),
+  rock: new THREE.MeshStandardMaterial({ color: 0x5c5751, roughness: 1, side: THREE.DoubleSide }),
+  slope: new THREE.MeshStandardMaterial({ color: 0x968c7d, roughness: 1, side: THREE.DoubleSide }),
+};
+for (const m of Object.values(faceMats)) shared.add(m);
+
+/** The floor's slab without the sunken parts (they get their own slab, further down). */
+function floorOutsidePits(floor: Polygon[], hs: HeightScene): Polygon[] {
+  const pits = hs.bands.filter((b) => b.h < 0).flatMap((b) => b.polygons.flatMap((p) => [p.outer, ...p.holes]));
+  if (!pits.length) return floor;
+  const path = (r: readonly (readonly [number, number])[]) => r.map(([x, y]) => ({ x, y }));
+  return polygonsOf(floor.flatMap((p) => [p.outer, ...p.holes]).map(path), pits.map(path));
+}
+
+/** A slab under each sunken part, hanging below its floor like the storey's. */
+function pitSlabs(hs: HeightScene): THREE.Mesh[] {
+  return hs.bands
+    .filter((b) => b.h < 0)
+    .map((b) => {
+      const shapes = b.polygons.map((p) => {
+        const s = new THREE.Shape(p.outer.map(([x, y]) => new THREE.Vector2(x, y)));
+        for (const h of p.holes) s.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
+        return s;
+      });
+      const geo = new THREE.ExtrudeGeometry(shapes, { depth: 0.4, bevelEnabled: false });
+      geo.rotateX(Math.PI / 2);
+      const slab = new THREE.Mesh(geo, slabMat);
+      slab.position.y = b.h;
+      return slab;
+    });
+}
+
 const KIND: Record<Connector['kind'], string> = { stairs: 'Stairs', spiral: 'Spiral stair', ladder: 'Ladder', trapdoor: 'Trapdoor' };
 
 /** Shafts between stairs that line up, red markers on stairs that meet nothing, and the list in the panel. */
@@ -205,6 +260,9 @@ function buildLinks(): void {
   dispose(linkGroup);
   const list = [...loaded.values()];
   const plan = stairLinks(list.map((l) => ({ id: l.storey.id, order: orderOf(l.storey), map: l.map })));
+  // stairs between two heights of one map (height areas: up a ledge, down into a pit) lead nowhere else: not loose
+  const plans = new Map(list.filter((l) => hasHeights(l.map)).map((l) => [l.storey.id, heightPlan(l.map)]));
+  plan.loose = plan.loose.filter((c) => !(c.kind === 'stairs' && plans.has(c.storey) && stairsUphill(plans.get(c.storey)!, c.bounds)));
   const ys = heights();
   // Players with fog: only stairs they've seen on both storeys, and no red rings (those are for the GM).
   const seen = new Map(list.map((l) => [l.storey.id, view === 'players' && l.map.fog?.on ? visiblePolygons(l.map) : null]));

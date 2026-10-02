@@ -143,6 +143,36 @@ export {
   type NoteArea,
 } from './notes.ts';
 export { imageUrl, imageFit, imageBounds, onImage, imageCentre } from './images.ts';
+export {
+  BLOCKING_EDGES,
+  blockingEdges,
+  crossers,
+  defaultEdge,
+  describeHeights,
+  groundPaths,
+  hasHeights,
+  heightAreas,
+  heightPlan,
+  heightScene,
+  heightText,
+  rockWidth,
+  slopeRun,
+  stairsUphill,
+  walkableMap,
+  type CrossingKind,
+  type EdgeSegment,
+  type HeightCrossing,
+  type HeightEdgeLine,
+  type HeightOptions,
+  type HeightPlan,
+  type HeightRegion,
+  type HeightScene,
+  type HeightView,
+  type Polygon3,
+  type Walkable,
+  type WalkableOptions,
+} from './heights.ts';
+export { heightDrawing, labelPoint, HEIGHT_TAG_SIZE, type HeightDrawing } from './render/heights.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
 export { hashString } from './render/rng.ts';
 

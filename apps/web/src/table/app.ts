@@ -7,6 +7,7 @@ import { initTableMarkers, type TableMarkers } from './gm-markers.ts';
 import { createGmMap } from './gm-map.ts';
 import { initNotesPanel } from './notes-panel.ts';
 import { initRoomNotes, type RoomNotes } from './room-notes.ts';
+import { initMovementView, type MovementView } from './movement-view.ts';
 import { initChat } from './chat.ts';
 import type { Change, TableCtx } from './ctx.ts';
 import { initDice } from './dice.ts';
@@ -65,6 +66,8 @@ export function startTable(initial: Initial): void {
   // GM notes (docs/TABLE.md, "GM notes"): the page's Delve map for its notes and markers, the board's pins and note box
   const gmMap = gm ? createGmMap() : null;
   let roomNotes: RoomNotes | null = null;
+  /** "Where you can go" over the board (GM, Delve pages with height areas): K or the top bar's Heights button. */
+  let movementView: MovementView | null = null;
   let notesPanel: ReturnType<typeof initNotesPanel> | null = null;
   const msgListeners = new Set<(m: ServerMessage) => void>();
 
@@ -272,6 +275,7 @@ export function startTable(initial: Initial): void {
         board?.visionChanged(); // the players' darkness, or the GM's hint of it
         tableMarkers?.pageChanged(page());
         roomNotes?.update(); // no note pins in the players' view
+        movementView?.update(); // nor the movement overlay
         notesPanel?.roomsChanged();
         board?.update();
         showBanner();
@@ -290,6 +294,21 @@ export function startTable(initial: Initial): void {
         n.addEventListener('click', () => roomNotes?.setMode(!roomNotes.mode()));
         kids.push(n);
       }
+    }
+    if (gm && seeAs === 'gm' && movementView?.available()) {
+      const on = movementView.on();
+      const mv = Object.assign(document.createElement('button'), {
+        type: 'button',
+        className: 'see-as movement-mode',
+        textContent: on ? 'Heights: on' : 'Heights',
+        title: on ? 'Where you can go: red dashes are cliff edges nobody can walk over, green the stairs, ladders and slopes. Click (or K) to hide.' : 'Show where you can go (K): the height areas, which edges block, where stairs cross.',
+      });
+      mv.setAttribute('aria-pressed', String(on));
+      mv.addEventListener('click', () => {
+        movementView?.toggle();
+        showBanner();
+      });
+      kids.push(mv);
     }
     if (v && gm && v.playerPageId !== v.pageId) {
       const other = v.pages.find((x) => x.id === v.playerPageId);
@@ -434,6 +453,10 @@ export function startTable(initial: Initial): void {
     else if (e.key === '-' || e.key === '_') board?.zoom(0.8);
     else if (e.key === 'f' || e.key === 'F') board?.fit();
     else if ((e.key === 'n' || e.key === 'N') && roomNotes && page()?.background.kind === 'delve' && seeAs === 'gm') roomNotes.setMode(!roomNotes.mode());
+    else if ((e.key === 'k' || e.key === 'K') && movementView?.available() && seeAs === 'gm') {
+      movementView.toggle();
+      showBanner();
+    }
     else if (e.key === 'Escape' && selection.size) select([]);
     else if ((e.key === 'Delete' || e.key === 'Backspace') && gm && sel.length) void act({ type: 'token.delete', ids: sel.map((x) => x.id) });
     else if (arrow && sel.length) {
@@ -484,6 +507,8 @@ export function startTable(initial: Initial): void {
           notesPanel?.roomsChanged();
         });
         roomNotes.update();
+        movementView = initMovementView({ stage: $('stage'), board: b, gmMap, page, seeAs: () => seeAs });
+        gmMap.onChange(() => showBanner()); // the Heights button shows once the map is in
         showBanner();
       }
       b.update();

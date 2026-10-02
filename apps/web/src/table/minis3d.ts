@@ -31,6 +31,8 @@ export interface MiniHost {
   /** Ids being dragged (lifted a little). */
   dragging(): ReadonlySet<string>;
   textures: TextureCache;
+  /** The ground's height under a point (raised and sunken areas of the map), in cells; unset: 0. */
+  groundY?(x: number, y: number): number;
   requestRender(): void;
 }
 
@@ -190,7 +192,8 @@ export function createMinis(group: Group, tagLayer: HTMLElement, host: MiniHost)
           build(m, t);
           m.key = key;
         }
-        m.root.position.set(t.x + t.w / 2, lifted.has(t.id) ? 0.14 : t.layer === 'map' ? 0 : 0.001, t.y + t.h / 2);
+        const ground = host.groundY?.(t.x + t.w / 2, t.y + t.h / 2) ?? 0;
+        m.root.position.set(t.x + t.w / 2, ground + (lifted.has(t.id) ? 0.14 : t.layer === 'map' ? 0 : 0.001), t.y + t.h / 2);
         // page rotation is clockwise with y down; about the world's up axis that's the other way
         m.turn.rotation.y = (-(t.rotation ?? 0) * Math.PI) / 180;
         if (m.ring) {

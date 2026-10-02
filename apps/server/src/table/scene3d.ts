@@ -13,6 +13,7 @@ import {
   computeFloor,
   doorSegment,
   hashString,
+  heightScene,
   insidePolygons,
   roughFloor,
   shapeBounds,
@@ -140,7 +141,9 @@ export function scene3d(gameId: string, page: Page, map: DelveMap | null, view: 
   };
   if (bg.kind === 'delve' && map) {
     const url = `/api/v1/games/${encodeURIComponent(gameId)}/pages/${encodeURIComponent(page.id)}/background.png?view=${view}`;
-    return { ...base, kind: 'delve', floor: { url, box: bounds }, ...delveGeometry(map, view, region) };
+    // raised and sunken ground (core heightScene): players' hidden areas left out, cut to what they may see
+    const heights = heightScene(map, { view, frame: bounds, region });
+    return { ...base, kind: 'delve', floor: { url, box: bounds }, ...delveGeometry(map, view, region), ...(heights ? { heights } : {}) };
   }
   const walls = page.walls ? clipWalls(page.walls, region) : [];
   if (bg.kind === 'image') {

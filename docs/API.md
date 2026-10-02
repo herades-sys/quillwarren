@@ -154,6 +154,35 @@ Hatching and shading (and the classic style's drop shadow) run along the outside
   - MCP: `add_opening` (`rect` | `poly` | `circle` | `preset`, `walls?`, `name?`, `id?`); `update {"walls": true}`, `resize` and `delete` change it.
   - Core: `geometry/openings.ts` (`openingsOf`, `openWallRings`, `cutSegments`), the band in `render/scene.ts`.
 
+## Heights within a map
+
+Raised and sunken ground on one map (separate floors stay storeys, `level`): a ledge archers shoot from, a hill with a crest, a sunken arena, a pit, the plateaus of a mountainside.
+
+- **The object:** `{ type: "height", id, name?, notes?, shape, height, edge?, hidden?: true }`. Ids default to `h1`, `h2`…
+  - `shape`: any shape (rect, circle, poly; the tools also take `preset`).
+  - `height`: relative to the map's floor, in the map's units (`grid.unit`, feet or metres; core `units.ts`): `10` is a 10 ft ledge, `-5` a pit, `20` a hilltop. From −10000 to 10000.
+  - It only changes the height where there is ground: the floor (rooms and corridors minus cutouts) or terrain. Outdoors a mountainside is terrain (snow, grass, rock) plus height areas, no room needed. The part of an area outside the ground changes nothing.
+  - **Overlaps:** the area that comes later in the map wins where areas overlap, so a hill can carry a higher crest and a ledge can hold a pit. An edge belongs to the later of the two areas it divides (or to the area, against the plain ground).
+  - `edge`, how the boundary is crossed:
+    - `cliff`: a sheer drop or ledge, drawn as a firm line with short ticks on the low side; not walkable.
+    - `rock`: a cliff drawn as a band of rock face on the low side, as wide as the drop (about a square per 10 ft, from half a square to three), with hachures fanning down, stipple, a few boulders and a ragged foot; it narrows to a point where it runs out on open ground. Not walkable.
+    - `slope`: a walkable hill or ramp: a soft contour line and light hachures running out on the low side (1.5 squares per square of rise, 0.75 to 3).
+    - `step`: walkable: a low step or rubble, a thin line with tiny ticks.
+    - Unset: a drop of one square's size or more (5 ft on a 5 ft grid, 1.5 m on a 1.5 m one) is a `cliff` on the floor and a `rock` face outdoors on terrain; less is a `step`.
+  - `hidden: true`: the GM's only. The players' view shows flat ground there, their 3D scene leaves it out, and Delve Table doesn't hold their tokens back at its edge.
+  - It moves, resizes, undoes and comes along in segments (inside its room) like any shape; fog of war treats it like other objects (players see its edges only where they have seen the map). Dungeon Scrawl exports leave it out.
+- **Stairs and ladders:** stairs objects, and ladder or spiral-stair props, lying across a cliff or rock edge make it passable there (the line and ticks are left out under stairs). Stairs that "go down on the same map" are stairs from the floor across a sunken area's edge. Stairs between two heights get an arrow up the flight (in both views), toward the higher end whatever their `direction` says; the editor's Stairs tool sets `direction` that way when it draws across an edge, and `add_height` names stairs that now run the wrong way. The 3D views climb them from the low height to the high one. They no longer count as loose stairs in the storeys' 3D view.
+- **The look** (core `render/heights.ts`, in the style's own ink, every jitter from the seeded RNG, no filters): raised ground a shade lighter, sunken ground a shade darker (on white floors, as in clean and print, only sunken ground shows a tone); the edges as above, in both views. The GM view adds a small tag with the height on each area ("+10 ft", "−5 ft"), away from room numbers and stairs. The parchment handout shows the edges and shading like the players' view.
+- **Where you can go:** core `walkableMap(map)`: the ground by height, the edges that block movement (cliff and rock edges minus where stairs or ladders cross), the crossings (stairs, ladders, slopes, steps), and the walls and shut doors as before. `blockingEdges(map)` gives Delve Table the blocking pieces with their drop (hidden areas left out).
+- **describe_map** lists every area: its height, edge, size, where it is ("along the north side of room 1 Great hall", "on Snow (t1)") and how it is reached ("reached by stairs s1 (up n)", or "no stairs or ladder: only by climbing, jumping or flying").
+- **Editor:**
+  - The **Height** tool (**K**, the layers icon on the rail): shapes 1–7 like the Pillar tool (Shift for a square), the height with − and + (a square's size per step), and the edge chips Auto, Cliff, Rock face, Slope, Step. While it is on, every height area shows as a dashed outline; a click picks one.
+  - The inspector: name, height, edge, "Hidden from players", how it is reached, the shape and its size, GM notes.
+  - **Where you can go** (**Shift K**, the footprints switch at the bottom of the rail, the Height tool's bar, or Map settings → Heights and movement): the ground tinted by height (blues down, yellow to orange up) with its height, red dashes on edges nobody can walk over, green on crossings (thick for stairs and ladders). Kept per browser (localStorage `delve-movement`); it shows in the GM view of Delve Table too.
+- **3D** (`/maps/:id/3d`): the floor picture is cut into plates at their heights (a square per square of height: 10 ft on a 5 ft grid is 2 up), with sheer faces at cliffs and steps and leaning ones for slopes and rock faces; sunken parts get their own slab; walls stand on the ground beside them. Core `heightScene`; the meshes are `apps/web/src/heights3d.ts`, the math `heights3d-logic.ts`.
+- **MCP:** `add_height` (`rect` | `poly` | `circle` | `preset`, `height`, `edge?`, `name?`, `notes?`, `hidden?`, `id?`); `update` (e.g. `{"height": -5}`, `{"edge": "slope"}`), `resize`, `move` and `delete` change it. The chat prompt has recipes for an archers' ledge, a sunken arena and a snowy mountainside with plateaus and a path up.
+- Core: `heights.ts` (`heightPlan`, `walkableMap`, `blockingEdges`, `heightScene`, `stairsUphill`, `describeHeights`), `render/heights.ts`.
+
 ## Fog of war
 
 - **Where it's kept:** `map.fog = { on, revealed?: ids, show?: shapes, hide?: shapes }`, changed with `update_map`, so it is live and undoable.
@@ -458,6 +487,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `connect` (`from`, `to`, `width?`=2, `doors?` none/from/to/both, `door_style?`) | Auto-routed corridor that follows its rooms, with doors across its mouths |
 | `add_cutout` (a shape or `preset`, `fill?` solid/rock), `add_door`, `add_stairs`, `add_label` | Details |
 | `add_opening` (a shape or `preset`, `walls?`, `name?`) | An open area: no hatching, shading or shadow inside; with `walls` no wall lines either (see "Open ends and open areas") |
+| `add_height` (a shape or `preset`, `height`, `edge?` cliff/rock/slope/step, `name?`, `notes?`, `hidden?`) | Raised or sunken ground: a ledge, a hill, a pit, a mountain's plateaus; says how it is reached (see "Heights within a map") |
 | `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_props_along` (`asset`, `path`, `spacing?`, `placement?`, `spread?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
 | `add_marker` (`kind` discover/interact/trap, `at`, `text`) | A GM note badge (GM view only); `update` with `{"done": true}` strikes it through |
 | `add_inscription` (`text`, `at`, `size?`, `rotation?`, `ink?` brown/black/faded/red, `on_map?`) | A handwritten note on the players' parchment handout ("Here be dragons"); `on_map` also writes it on the normal map. See "Handwritten notes on the handout" |

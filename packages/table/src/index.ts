@@ -49,6 +49,7 @@ export {
   type Explored,
   type TokenFilter,
 } from './sight.ts';
+export { respectsHeights, moveBlockersOf, moveRefusal, crossingAt, firstBlocker, type MoveBlocker } from './movement.ts';
 export {
   visibilityPolygon,
   circle,

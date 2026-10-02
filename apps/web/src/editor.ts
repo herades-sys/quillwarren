@@ -47,8 +47,10 @@ import {
   type Point,
   type Shape,
 } from '@delve/core';
+import { heightPlan, heightText, parseSquareUnit, stairsUphill, walkableMap, type HeightArea } from '@delve/core';
 import type { IconName } from '@delve/ui';
 import { onControl, type ViewerCtx } from './ctx.ts';
+import { drawMovement, EDGE_OPTIONS, edgeChips, heightBox, heightObject, HEIGHT_HINT, heightValue, loadMovement, movementIcon, movementLegend, parseHeight, saveMovement, type EdgeChoice } from './heights.ts';
 import { btn, checkbox, field, h, iconBtn, iconEl, input, miniRange, range, seg, select, svgEl, textarea, type Kid } from './dom.ts';
 import { drawHint, FILL_CHOICES, SHAPE_CHOICES, shapeGhost } from './draw-shapes.ts';
 import {
@@ -90,7 +92,7 @@ import { drawInscriptions, inscriptionFields } from './inscriptions.ts';
 import { objectBounds, pad } from './logic.ts';
 import { initSegments } from './segments.ts';
 
-type Tool = 'select' | 'pan' | 'room' | 'poly' | 'corridor' | 'door' | 'stairs' | 'cutout' | 'opening' | 'prop' | 'terrain' | 'label' | 'marker' | 'reveal' | 'image' | 'segment';
+type Tool = 'select' | 'pan' | 'room' | 'poly' | 'corridor' | 'door' | 'stairs' | 'cutout' | 'opening' | 'height' | 'prop' | 'terrain' | 'label' | 'marker' | 'reveal' | 'image' | 'segment';
 
 interface ToolInfo {
   id: Tool;
@@ -116,6 +118,7 @@ const TOOL_GROUPS: ToolInfo[][] = [
     { id: 'stairs', name: 'Stairs', short: 'Stairs', key: 'S', icon: 'stairs' },
     { id: 'cutout', name: 'Pillar / cutout', short: 'Pillar', key: 'I', icon: 'pillar' },
     { id: 'opening', name: 'Open area', short: 'Open', key: 'N', icon: 'eraser', tip: 'no hatching or shading here' },
+    { id: 'height', name: 'Height', short: 'Height', key: 'K', icon: 'layers', tip: 'ledges, hills, pits · Shift K where you can go' },
   ],
   [
     { id: 'prop', name: 'Prop', short: 'Prop', key: 'P', icon: 'prop', tip: 'Q / E rotate' },
@@ -143,8 +146,8 @@ const thumb = (id: string) => artUrl(id);
 /** Turned by 15° steps, folded into 0…345. */
 const turned = (deg: number) => (((Math.round(deg / 15) * 15) % 360) + 360) % 360;
 const SHAPE_ICON: Record<DrawShape, IconName> = { rect: 'shape-rect', circle: 'shape-circle', oval: 'shape-oval', triangle: 'shape-triangle', hexagon: 'shape-hexagon', octagon: 'shape-octagon', freehand: 'shape-freehand' };
-const TYPE_ICON: Record<MapObject['type'], IconName> = { room: 'room', corridor: 'corridor', cutout: 'pillar', door: 'door', stairs: 'stairs', label: 'label', prop: 'prop', terrain: 'terrain', marker: 'marker', image: 'image', opening: 'eraser', inscription: 'notes' };
-const TYPE_NAME: Record<MapObject['type'], string> = { room: 'Room', corridor: 'Corridor', cutout: 'Pillar / cutout', door: 'Door', stairs: 'Stairs', label: 'Label', prop: 'Prop', terrain: 'Terrain', marker: 'GM marker', image: 'Image', opening: 'Open area', inscription: 'Handout note' };
+const TYPE_ICON: Record<MapObject['type'], IconName> = { room: 'room', corridor: 'corridor', cutout: 'pillar', door: 'door', stairs: 'stairs', label: 'label', prop: 'prop', terrain: 'terrain', marker: 'marker', image: 'image', opening: 'eraser', inscription: 'notes', height: 'layers' };
+const TYPE_NAME: Record<MapObject['type'], string> = { room: 'Room', corridor: 'Corridor', cutout: 'Pillar / cutout', door: 'Door', stairs: 'Stairs', label: 'Label', prop: 'Prop', terrain: 'Terrain', marker: 'GM marker', image: 'Image', opening: 'Open area', inscription: 'Handout note', height: 'Height area' };
 /** Can the device be used with a finger? Then the Select tool offers a Box mode for one-finger drags. */
 const coarse = () => typeof matchMedia === 'function' && matchMedia('(any-pointer: coarse)').matches;
 const DOOR_NAME: Record<(typeof DOOR_STYLES)[number], string> = { normal: 'Door', double: 'Double', locked: 'Locked', secret: 'Secret', portcullis: 'Portcullis', archway: 'Archway' };
@@ -229,6 +232,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     openShape: 'rect' as DrawShape,
     /** Open area tool: leave out the wall lines inside too. */
     openWalls: false,
+    /** Height tool: its shape, the height (map units) and the edge it gives new areas. */
+    heightShape: 'rect' as DrawShape,
+    height: 10,
+    heightEdge: 'auto' as EdgeChoice,
     /** Select tool on touch: one finger drags a box instead of panning. */
     touchBox: false,
   };
@@ -238,9 +245,22 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   const touches = new Set<number>();
   /** A finger on empty ground in the Select tool: it pans; lifted without moving, it was a tap. */
   let tap: { id: number; x: number; y: number; hit: string | null; moved: boolean } | null = null;
-  const shapeOf = (t: Tool): DrawShape => (t === 'cutout' ? settings.pillarShape : t === 'opening' ? settings.openShape : settings.roomShape);
+  const shapeOf = (t: Tool): DrawShape => (t === 'cutout' ? settings.pillarShape : t === 'opening' ? settings.openShape : t === 'height' ? settings.heightShape : settings.roomShape);
   /** Tools that draw a shape from a drag (with the shape chips 1–7). */
-  const drawsShape = (t: Tool) => t === 'room' || t === 'cutout' || t === 'opening';
+  const drawsShape = (t: Tool) => t === 'room' || t === 'cutout' || t === 'opening' || t === 'height';
+  /** "Where you can go" (Shift K): the movement overlay, kept per browser. */
+  let movement = loadMovement();
+  const toggleMovement = (): void => {
+    movement = !movement;
+    saveMovement(movement);
+    moveBtn?.setAttribute('aria-pressed', String(movement));
+    renderTools();
+    if (tab === 'map') renderPanel(true);
+    draw();
+  };
+  let moveBtn: HTMLButtonElement | null = null;
+  /** New stairs that cross a height edge point up it (core stairsUphill), whatever the chip says. */
+  const stairsDirection = (m: DelveMap, shape: Shape): 'n' | 'e' | 's' | 'w' => (m.objects.some((o) => o.type === 'height') ? stairsUphill(heightPlan(m), shapeBounds(shape)) : null) ?? settings.stairsDir;
   const boxShapeOf = (t: Tool): BoxShape => {
     const k = shapeOf(t);
     return k === 'freehand' ? 'rect' : k;
@@ -493,6 +513,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       case 'room':
       case 'cutout':
       case 'opening':
+      case 'height':
         if (shapeOf(tool) === 'freehand') {
           // freehand: collect the outline until the button comes up
           sketch = [p];
@@ -694,14 +715,24 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           }
           break;
         }
+        if (tool === 'height' && !d.moved) {
+          // a click with the Height tool picks the area under it (the topmost)
+          const hit = hitAll(m, d.raw ?? d.start, tol()).find((id) => byId(id)?.type === 'height');
+          if (hit) {
+            setSelection([hit]);
+            renderPanel();
+          }
+          break;
+        }
         if (!rect && !drawn) break;
         const shape: Shape = drawn ?? { rect: rect! };
         let obj: MapObject;
         if (tool === 'room') obj = { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
         else if (tool === 'cutout') obj = { id: nextId(m, 'p'), type: 'cutout', shape, ...(settings.pillarFill === 'solid' ? { fill: 'solid' as const } : {}) };
         else if (tool === 'opening') obj = { id: nextId(m, 'o'), type: 'opening', shape, ...(settings.openWalls ? { walls: true } : {}) };
+        else if (tool === 'height') obj = heightObject(m, nextId(m, 'h'), shape, { height: settings.height, edge: settings.heightEdge });
         else if (tool === 'terrain') obj = { id: nextId(m, 't'), type: 'terrain', shape, asset: settings.tile };
-        else obj = { id: nextId(m, 's'), type: 'stairs', shape, direction: settings.stairsDir };
+        else obj = { id: nextId(m, 's'), type: 'stairs', shape, direction: stairsDirection(m, shape) };
         void apply([{ op: 'add', object: obj }], [obj.id]);
         break;
       }
@@ -742,7 +773,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         ? { id: nextId(m, 'p'), type: 'cutout', shape, ...(settings.pillarFill === 'solid' ? { fill: 'solid' as const } : {}) }
         : tool === 'opening'
           ? { id: nextId(m, 'o'), type: 'opening', shape, ...(settings.openWalls ? { walls: true } : {}) }
-          : { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
+          : tool === 'height'
+            ? heightObject(m, nextId(m, 'h'), shape, { height: settings.height, edge: settings.heightEdge })
+            : { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
     void apply([{ op: 'add', object: obj }], [obj.id]);
     draw();
   }
@@ -963,8 +996,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       return;
     }
     if (e.shiftKey && (key === 'p' || key === 'g')) return; // the viewer's: view and grid
+    if (e.shiftKey && key === 'k') return toggleMovement();
     if (key === 'q' || key === 'e') return turn((key === 'e' ? 1 : -1) * (e.shiftKey ? 90 : 15));
-    if ((tool === 'room' || tool === 'poly' || tool === 'cutout' || tool === 'opening') && /^[1-8]$/.test(e.key)) return pickShape(Number(e.key) - 1);
+    if ((tool === 'room' || tool === 'poly' || tool === 'cutout' || tool === 'opening' || tool === 'height') && /^[1-8]$/.test(e.key)) return pickShape(Number(e.key) - 1);
     const t = TOOLS.find((x) => x.key.toLowerCase() === key) ?? (key === 'o' ? POLY : undefined);
     if (t && !e.shiftKey) return setTool(t.id);
     if (e.key === 'Escape') {
@@ -1036,6 +1070,12 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const m = map();
     const px = ctx.squaresPerPx();
     const sel = selection.map(byId).filter((o): o is MapObject => Boolean(o));
+
+    // where you can go (Shift K), under the editor's own marks; the Height tool shows every area's outline
+    if (movement) drawMovement(layer, m, { view: ctx.view(), px });
+    for (const o of m.objects) {
+      if (o.type === 'height' && (tool === 'height' || selection.includes(o.id))) layer.appendChild(shapeElement(o.shape, 'open-area'));
+    }
 
     // open areas are never drawn: a dashed outline shows them while selected, or all of them with their tool on
     for (const o of m.objects) {
@@ -1209,7 +1249,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     keysBtn.addEventListener('pointerenter', () => showTip(keysBtn, { name: 'Shortcuts', key: '?' }));
     keysBtn.addEventListener('pointerleave', hideTip);
     ctx.onRender(() => gridBtn.setAttribute('aria-pressed', String(ctx.grid())));
-    rail.replaceChildren(...kids, h('span', { class: 'spacer' }), gridBtn, keysBtn);
+    moveBtn = h('button', { type: 'button', class: 'tool is-toggle', 'aria-label': 'Where you can go', 'aria-pressed': String(movement), onclick: () => toggleMovement() }, movementIcon(19));
+    moveBtn.addEventListener('pointerenter', () => showTip(moveBtn!, { name: 'Where you can go', key: 'Shift K', tip: 'heights: red blocks, green crosses' }));
+    moveBtn.addEventListener('pointerleave', hideTip);
+    rail.replaceChildren(...kids, h('span', { class: 'spacer' }), moveBtn, gridBtn, keysBtn);
     // arrow keys move along the rail
     rail.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -1253,6 +1296,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   const ctxLabel = (t: string) => h('span', { class: 'ed-ctx-label' }, t);
 
   function pickShape(i: number): void {
+    if (tool === 'height') {
+      const s = SHAPE_CHOICES[i];
+      if (s) settings.heightShape = s[0];
+      return renderTools();
+    }
     if (tool === 'cutout' || tool === 'opening') {
       const s = SHAPE_CHOICES[i];
       if (s) settings[tool === 'cutout' ? 'pillarShape' : 'openShape'] = s[0];
@@ -1269,7 +1317,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   function shapeChips(): HTMLElement {
     const current = tool === 'poly' ? 'polygon' : shapeOf(tool);
     const chips = SHAPE_CHOICES.map(([k, name], i) => chip(null, current === k, () => pickShape(i), { icon: SHAPE_ICON[k], num: String(i + 1), title: `${name[0]!.toUpperCase()}${name.slice(1)} · ${i + 1}` }));
-    if (tool !== 'cutout' && tool !== 'opening') chips.push(chip(null, current === 'polygon', () => pickShape(7), { icon: 'polygon', num: '8', title: 'Polygon: click the corners · 8' }));
+    if (tool !== 'cutout' && tool !== 'opening' && tool !== 'height') chips.push(chip(null, current === 'polygon', () => pickShape(7), { icon: 'polygon', num: '8', title: 'Polygon: click the corners · 8' }));
     return group('Shape', ...chips);
   }
 
@@ -1310,6 +1358,20 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
             chip('Open walls', settings.openWalls, () => ((settings.openWalls = true), renderTools()), { title: 'The wall lines inside go too: a cave mouth, a ledge' }),
           ),
           hint(shapeOf('opening') === 'freehand' ? 'Hold and draw the outline' : `Drag over a wall or an edge${count ? ` · click one to select it (${count} on this map)` : ''}`),
+        ];
+      }
+      case 'height': {
+        const unit = parseSquareUnit(m.grid.unit);
+        const kit = { chip, group, rerender: renderTools };
+        return [
+          shapeChips(),
+          h('span', { class: 'vsep' }),
+          heightBox(settings.height, unit, (v) => ((settings.height = v), renderTools())),
+          h('span', { class: 'vsep' }),
+          edgeChips(kit, settings.heightEdge, (v) => ((settings.heightEdge = v), renderTools())),
+          h('span', { class: 'vsep' }),
+          chip(movementIcon(16), movement, () => toggleMovement(), { title: 'Where you can go · Shift K' }),
+          ...(movement ? [movementLegend()] : [keyHint('Shift K', 'where you can go')]),
         ];
       }
       case 'corridor':
@@ -1376,6 +1438,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     ctxbar.replaceChildren(h('span', { class: 'ctxbar-title' }, iconEl(t.icon, 16), t.name), h('span', { class: 'vsep' }), ...content);
     if (drawsShape(tool)) ctxbar.title = drawHint(shapeOf(tool), tool === 'room' ? 'room' : tool === 'cutout' ? 'pillar' : 'opening');
     else ctxbar.removeAttribute('title');
+    if (tool === 'height') ctxbar.title = HEIGHT_HINT;
     renderFlyout();
   }
 
@@ -1595,6 +1658,51 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     return checkbox('Revealed to players', shown, (on) => fogChange(on ? { reveal: [o.id] } : { cover: [o.id] }), { key: 'F' });
   }
 
+  /** A height area: its name, height, edge, whether players see it, how it is reached, the shape and GM notes. */
+  function heightFields(o: HeightArea): HTMLElement[] {
+    const m = map();
+    const unit = parseSquareUnit(m.grid.unit);
+    const upd = (set: Record<string, unknown>) => void apply([{ op: 'update', id: o.id, set }]);
+    const unset = (key: string) => void apply([{ op: 'update', id: o.id, unset: [key] }]);
+    const heightInput = input({
+      value: heightValue(o.height),
+      inputmode: 'decimal',
+      'data-field': 'height',
+      style: 'font-variant-numeric:tabular-nums',
+      onchange: (e: Event) => {
+        const v = parseHeight((e.target as HTMLInputElement).value);
+        if (v === null || v === o.height) return renderPanel(true);
+        upd({ height: v });
+      },
+    });
+    // how it is reached: the stairs and ladders across its cliff edges (core walkableMap, via describeMap's words)
+    const plan = heightPlan(m);
+    const mine = plan.edges.filter((e) => e.owner === o.id || e.other === o.id);
+    const blocking = mine.filter((e) => e.kind === 'cliff' || e.kind === 'rock');
+    const region = plan.regions.find((r) => r.area.id === o.id);
+    const walk = walkableMap(m, { plan });
+    const touching = [...new Set(walk.crossings.filter((c) => c.id && (c.owner === o.id || c.other === o.id)).map((c) => c.id!))].map((cid) => ({ id: cid, type: byId(cid)?.type ?? 'stairs' }));
+    const reach = !region?.polygons.length
+      ? 'There is no floor or terrain under it, so it changes nothing yet: draw it over a room, a corridor or terrain.'
+      : blocking.length
+        ? touching.length
+          ? `Its cliff edge is crossed by ${touching.map((s) => `${s.type === 'stairs' ? 'stairs' : 'ladder'} ${s.id}`).join(', ')}. Elsewhere it can't be walked.`
+          : 'Nothing crosses its cliff edge: put stairs or a ladder across it where the way up is.'
+        : mine.length
+          ? 'Walkable all round (slope or step).'
+          : 'No edge: the ground around it is at the same height.';
+    return [
+      two(field('Name', text(o.id, 'name', o.name, { placeholder: 'Archers’ ledge' })), field('Height', heightInput, { unit: unit.name })),
+      field('Edge', select(EDGE_OPTIONS, o.edge ?? 'auto', (v) => (v === 'auto' ? unset('edge') : upd({ edge: v })))),
+      h('p', { class: 'hint' }, `${heightText(o.height, unit)} from the floor. ${reach}`),
+      checkbox('Hidden from players', Boolean(o.hidden), (on) => (on ? upd({ hidden: true }) : unset('hidden'))),
+      ...(o.hidden ? [h('p', { class: 'hint' }, 'Players see flat ground here, and Delve Table doesn’t hold their tokens back at its edge.')] : []),
+      shapeRow(o),
+      ...shapeFields(o),
+      field('GM note · only you see this', text(o.id, 'notes', o.notes, { area: true, max: NOTES_MAX })),
+    ];
+  }
+
   function objectFields(o: MapObject): HTMLElement[] {
     const id = o.id;
     const upd = (set: Record<string, unknown>) => void apply([{ op: 'update', id, set }]);
@@ -1698,6 +1806,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         break;
       case 'image':
         out.push(field('Name', text(id, 'name', o.name)), ...images.fields(o));
+        break;
+      case 'height':
+        out.push(...heightFields(o));
         break;
       case 'opening':
         out.push(
@@ -1889,6 +2000,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           : [h('p', { class: 'hint' }, 'A tower, a keep with a cellar: add storeys, and switch between them bottom left.')]),
         guide ? h('p', { class: 'hint' }, `The dashed outline is the floor of “${guide.name}”, so the storeys line up.`) : null,
         h('div', { class: 'ed-row' }, btn('Add above', { icon: 'plus', size: 'sm', onclick: () => void addStorey('above') }), btn('Add below', { icon: 'plus', size: 'sm', onclick: () => void addStorey('below') }), btn('Number the stairs', { icon: 'stairs', size: 'sm', title: 'Label every stair, ladder and trapdoor in the GM view: floor, then a letter per flight (0A, 1A, 2A)', onclick: () => void numberStairs() })),
+      ),
+      section(
+        'Heights and movement',
+        checkbox('Show where you can go', movement, () => toggleMovement(), { key: 'Shift K' }),
+        h(
+          'p',
+          { class: 'hint' },
+          m.objects.some((o) => o.type === 'height')
+            ? `${m.objects.filter((o) => o.type === 'height').length} height area${m.objects.filter((o) => o.type === 'height').length === 1 ? '' : 's'}. Red dashes: cliff edges nobody can walk over; green: stairs, ladders, slopes and steps. On Delve Table, “Respect heights” holds players to it.`
+            : 'Ledges, hills and pits on this map: the Height tool (K).',
+        ),
+        movement ? movementLegend() : null,
       ),
       section(
         'Fog of war',

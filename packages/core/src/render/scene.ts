@@ -11,6 +11,7 @@ import { terrainArea, terrainPolygons } from '../geometry/terrain.ts';
 import { solidCutouts } from '../geometry/solid.ts';
 import { cutSegments, floorTest, openWallRings } from '../geometry/openings.ts';
 import { floorNumberLayer, stairTagLayer } from './floor-marks.ts';
+import { HEIGHT_CLIP, heightDrawing } from './heights.ts';
 import { openAreas } from './open-ends.ts';
 import { fromPath, PRECISION, shapeBounds, shapePath, toPath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
 import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
@@ -369,6 +370,19 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   };
   imageLayer('floor');
 
+  // Height areas (render/heights.ts): ground lighter or darker by its height, here under the grid;
+  // the edges go over the stairs, the GM's labels with the stair labels.
+  const stairsShown = map.objects.filter((o): o is Stairs => {
+    if (o.type !== 'stairs') return false;
+    const b = shapeBounds(o.shape);
+    return seen([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]);
+  });
+  const heightArt = map.objects.some((o) => o.type === 'height') ? heightDrawing({ map, style, view, seed, floor: fullFlat, seen: seenPolys, stairs: stairsShown }) : null;
+  if (heightArt) {
+    clips[HEIGHT_CLIP] = heightArt.clip;
+    layers.push(...heightArt.tone);
+  }
+
   if ((opts.grid ?? true) && style.grid.style !== 'none' && fb) {
     if (style.grid.style === 'lines') {
       const lines: Polyline[] = [];
@@ -393,6 +407,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     clips[`stairs-${s.id}`] = [{ outer: fromPath(shapePath(s.shape)), holes: [] }];
     layers.push({ name: `stairs:${s.id}`, kind: 'stroke', lines: stairLines(s), color: style.stairs.color, width: style.stairs.width, cap: 'butt', join: 'miter', clip: `stairs-${s.id}` });
   }
+  if (heightArt) layers.push(...heightArt.edges);
 
   // Decals (cracks, puddles, moss) lie on the floor under the walls.
   const decals = props.filter((p) => layerOfProp(p) === 'decals');
@@ -496,6 +511,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     if (floorNo) layers.push(floorNo);
     const stairTags = stairTagLayer(map, style);
     if (stairTags) layers.push(stairTags);
+    if (heightArt?.labels) layers.push(heightArt.labels);
     // GM markers on top of everything: never in the players' view
     const markers = map.objects.flatMap((o) => (o.type === 'marker' ? [{ id: o.id, kind: o.kind, at: o.at, done: Boolean(o.done), r: markerRadius(map.objects, o) }] : []));
     if (markers.length) layers.push({ name: 'markers', kind: 'markers', items: markers });

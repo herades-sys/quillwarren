@@ -335,6 +335,7 @@ const NOUNS: Record<string, [string, string]> = {
   label: ['label', 'labels'],
   prop: ['prop', 'props'],
   terrain: ['terrain area', 'terrain areas'],
+  height: ['height area', 'height areas'],
   marker: ['GM marker', 'GM markers'],
   image: ['picture', 'pictures'],
   opening: ['open area', 'open areas'],

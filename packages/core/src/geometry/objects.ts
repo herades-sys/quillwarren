@@ -16,6 +16,7 @@ export function objectBounds(o: MapObject, map: DelveMap): Bounds | null {
     case 'stairs':
     case 'terrain':
     case 'opening':
+    case 'height':
       return shapeBounds(o.shape);
     case 'corridor': {
       const path = corridorPath(o, roomsById(map));

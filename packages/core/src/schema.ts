@@ -191,9 +191,36 @@ export const Inscription = z.strictObject({
   onMap: z.boolean().optional(),
 });
 
-export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker', 'image', 'opening', 'inscription'] as const;
+/**
+ * How the edge of a height area is crossed: "cliff" a drop or sheer ledge, drawn
+ * as a firm line with short ticks on the low side (indoor ledges, balconies, pit
+ * rims); "rock" a cliff drawn as a band of rock face on the low side, as wide as
+ * the drop (mountainsides); both can't be walked. "slope" a walkable hill or
+ * ramp, "step" a walkable low step or rubble. See heights.ts for the default.
+ */
+export const HEIGHT_EDGES = ['cliff', 'rock', 'slope', 'step'] as const;
 
-export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker, MapImage, Opening, Inscription]);
+/**
+ * A raised or sunken area within one map: a ledge archers shoot from, a hill, a
+ * sunken arena, a pit. `height` is relative to the map's floor, in the map's
+ * units (grid.unit: feet or metres): +10 is a ledge, -5 a pit. It doesn't make
+ * floor itself: it changes the height where floor (rooms, corridors) or terrain
+ * already is. Where areas overlap, the last one wins, so a hill can carry a
+ * higher crest. `hidden` keeps it from the players (a drop they haven't found):
+ * their view shows flat floor there and Delve Table doesn't enforce it.
+ */
+export const HeightArea = z.strictObject({
+  type: z.literal('height'),
+  ...common,
+  shape: Shape,
+  height: z.number().min(-10_000, 'from -10000 to 10000 (in the map\'s units)').max(10_000, 'from -10000 to 10000 (in the map\'s units)'),
+  edge: z.enum(HEIGHT_EDGES).optional(),
+  hidden: z.boolean().optional(),
+});
+
+export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker', 'image', 'opening', 'inscription', 'height'] as const;
+
+export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker, MapImage, Opening, Inscription, HeightArea]);
 
 /**
  * Fog of war for the players' screen. With it on, players see only the revealed
@@ -254,6 +281,8 @@ export type MarkerKind = (typeof MARKER_KINDS)[number];
 export type CutoutFill = (typeof CUTOUT_FILLS)[number];
 export type MapImage = z.infer<typeof MapImage>;
 export type Opening = z.infer<typeof Opening>;
+export type HeightArea = z.infer<typeof HeightArea>;
+export type HeightEdge = (typeof HEIGHT_EDGES)[number];
 export type ImageLayer = (typeof IMAGE_LAYERS)[number];
 export type Inscription = z.infer<typeof Inscription>;
 export type InscriptionInk = (typeof INSCRIPTION_INKS)[number];

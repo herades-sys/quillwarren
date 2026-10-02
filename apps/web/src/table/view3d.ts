@@ -64,6 +64,8 @@ import {
   type View3,
 } from './scene3d-logic.ts';
 import { makeTexture, TextureCache } from './textures3d.ts';
+import { heightMeshes } from '../heights3d.ts';
+import { groundAt, stairRise, stairsUp, wallBase } from '../heights3d-logic.ts';
 
 export interface View3dHost {
   me(): Member;
@@ -263,6 +265,12 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     step: new MeshStandardMaterial({ color: 0xa79d8f, roughness: 0.9 }),
   };
   const gridMat = new LineBasicMaterial({ color: 0x1b1f24, transparent: true, opacity: 0.2, depthWrite: false });
+  const faceMats = {
+    cliff: new MeshStandardMaterial({ color: 0x6e6255, roughness: 0.95, side: DoubleSide }),
+    step: new MeshStandardMaterial({ color: 0x6e6255, roughness: 0.95, side: DoubleSide }),
+    rock: new MeshStandardMaterial({ color: 0x57524b, roughness: 1, side: DoubleSide }),
+    slope: new MeshStandardMaterial({ color: 0x8a7f70, roughness: 1, side: DoubleSide }),
+  };
 
   // ---------- the board ----------
 
@@ -312,10 +320,13 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     const fb = s.floor?.box ?? b;
     const fw = fb.x1 - fb.x0;
     const fd = fb.y1 - fb.y0;
+    // raised and sunken ground (the map's height areas): the floor picture cut into plates at their heights, faces between
+    if (s.heights) for (const mesh of heightMeshes(s.heights, { box: fb, floor: floorMat, faces: faceMats })) board.add(mesh);
     const plane = new Mesh(new PlaneGeometry(fw, fd).rotateX(-Math.PI / 2), floorMat);
     plane.position.set(fb.x0 + fw / 2, 0, fb.y0 + fd / 2);
     plane.receiveShadow = true;
-    board.add(plane);
+    if (!s.heights) board.add(plane);
+    else plane.geometry.dispose();
     if (page?.showGrid) {
       const segs = gridSegments(b);
       const pos = new Float32Array(segs.length * 6);
@@ -379,14 +390,23 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
       s.walls.forEach((seg, i) => {
         const wb = wallPiece(seg, WALL_T);
         q.setFromAxisAngle(up, wb.angle);
-        m.compose(new Vector3(wb.x, wallH / 2, wb.z), q, new Vector3(wb.length, wallH, WALL_T));
+        m.compose(new Vector3(wb.x, wallBase(s.heights, seg[0], seg[1]) + wallH / 2, wb.z), q, new Vector3(wb.length, wallH, WALL_T));
         walls.setMatrixAt(i, m);
       });
       walls.castShadow = true;
       walls.receiveShadow = true;
       structure.add(walls);
     }
-    const pieces = [...s.doors.flatMap((d) => doorPieces(d, wallH, WALL_T)), ...s.stairs.flatMap((st) => stairSteps(st, Math.min(0.32, wallH * 0.4)))];
+    // on raised or sunken ground doors stand on it, and stairs between two heights climb from the low one to the high one
+    const hts = s.heights;
+    const lifted = (list: Piece[], by: number): Piece[] => (by ? list.map((p) => ({ ...p, y: p.y + by })) : list);
+    const pieces = [
+      ...s.doors.flatMap((d) => lifted(doorPieces(d, wallH, WALL_T), wallBase(hts, d.a, d.b))),
+      ...s.stairs.flatMap((st) => {
+        const r = stairRise(hts, st.box, st.direction);
+        return r && r.rise > 0 ? lifted(stairSteps({ ...st, direction: stairsUp(hts, st.box, st.direction) }, r.rise), r.base) : lifted(stairSteps(st, Math.min(0.32, wallH * 0.4)), r?.base ?? 0);
+      }),
+    ];
     for (const p of pieces) {
       const mesh = new Mesh(unitBox, pieceMats[p.kind]);
       mesh.position.set(p.x, p.y, p.z);
@@ -436,6 +456,7 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     hovered: () => hovered,
     dragging: () => dragIds,
     textures,
+    groundY: (x, y) => groundAt(current?.heights, x, y),
     requestRender: () => requestRender(),
   });
 
