@@ -116,6 +116,30 @@ describe('MCP endpoint', () => {
     expect(tools.find((t) => t.name === 'update')?.description).toContain('"notes"');
   });
 
+  it('puts doors in walls at any angle: by angle, or near a slanted wall', async () => {
+    const id = /id (map_[0-9a-f]+)/.exec((await call('create_map', { name: 'Octagon hall' })).text)![1]!;
+    await call('add_room', { map: id, preset: { kind: 'octagon', box: [0, 0, 10, 10] } });
+    const turned = await call('add_door', { map: id, at: [1, 1], angle: 45, width: 1.5, style: 'locked' });
+    expect(turned.isError).toBeFalsy();
+    expect(turned.text).toMatch(/^Added locked door d1 at 1,1 turned 45°, 1\.5 wide\. /);
+    // near the slanted north-east wall: centred on it and turned to match (it runs at 45°)
+    const near = await call('add_door', { map: id, near: [8.4, 1.4], width: 2 });
+    expect(near.text).toMatch(/^Added normal door d2 on the wall at [\d.]+,[\d.]+ turned 45°, 2 wide\. /);
+    const objects = JSON.parse((await call('get_map', { map: id })).text).map.objects as { id: string; angle?: number; along?: string }[];
+    expect(objects.find((o) => o.id === 'd1')).toMatchObject({ angle: 45, along: 'x' });
+    expect(objects.find((o) => o.id === 'd2')).toMatchObject({ angle: 45 });
+    expect((await call('update', { map: id, id: 'd1', set: { angle: 100 } })).isError).toBeFalsy();
+    expect((await call('update', { map: id, id: 'd1', set: { angle: 'west' } })).isError).toBe(true);
+    // the old way still works, and a spot far from any wall is refused
+    expect((await call('add_door', { map: id, at: [4, 0], along: 'x', width: 2 })).text).toMatch(/^Added normal door d3 at 4,0 along x, 2 wide\. /);
+    const far = await call('add_door', { map: id, near: [5, 5], width: 1 });
+    expect(far.isError).toBe(true);
+    expect(far.text).toContain('no wall within a square');
+    expect((await call('describe_map', { map: id })).text).toContain('d2 (normal, turned 45°)');
+    const { tools } = await client.listTools();
+    expect(tools.find((t) => t.name === 'add_door')?.description).toContain('any angle');
+  });
+
   it('focus reaches an open viewer', async () => {
     const id = /id (map_[0-9a-f]+)/.exec((await call('create_map', { name: 'Watched', template: 'test-dungeon' })).text)![1]!;
     const ws = new WebSocket(`${base.replace('http', 'ws')}/api/v1/maps/${id}/live`);

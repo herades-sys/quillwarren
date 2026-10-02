@@ -1,6 +1,7 @@
 // Building helpers shared by the MCP tools and the editor: fresh ids, the next
 // room number, and "connect these rooms" as ops.
 import { corridorPath, roomsById } from './geometry/corridors.ts';
+import { doorCentre, doorFromCentre } from './geometry/doors.ts';
 import { shapeBounds } from './geometry/shapes.ts';
 import type { Op } from './ops.ts';
 import type { Corridor, DelveMap, Door, Point } from './schema.ts';
@@ -23,9 +24,10 @@ export function nextLabel(map: DelveMap): string {
   return String(max + 1);
 }
 
-/** A door across the corridor mouth at one end of a routed path. */
-export function doorAtEnd(path: readonly Point[], end: 'start' | 'end', width: number): Pick<Door, 'at' | 'along'> {
+/** A door across the corridor mouth at one end of a routed path (turned square to the path where its end runs slantwise). */
+export function doorAtEnd(path: readonly Point[], end: 'start' | 'end', width: number): Pick<Door, 'at' | 'along' | 'angle'> {
   const [p, q] = end === 'start' ? [path[0]!, path[1]!] : [path.at(-1)!, path.at(-2)!];
+  if (p[0] !== q[0] && p[1] !== q[1]) return doorFromCentre(p, (Math.atan2(q[1] - p[1], q[0] - p[0]) * 180) / Math.PI + 90, width);
   return p[0] === q[0] ? { at: [p[0] - width / 2, p[1]], along: 'x' } : { at: [p[0], p[1] - width / 2], along: 'y' };
 }
 
@@ -41,7 +43,7 @@ export function withAttachedDoors(map: DelveMap, ids: readonly string[]): string
   const eps = 1e-6;
   for (const o of map.objects) {
     if (o.type !== 'door' || out.has(o.id)) continue;
-    const mid: Point = o.along === 'x' ? [o.at[0] + o.width / 2, o.at[1]] : [o.at[0], o.at[1] + o.width / 2];
+    const mid = doorCentre(o);
     for (const r of moved) {
       const b = shapeBounds(r.shape);
       if (mid[0] >= b.x0 - eps && mid[0] <= b.x1 + eps && mid[1] >= b.y0 - eps && mid[1] <= b.y1 + eps) {

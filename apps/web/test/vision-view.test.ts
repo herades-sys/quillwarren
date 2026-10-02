@@ -61,6 +61,10 @@ describe('doors and lights for the GM', () => {
     expect(doorAt(doors, 12, 5, 0.3)).toBeNull();
     expect(doorAt(doors, 5, 9.9, 0.3)?.id).toBe('s1');
     expect(doorAt(undefined, 0, 0, 1)).toBeNull();
+    // a door at a slant is picked along its line, not by the box around it
+    const slanted = [{ id: 't1', a: [2, 2] as [number, number], b: [4, 4] as [number, number], style: 'normal' }];
+    expect(doorAt(slanted, 3.1, 2.9, 0.3)?.id).toBe('t1');
+    expect(doorAt(slanted, 3.8, 2.2, 0.3)).toBeNull();
   });
 
   it('shows doors open, shut or secret by the table’s state', () => {

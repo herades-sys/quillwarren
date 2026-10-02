@@ -16,6 +16,7 @@ import {
   heightScene,
   insidePolygons,
   roughFloor,
+  shutDoorLines,
   shapeBounds,
   visiblePolygons,
   wallPolylines,
@@ -104,7 +105,7 @@ export function delveGeometry(map: DelveMap, view: 'gm' | 'players', region: Pol
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
   const hidden = (d: Door) => view === 'players' && d.style === 'secret';
   const lines = cut(wallPolylines(map, floor, (d) => !hidden(d)));
-  const shut = cut(doors.filter(hidden).map((d): Polyline => ({ points: doorSegment(d), closed: false })));
+  const shut = cut(shutDoorLines(doors.filter(hidden), floor).map((s): Polyline => ({ points: s, closed: false })));
   const walls = [...lines, ...shut].flatMap(segmentsOf);
   const sceneDoors = doors.flatMap((d): SceneDoor[] => {
     if (hidden(d)) return [];

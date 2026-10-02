@@ -15,6 +15,7 @@ import {
   computeWalls,
   doorSegment,
   drawnFloor,
+  shutDoorLines,
   insidePolygons,
   type DelveMap,
   type Door,
@@ -314,7 +315,7 @@ export function pageSightData(map: DelveMap): { walls: [[number, number], [numbe
   const floor = drawnFloor(map);
   const secret = (o: DelveMap['objects'][number]): o is Door => isDoor(o) && o.style === 'secret';
   const shut = { ...map, objects: map.objects.filter((o) => !secret(o)) };
-  const walls = [...computeWalls(shut, floor), ...map.objects.filter(secret).map(doorSegment)].map(
+  const walls = [...computeWalls(shut, floor), ...shutDoorLines(map.objects.filter(secret), floor)].map(
     ([a, b]): [[number, number], [number, number]] => [
       [a[0], a[1]],
       [b[0], b[1]],

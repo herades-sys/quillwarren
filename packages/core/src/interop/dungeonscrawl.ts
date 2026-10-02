@@ -6,7 +6,7 @@
 // Scrawl's code or art.
 import { computeFloor } from '../geometry/floor.ts';
 import { shapeBounds, type Ring } from '../geometry/shapes.ts';
-import { doorSegment } from '../geometry/walls.ts';
+import { doorBetween, doorDirection, doorSegment, isTurned } from '../geometry/doors.ts';
 import { hashInts, hashString } from '../render/rng.ts';
 import { FORMAT, FORMAT_VERSION, type DelveMap, type Door, type MapObject, type Point, type Shape } from '../schema.ts';
 import { validateMap } from '../validate.ts';
@@ -195,12 +195,19 @@ export function toDungeonScrawl(map: DelveMap, opts: DsExportOptions = {}): DsDo
     if (kind === 'archway') continue;
     const [ax, ay, bx, by] = [px(a[0]), px(a[1]), px(b[0]), px(b[1])];
     const horizontal = d.along === 'x';
-    const rect = horizontal
-      ? [[ax + 6, ay - 4], [bx - 6, ay - 4], [bx - 6, ay + 4], [ax + 6, ay + 4]]
-      : [[ax + 4, ay + 6], [ax + 4, by - 6], [ax - 4, by - 6], [ax - 4, ay + 6]];
-    const jambs = horizontal
-      ? [[[ax, ay], [ax + 6, ay]], [[bx - 6, by], [bx, by]]]
-      : [[[ax, ay], [ax, ay + 6]], [[bx, by - 6], [bx, by]]];
+    // a turned door: the same rectangle and jambs, turned with it (the asset itself keeps the identity transform)
+    const [ux, uy] = doorDirection(d);
+    const tp = (x: number, y: number, s: number, t: number): number[] => [Math.round((x + ux * s - uy * t) * 1000) / 1000, Math.round((y + uy * s + ux * t) * 1000) / 1000];
+    const rect = isTurned(d)
+      ? [tp(ax, ay, 6, -4), tp(bx, by, -6, -4), tp(bx, by, -6, 4), tp(ax, ay, 6, 4)]
+      : horizontal
+        ? [[ax + 6, ay - 4], [bx - 6, ay - 4], [bx - 6, ay + 4], [ax + 6, ay + 4]]
+        : [[ax + 4, ay + 6], [ax + 4, by - 6], [ax - 4, by - 6], [ax - 4, ay + 6]];
+    const jambs = isTurned(d)
+      ? [[tp(ax, ay, 0, 0), tp(ax, ay, 6, 0)], [tp(bx, by, -6, 0), tp(bx, by, 0, 0)]]
+      : horizontal
+        ? [[[ax, ay], [ax + 6, ay]], [[bx - 6, by], [bx, by]]]
+        : [[[ax, ay], [ax, ay + 6]], [[bx, by - 6], [bx, by]]];
     const assetId = id();
     const geoNode = id();
     const geo = id();
@@ -355,6 +362,15 @@ export function fromDungeonScrawl(input: unknown, opts: { id: string; name?: str
     const lines = geo[geoNode?.geometryId as string]?.polylines ?? [];
     if (lines.length !== 2 || lines.some((l) => l.length !== 2)) {
       skipped++;
+      continue;
+    }
+    // a door at a slant (more than a degree off both axes) comes in turned: from one jamb's outer end to the other's
+    const raw = lines.map((l) => l.map((p) => t(p)).map(([x, y]) => [hundredth(x!), hundredth(y!)] as Point));
+    const [a, b] = raw[0]!.flatMap((p) => raw[1]!.map((q): [Point, Point] => [p, q])).reduce((best, s) => (Math.hypot(s[1][0] - s[0][0], s[1][1] - s[0][1]) > Math.hypot(best[1][0] - best[0][0], best[1][1] - best[0][1]) ? s : best));
+    const slant = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+    if (Math.abs(slant / 90 - Math.round(slant / 90)) * 90 > 1 && Math.hypot(b[0] - a[0], b[1] - a[1]) > 0) {
+      doors++;
+      objects.push({ id: next('d'), type: 'door', ...doorBetween(a, b), style: 'normal' });
       continue;
     }
     const pts = lines.flat().map((p) => t(p)).map(([x, y]) => [half(x!), half(y!)] as Point);

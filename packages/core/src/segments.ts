@@ -12,6 +12,7 @@ import { insidePolygons, objectBounds } from './geometry/objects.ts';
 import { maxBulge } from './geometry/rough.ts';
 import { PRECISION, shapeBounds, shapePath, type Bounds, type Polygon, type Ring } from './geometry/shapes.ts';
 import { terrainArea } from './geometry/terrain.ts';
+import { foldAngle, isTurned, nearestAxis } from './geometry/doors.ts';
 import { doorSegment } from './geometry/walls.ts';
 import type { Op } from './ops.ts';
 import { rng } from './render/rng.ts';
@@ -151,7 +152,14 @@ function transformObject(o: MapObject, f: Xf, turns = 0): MapObject {
   if (src.shape && typeof src.shape === 'object') out.shape = transformShape(src.shape as Shape, g);
   if (Array.isArray(src.holes)) out.holes = (src.holes as Point[][]).map((ring) => ring.map(g));
   if (Array.isArray(src.path)) out.path = (src.path as Point[]).map(g);
-  if (o.type === 'door') {
+  if (o.type === 'door' && isTurned(o)) {
+    // a turned door keeps its start and turns with the rest
+    const [a, b] = doorSegment(o).map(g) as [Point, Point];
+    const angle = Math.round(foldAngle((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI) * 100) / 100;
+    out.at = a;
+    out.angle = angle;
+    out.along = nearestAxis(angle);
+  } else if (o.type === 'door') {
     const [a, b] = doorSegment(o).map(g) as [Point, Point];
     out.at = [Math.min(a[0], b[0]), Math.min(a[1], b[1])];
     out.along = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 'x' : 'y';

@@ -99,6 +99,7 @@ Roll20-style dynamic lighting: what the players' characters see is revealed, wal
 - **Blockers** (`blockersOf`): `page.walls` plus every shut door.
   - `page.walls` come from the Delve map as the players see it: secret doors are in them as wall, and rough maps use the rough edge as drawn (core `drawnFloor`).
   - `page.doors` (`{id, a, b, style, open?}`) are the map's doors. A door is open by `page.doorState[id]` (the table's own state, which wins), else by the map's `open`. Shut doors block; a portcullis is bars you see through; an archway is always open; a secret door blocks like wall until the GM opens it.
+  - Doors at any angle (a door's `angle`, docs/API.md "Doors") block exactly their line `a`–`b`: the wall they sit in is cut along them, with a jamb from the wall to the door's end where a curve or cave wall bows away from it, so no ray slips past a door's end. A turned secret door leaves its wall whole for players (no chord beside a curve). The GM clicks them on the board along their line, as any door.
   - **Door state is table state, not map state:** the GM clicks a door on the 2D board (dynamic pages only) to open or shut it (intent `door.set {pageId, id, open}`, GM only). The Delve map stays as it is. Players don't open doors yet.
 - **Lights:**
   - Tokens: `token.light = { bright, dim }` in cells: bright out to `bright`, then dim for `dim` cells more (a torch is 4 and 4). Tokens on every layer give light, the gm layer too (an invisible lamp).

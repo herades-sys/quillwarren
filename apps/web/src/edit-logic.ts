@@ -1,11 +1,19 @@
 // Pure editing logic (no DOM): snapping, hit-testing, handles, and turning
 // drags into shapes and doors.
 import {
+  angleVector,
   corridorOutline,
   corridorPath,
+  doorCentre,
+  doorDirection,
+  doorOnWall,
   doorSegment,
+  isTurned,
   markerRadius,
+  nearestWall,
   onImage,
+  placeDoor,
+  placeDoorBetween,
   pointInRing,
   pointInShape,
   roomsById,
@@ -15,8 +23,11 @@ import {
   wholeSquares,
   type Bounds,
   type DelveMap,
+  type Door,
   type MapObject,
+  type Op,
   type Point,
+  type Polygon,
 } from '@delve/core';
 import { objectBounds } from './logic.ts';
 
@@ -326,6 +337,109 @@ export function doorFromDrag(a: Point, b: Point, min = 0.5): { at: Point; along:
     return Math.abs(dx) >= min ? { at: [Math.min(a[0], b[0]), a[1]], along: 'x', width: Math.abs(dx) } : null;
   }
   return Math.abs(dy) >= min ? { at: [a[0], Math.min(a[1], b[1])], along: 'y', width: Math.abs(dy) } : null;
+}
+
+// ---------- doors at any angle ----------
+
+/** What a door's line is: the fields an add or update of one sets. */
+export type DoorFields = Pick<Door, 'at' | 'along' | 'angle' | 'width'>;
+
+/** Within this many degrees of an axis a Door-tool drag makes a plain door along x or y, exactly as before. */
+export const DOOR_AXIS_SNAP = 6;
+
+/** How close (squares) a slanted drag's ends, the picker's click or a dragged door end must be to a wall to go onto it. */
+export const DOOR_WALL_REACH = 0.75;
+
+/**
+ * The Door tool's drag from a to b on a map whose floor is `floor`. Within a
+ * few degrees of an axis: the old door along x or y (doorFromDrag), unless
+ * that one couldn't open the wall it lies on (a circle's top), which then gets
+ * an angle of 0 or 90. Slanted: a turned door, its ends moved onto the wall
+ * nearest each (rawA, rawB: the unsnapped pointer), so it lies in a slanted
+ * or curved wall. Null if it's shorter than min.
+ */
+export function doorDrag(floor: readonly Polygon[], a: Point, b: Point, min = 0.5, rawA: Point = a, rawB: Point = b): DoorFields | null {
+  const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+  const off = Math.abs(deg / 90 - Math.round(deg / 90)) * 90;
+  if (off <= DOOR_AXIS_SNAP) {
+    const plain = doorFromDrag(a, b, min);
+    if (!plain) return null;
+    const placed = placeDoor(floor, doorCentre(plain), plain.along === 'x' ? 0 : 90, plain.width);
+    return placed.angle === undefined ? plain : { ...placed, width: plain.width };
+  }
+  const onWall = (p: Point): Point => nearestWall(floor, p, DOOR_WALL_REACH)?.q ?? p;
+  const [p, q] = [onWall(rawA), onWall(rawB)];
+  if (Math.hypot(q[0] - p[0], q[1] - p[1]) < Math.max(min, 1e-6)) return null;
+  return placeDoorBetween(floor, p, q);
+}
+
+/**
+ * Where the Prop picker's door lands for pointer p: on the nearest wall within
+ * reach, centred on the wall line and turned to the wall there (on a straight
+ * x or y wall its end snaps to the grid, `step`); away from walls, its start
+ * on the grid and turned by `rotation`.
+ */
+export function pickerDoor(floor: readonly Polygon[], p: Point, width: number, rotation: number, step: number): { door: DoorFields; onWall: boolean } {
+  let ends = doorOnWall(floor, p, width, DOOR_WALL_REACH);
+  if (ends) {
+    const [a, b] = ends;
+    const axis: 0 | 1 | null = a[1] === b[1] ? 0 : a[0] === b[0] ? 1 : null;
+    if (axis !== null) {
+      // a plain wall: slide the door so its ends fall on grid lines, then onto the wall again (it stays on its stretch)
+      const lo = Math.min(a[axis], b[axis]);
+      const c: Point = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      c[axis] += snap(lo, step) - lo;
+      ends = doorOnWall(floor, c, width, DOOR_WALL_REACH) ?? ends;
+    }
+    return { door: placeDoorBetween(floor, ends[0], ends[1]), onWall: true };
+  }
+  const [ux, uy] = angleVector(rotation);
+  const start = snapPoint([p[0] - (ux * width) / 2, p[1] - (uy * width) / 2], step);
+  return { door: { ...placeDoor(floor, [start[0] + (ux * width) / 2, start[1] + (uy * width) / 2], rotation, width), width }, onWall: false };
+}
+
+/** A door turned to `deg` about its middle (Q / E, the inspector's Angle). */
+export function turnDoor(floor: readonly Polygon[], d: Door, deg: number): DoorFields {
+  return { ...placeDoor(floor, doorCentre(d), deg, d.width), width: d.width };
+}
+
+/**
+ * A door made wider or narrower by dragging one end (0: `at`, 1: the other)
+ * to p, the other end staying put. It keeps its direction, in whole steps of
+ * `step`; a turned door's end that comes near a wall goes onto it, so a door
+ * in a curve stays a chord of it.
+ */
+export function stretchDoor(floor: readonly Polygon[], d: Door, end: 0 | 1, p: Point, step: number): DoorFields {
+  const [a, b] = doorSegment(d);
+  const fixed = end === 0 ? b : a;
+  if (isTurned(d)) {
+    const q = nearestWall(floor, p, DOOR_WALL_REACH * 0.6)?.q;
+    if (q && Math.hypot(q[0] - fixed[0], q[1] - fixed[1]) >= 0.25) return end === 1 ? placeDoorBetween(floor, fixed, q) : placeDoorBetween(floor, q, fixed);
+  }
+  const [ux, uy] = doorDirection(d);
+  const sign = end === 0 ? -1 : 1;
+  const len = Math.max(step, snap(((p[0] - fixed[0]) * ux + (p[1] - fixed[1]) * uy) * sign, step));
+  const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
+  const at: Point = end === 1 ? d.at : [r6(fixed[0] - ux * len), r6(fixed[1] - uy * len)];
+  return { at, along: d.along, ...(d.angle !== undefined ? { angle: d.angle } : {}), width: len };
+}
+
+/** The update that gives door d these fields (taking its angle away when they have none). Null when nothing changes. */
+export function doorUpdate(d: Door, f: DoorFields): Op | null {
+  const set: Record<string, unknown> = {};
+  for (const k of ['at', 'along', 'angle', 'width'] as const) if (f[k] !== undefined && JSON.stringify(f[k]) !== JSON.stringify(d[k])) set[k] = f[k];
+  const unset = f.angle === undefined && d.angle !== undefined ? ['angle'] : [];
+  if (!Object.keys(set).length && !unset.length) return null;
+  return { op: 'update', id: d.id, ...(Object.keys(set).length ? { set } : {}), ...(unset.length ? { unset } : {}) };
+}
+
+/** Which end of a door (0: `at`, 1: the other) is within tol of p, if any. */
+export function doorEndAt(d: Door, p: Point, tol: number): 0 | 1 | null {
+  const [a, b] = doorSegment(d);
+  const da = Math.hypot(p[0] - a[0], p[1] - a[1]);
+  const db = Math.hypot(p[0] - b[0], p[1] - b[1]);
+  if (Math.min(da, db) > tol) return null;
+  return da <= db ? 0 : 1;
 }
 
 /** Clicking back on the first point (within tol) closes a polygon of 3 or more points. */

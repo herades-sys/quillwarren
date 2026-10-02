@@ -13,10 +13,13 @@ import {
   computeFloor,
   connectOps,
   countsText,
+  doorAngle,
+  doorSegment,
   DOOR_STYLES,
   floorText,
   freehandShape,
   isConnector,
+  isTurned,
   MARKER_KINDS,
   MARKERS,
   nextId,
@@ -39,12 +42,14 @@ import {
   type BoxShape,
   type CutoutFill,
   type DelveMap,
+  type Door,
   type DrawShape,
   type FogChange,
   type MapObject,
   type Op,
   type Placement,
   type Point,
+  type Polygon,
   type Shape,
 } from '@delve/core';
 import { heightPlan, heightText, parseSquareUnit, stairsUphill, walkableMap, type HeightArea } from '@delve/core';
@@ -67,7 +72,13 @@ import {
   groundDrag,
   mergeSelection,
   pressesGround,
-  doorFromDrag,
+  doorDrag,
+  doorEndAt,
+  doorUpdate,
+  pickerDoor,
+  stretchDoor,
+  turnDoor,
+  type DoorFields,
   handleAt,
   handlePoint,
   HANDLES,
@@ -89,6 +100,7 @@ import { initImages } from './images.ts';
 import { artUrl, loadCustomProps, onCustomProps, refreshCustomProps } from './custom-props.ts';
 import { customTile, newPropButton } from './prop-maker.ts';
 import { drawInscriptions, inscriptionFields } from './inscriptions.ts';
+import { DOOR_TILE_NAME, doorTileUrl, doorTileWidth, type DoorStyle } from './door-tiles.ts';
 import { objectBounds, pad } from './logic.ts';
 import { initSegments } from './segments.ts';
 
@@ -157,7 +169,7 @@ const GLYPH = { discover: '?', interact: '!', trap: '' } as const;
 const roughWord = (v: number) => (v <= 1 ? 'smooth' : v <= 3 ? 'worn' : v <= 5 ? 'rough-hewn' : v <= 7 ? 'rough' : v <= 9 ? 'cave' : 'crumbling');
 
 interface Drag {
-  kind: 'move' | 'resize' | 'create' | 'door' | 'box' | 'scale';
+  kind: 'move' | 'resize' | 'create' | 'door' | 'box' | 'scale' | 'door-end';
   start: Point;
   cur: Point;
   x: number;
@@ -179,9 +191,11 @@ interface Drag {
   before?: string[];
   /** Moving a multi-selection: a click without dragging narrows it to this object, the topmost under the pointer. */
   narrow?: string;
-  /** Resizing a prop or picture: the corner being dragged, and whether Alt (free size) is down. */
+  /** Resizing a prop or picture: the corner being dragged (a door: its end, 0 or 1), and whether Alt (free size) is down. */
   corner?: number;
   free?: boolean;
+  /** The Door tool: the unsnapped pointer now (a slanted drag puts its ends onto the wall nearest them). */
+  rawCur?: Point;
 }
 
 export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): string | null } {
@@ -216,6 +230,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     doorStyle: 'normal' as (typeof DOOR_STYLES)[number],
     stairsDir: 'n' as 'n' | 'e' | 's' | 'w',
     prop: PROPS[0]?.id ?? '',
+    /** The Prop picker's Doors group: the door style picked instead of a prop, and the width it gets. */
+    propDoor: null as DoorStyle | null,
+    propDoorWidth: 1,
     propRotation: 0,
     propCategory: 'all',
     propSearch: '',
@@ -268,6 +285,17 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
   const map = () => ctx.map();
   const byId = (id: string) => map().objects.find((o) => o.id === id);
+  /** The floor without wall roughness (what doors snap onto: a door smooths the wall it sits in), worked out again only when the map changes. */
+  let floorMemo: { map: DelveMap; floor: Polygon[] } | null = null;
+  const baseFloor = (): Polygon[] => {
+    const m = map();
+    if (floorMemo?.map !== m) floorMemo = { map: m, floor: computeFloor(m) };
+    return floorMemo.floor;
+  };
+  const selectedDoor = (): Door | null => {
+    const o = selection.length === 1 ? byId(selection[0]!) : undefined;
+    return o?.type === 'door' ? o : null;
+  };
   /** A prop's footprint (at its scale) or a picture, as the rectangle its corner handles sit on. */
   const turnedOf = (o: MapObject | undefined): Turned | null => {
     if (o?.type === 'image') return { at: o.at, w: o.w, h: o.h, rotation: o.rotation ?? 0 };
@@ -422,7 +450,14 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const picked = selection.length === 1 ? byId(selection[0]!) : undefined;
     if (t === 'prop' && tool !== 'prop' && picked?.type === 'prop' && assetInfo(picked.asset)) {
       settings.prop = picked.asset;
+      settings.propDoor = null;
       settings.propRotation = turned(picked.rotation ?? 0);
+    }
+    // a door too: its style, width and turn
+    if (t === 'prop' && tool !== 'prop' && picked?.type === 'door') {
+      settings.propDoor = picked.style ?? 'normal';
+      settings.propDoorWidth = picked.width;
+      settings.propRotation = turned(doorAngle(picked));
     }
     tool = t;
     poly = [];
@@ -468,6 +503,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         const ctrl = e.ctrlKey || e.metaKey;
         const additive = e.shiftKey || ctrl;
         if (selection.length === 1 && !additive) {
+          // a door: its ends make it wider or narrower
+          const door = selectedDoor();
+          const end = door ? doorEndAt(door, p, handleTol(e)) : null;
+          if (end !== null) return start('door-end', { corner: end }, p);
           const r = rectOf(byId(selection[0]!));
           if (r) {
             const b = { x0: r[0], y0: r[1], x1: r[0] + r[2], y1: r[1] + r[3] };
@@ -529,7 +568,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         break;
       case 'prop':
         ctx.handled.add(e);
-        if ((settings.brush || e.shiftKey) && assetInfo(settings.prop)) {
+        if (settings.propDoor) placeDoorPick(p, step(e)); // doors go one at a time, no brush
+        else if ((settings.brush || e.shiftKey) && assetInfo(settings.prop)) {
           // the brush: copies along the drag, placed when the button comes up
           stroke = { path: [propAt(p, step(e))], seed: Math.floor(Math.random() * 2 ** 31), step: step(e) };
           ctx.stage.setPointerCapture(e.pointerId);
@@ -539,7 +579,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         start('create', { raw: p, invert: e.shiftKey });
         break;
       case 'door':
-        start('door');
+        start('door', { raw: p, rawCur: p });
         break;
       case 'poly':
         ctx.handled.add(e);
@@ -602,7 +642,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     }
     if (tap && e.pointerId === tap.id && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 6) tap.moved = true;
     if (drag) {
-      drag.cur = drag.kind === 'move' || drag.kind === 'box' || drag.kind === 'scale' ? p : snapPoint(p, step(e));
+      drag.cur = drag.kind === 'move' || drag.kind === 'box' || drag.kind === 'scale' || drag.kind === 'door-end' ? p : snapPoint(p, step(e));
+      drag.rawCur = p;
       drag.regular = e.shiftKey;
       drag.free = e.altKey;
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 3) drag.moved = true;
@@ -737,14 +778,30 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         break;
       }
       case 'door': {
-        const door = doorFromDrag(d.start, d.cur, 0.5);
+        // near an axis the old door along x or y; slanted, a turned one with its ends on the wall
+        const door = doorDrag(baseFloor(), d.start, d.cur, 0.5, d.raw ?? d.start, ctx.toMap(e.clientX, e.clientY) ?? d.rawCur ?? d.cur);
         if (!door) break;
         const id = nextId(m, 'd');
         void apply([{ op: 'add', object: { id, type: 'door', ...door, style: settings.doorStyle } }], [id]);
         break;
       }
+      case 'door-end': {
+        // one update: the door's new width (and start, when its first end moved)
+        const door = selectedDoor();
+        const op = door && d.moved ? doorUpdate(door, stretchDoor(baseFloor(), door, d.corner === 0 ? 0 : 1, d.cur, e.altKey ? 0.1 : 0.5)) : null;
+        if (op) void apply([op]);
+        break;
+      }
     }
     draw();
+  }
+
+  /** The Prop picker's door, dropped where the pointer is: onto the wall nearest it, or turned by the current turn. */
+  function placeDoorPick(p: Point, s: number): void {
+    if (!settings.propDoor) return;
+    const id = nextId(map(), 'd');
+    const { door } = pickerDoor(baseFloor(), p, settings.propDoorWidth, settings.propRotation, s);
+    void apply([{ op: 'add', object: { id, type: 'door', ...door, style: settings.propDoor } }], [id]);
   }
 
   function finishPoly(): void {
@@ -866,13 +923,17 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     if (tool === 'segment') return segments.turn(by > 0 ? 90 : -90); // segments turn in quarters
     if (tool !== 'prop' && images.turn(by, tool === 'image', selection.map(byId))) return;
     const ps = selection.map(byId).filter((o): o is Extract<MapObject, { type: 'prop' }> => o?.type === 'prop');
-    if (tool === 'prop' || !ps.length) {
+    const ds = selection.map(byId).filter((o): o is Door => o?.type === 'door');
+    if (tool === 'prop' || (!ps.length && !ds.length)) {
       settings.propRotation = turned(settings.propRotation + by);
       renderTools();
       draw();
       return;
     }
-    void apply(ps.map((o) => setRotation(o.id, (o.rotation ?? 0) + by)));
+    // doors turn about their middle
+    const floor = baseFloor();
+    const doorOps = ds.flatMap((d) => doorUpdate(d, turnDoor(floor, d, doorAngle(d) + by)) ?? []);
+    void apply([...ps.map((o) => setRotation(o.id, (o.rotation ?? 0) + by)), ...doorOps]);
   }
   const setRotation = (id: string, deg: number): Op => (turned(deg) ? { op: 'update', id, set: { rotation: turned(deg) } } : { op: 'update', id, unset: ['rotation'] });
 
@@ -1051,6 +1112,16 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     return svgEl(g.tag, { ...g.attrs, class: cls });
   }
 
+  /** A door about to be placed or changed: its line, and a tick across each end. */
+  function doorGhost(d: DoorFields): void {
+    const [a, b] = doorSegment(d);
+    layer.appendChild(svgEl('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: 'ghost-door' }));
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const k = 0.22 / len;
+    const [nx, ny] = [-(b[1] - a[1]) * k, (b[0] - a[0]) * k];
+    for (const p of [a, b]) layer.appendChild(svgEl('line', { x1: p[0] - nx, y1: p[1] - ny, x2: p[0] + nx, y2: p[1] + ny, class: 'ghost-line' }));
+  }
+
   /** The design's size chip under a box (in squares): "9 × 9 sq". */
   function sizeChip(text: string, b: Bounds): void {
     const px = ctx.squaresPerPx();
@@ -1136,10 +1207,15 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         sizeChip(r.text, { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) });
       }
     } else if (drag?.kind === 'door') {
-      const d = doorFromDrag(drag.start, drag.cur, 0);
-      if (d) {
-        const end: Point = d.along === 'x' ? [d.at[0] + d.width, d.at[1]] : [d.at[0], d.at[1] + d.width];
-        layer.appendChild(svgEl('line', { x1: d.at[0], y1: d.at[1], x2: end[0], y2: end[1], class: 'ghost-door' }));
+      const d = doorDrag(baseFloor(), drag.start, drag.cur, 0, drag.raw ?? drag.start, drag.rawCur ?? drag.cur);
+      if (d) doorGhost(d);
+    } else if (drag?.kind === 'door-end') {
+      const door = selectedDoor();
+      if (door && drag.moved) {
+        const d = stretchDoor(baseFloor(), door, drag.corner === 0 ? 0 : 1, drag.cur, drag.free ? 0.1 : 0.5);
+        doorGhost(d);
+        const [a, b] = doorSegment(d);
+        sizeChip(`${Math.round(d.width * 100) / 100} sq`, { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) });
       }
     }
 
@@ -1155,6 +1231,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       // a prop or picture: its four corners resize it
       const t = turnedOf(sel[0]);
       if (t) for (const c of corners(t)) layer.appendChild(handleEl(c));
+      // a door: its two ends make it wider or narrower
+      if (sel[0]?.type === 'door') for (const c of doorSegment(sel[0])) layer.appendChild(handleEl(c));
     }
 
     if (tool === 'poly' && poly.length) {
@@ -1181,7 +1259,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         svgEl('image', { href: thumb(info.id), x: -info.w / 2, y: -info.h / 2, width: info.w, height: info.h, transform: `translate(${at[0]} ${at[1]}) rotate(${rotation}) scale(${scale})`, class: 'ghost-prop' }),
       );
     };
-    if (info && stroke) {
+    if (tool === 'prop' && settings.propDoor) {
+      // the picked door as it would land: on the wall nearest the pointer, or turned by Q / E
+      if (hoverRaw && !drag) doorGhost(pickerDoor(baseFloor(), hoverRaw, settings.propDoorWidth, settings.propRotation, hoverStep).door);
+    } else if (info && stroke) {
       layer.appendChild(svgEl('polyline', { points: stroke.path.map((q) => q.join(',')).join(' '), class: 'ghost-line brush-path' }));
       for (const s of brushSpots()) ghost(s.at, s.rotation, s.scale);
     } else if (info && hoverRaw && !drag) ghost(propAt(hoverRaw, hoverStep), settings.propRotation, 1);
@@ -1383,10 +1464,19 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           ...(corridorFrom ? [keyHint('Esc', 'cancel')] : []),
         ];
       case 'door':
-        return [group('Door style', ...DOOR_STYLES.map((s) => chip(DOOR_NAME[s], settings.doorStyle === s, () => ((settings.doorStyle = s), renderTools())))), hint('Drag along a wall')];
+        return [group('Door style', ...DOOR_STYLES.map((s) => chip(DOOR_NAME[s], settings.doorStyle === s, () => ((settings.doorStyle = s), renderTools())))), hint('Drag along a wall, slanted ones too')];
       case 'stairs':
         return [ctxLabel('Up towards'), group('Up towards', ...DIRS.map(([d, l]) => chip(l, settings.stairsDir === d, () => ((settings.stairsDir = d), renderTools())))), hint('Drag along the flight')];
       case 'prop': {
+        if (settings.propDoor) {
+          // a door from the picker: its width, and where it goes
+          return [
+            h('span', { class: 'ctxbar-opt', 'aria-checked': 'true', style: 'cursor:default' }, iconEl('door', 15), DOOR_TILE_NAME[settings.propDoor]),
+            miniRange('Width', { value: settings.propDoorWidth, min: 0.5, max: 6, step: 0.5, show: (v) => `${v} sq`, onChange: (v) => (settings.propDoorWidth = v), onInput: (v) => ((settings.propDoorWidth = v), draw()) }),
+            hint('Click by a wall: it goes onto the wall, turned to match'),
+            keyHint('Q / E', `turn · ${settings.propRotation}°`),
+          ];
+        }
         const out: Kid[] = [group('Mode', chip('Stamp', !settings.brush, () => ((settings.brush = false), renderTools()), { icon: 'prop' }), chip('Brush', settings.brush, () => ((settings.brush = true), renderTools()), { icon: 'brush' }))];
         if (settings.brush) {
           out.push(
@@ -1432,6 +1522,12 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   }
 
   function renderTools(): void {
+    renderBar();
+    renderFlyout();
+  }
+
+  /** The rail and the context bar only (picking in a picker keeps the picker as it is, scrolled where it was). */
+  function renderBar(): void {
     syncRail();
     const t = infoOf(tool);
     const content = ctxContent().filter((k): k is Node | string => Boolean(k));
@@ -1439,7 +1535,6 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     if (drawsShape(tool)) ctxbar.title = drawHint(shapeOf(tool), tool === 'room' ? 'room' : tool === 'cutout' ? 'pillar' : 'opening');
     else ctxbar.removeAttribute('title');
     if (tool === 'height') ctxbar.title = HEIGHT_HINT;
-    renderFlyout();
   }
 
   // ---------- the pickers (props, terrain, images, segments) ----------
@@ -1477,20 +1572,45 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     refreshCustomProps();
     const fill = () => {
       const words = settings.propSearch.toLowerCase().split(/\s+/).filter(Boolean);
-      const list = all.filter(
+      const list = settings.propCategory === 'doors' && !words.length ? [] : all.filter(
         (a) =>
           (words.length ? true : settings.propCategory === 'all' || a.category === settings.propCategory || (settings.propCategory === 'custom' && a.custom)) &&
           words.every((w) => a.id.includes(w) || a.name.toLowerCase().includes(w) || a.tags.some((t) => t.includes(w))),
       );
-      count.textContent = `${list.length} of ${all.length}`;
+      // the Doors group: real doors (door objects, not props), first under All
+      const doors = DOOR_STYLES.filter((s) =>
+        words.length ? words.every((w) => `${DOOR_TILE_NAME[s]} door ${s}`.toLowerCase().includes(w)) : settings.propCategory === 'all' || settings.propCategory === 'doors',
+      );
+      count.textContent = `${list.length + doors.length} of ${all.length + DOOR_STYLES.length}`;
       const tile = (a: AssetInfo) => {
-        const b = assetButton(a, a.id === settings.prop, () => ((settings.prop = a.id), fill(), draw()));
+        const b = assetButton(a, !settings.propDoor && a.id === settings.prop, () => ((settings.prop = a.id), (settings.propDoor = null), fill(), renderBar(), draw()));
         return a.custom ? customTile(b, a, propMaker) : b;
       };
-      grid.replaceChildren(...(list.length ? list.map(tile) : [h('p', { class: 'hint', style: 'grid-column:1/-1' }, 'Nothing matches. “New prop…” asks Claude to draw it.')]));
+      const doorTile = (s: DoorStyle) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'ed-asset',
+            'aria-pressed': String(settings.propDoor === s),
+            title: `${DOOR_TILE_NAME[s]} · a real door: by a wall it goes onto the wall, at any angle`,
+            onclick: () => {
+              settings.propDoor = s;
+              settings.propDoorWidth = doorTileWidth(s);
+              fill();
+              renderBar();
+              draw();
+            },
+          },
+          h('span', { class: 'ed-asset-pic' }, h('img', { src: doorTileUrl(s, map()), alt: '' })),
+          h('span', { class: 'ed-asset-name' }, DOOR_TILE_NAME[s]),
+        );
+      const tiles = [...doors.map(doorTile), ...list.map(tile)];
+      grid.replaceChildren(...(tiles.length ? tiles : [h('p', { class: 'hint', style: 'grid-column:1/-1' }, 'Nothing matches. “New prop…” asks Claude to draw it.')]));
     };
     const cats = [
       { id: 'all', name: 'All' },
+      { id: 'doors', name: 'Doors' },
       ...CATEGORIES.filter((c) => c.id !== 'terrain' && all.some((a) => a.category === c.id)),
       ...(all.some((a) => a.custom) ? [{ id: 'custom', name: 'Custom' }] : []),
     ];
@@ -1634,9 +1754,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     return [h('p', { class: 'hint' }, `A shape with ${s.poly.length} corners, ${b.x1 - b.x0} × ${b.y1 - b.y0} squares. Move it by dragging or with the arrow keys.`)];
   }
 
-  const atFields = (o: MapObject & { at: Point }, label = '') => {
+  /** X and Y of `at`, typed in steps of `stepv` (a turned door's start lies off the grid: shown to 0.001, typed freely). */
+  const atFields = (o: MapObject & { at: Point }, label = '', stepv = 0.5) => {
     const upd = (at: Point) => void apply([{ op: 'update', id: o.id, set: { at } }]);
-    return two(field(`X${label}`, number(o.at[0], 0.5, (v) => upd([v, o.at[1]])), { unit: 'sq' }), field(`Y${label}`, number(o.at[1], 0.5, (v) => upd([o.at[0], v])), { unit: 'sq' }));
+    const shown = (v: number) => (stepv < 0.5 ? Math.round(v * 1000) / 1000 : v);
+    return two(field(`X${label}`, number(shown(o.at[0]), stepv, (v) => upd([v, o.at[1]])), { unit: 'sq' }), field(`Y${label}`, number(shown(o.at[1]), stepv, (v) => upd([o.at[0], v])), { unit: 'sq' }));
   };
 
   /** Options grouped by category, with the current one selected (kept even if it's not in the catalog). */
@@ -1739,14 +1861,22 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         );
         if (o.path && o.from && o.to) out.push(btn('Route automatically', { icon: 'corridor', onclick: () => unset('path') }));
         break;
-      case 'door':
+      case 'door': {
+        // the angle turns it about its middle: 0 runs across, 90 down
+        const turnTo = (deg: number) => {
+          const op = doorUpdate(o, turnDoor(baseFloor(), o, deg));
+          if (op) void apply([op]);
+          else renderPanel(true);
+        };
         out.push(
           field('Style', select(DOOR_STYLES.map((s) => [s, DOOR_NAME[s]]), o.style ?? 'normal', (v) => upd({ style: v }))),
-          two(field('Width', number(o.width, 0.5, (v) => v > 0 && upd({ width: v })), { unit: 'sq' }), field('Runs', select([['x', 'Across'], ['y', 'Down']], o.along, (v) => upd({ along: v })))),
-          atFields(o),
           checkbox('Open', Boolean(o.open), (on) => (on ? upd({ open: true }) : unset('open'))),
+          two(field('Width', number(o.width, 0.5, (v) => v > 0 && upd({ width: v })), { unit: 'sq' }), field('Angle', number(Math.round(doorAngle(o) * 100) / 100, 0.01, turnTo), { unit: '°' })),
+          atFields(o, ' (start)', isTurned(o) ? 0.001 : 0.5),
+          h('p', { class: 'hint' }, 'Q / E turn it 15° (Shift 90°); drag an end to make it wider or narrower. By a slanted or curved wall the Prop tool’s Doors put one right onto it.'),
         );
         break;
+      }
       case 'label':
         out.push(
           field('Text', text(id, 'text', o.text, { required: true })),

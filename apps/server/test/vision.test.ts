@@ -13,7 +13,7 @@ import type { WebSocket } from 'ws';
 import { buildApp } from '../src/app.ts';
 import { Sessions } from '../src/auth.ts';
 import { readFileSync } from 'node:fs';
-import type { DelveMap } from '@delve/core';
+import { computeFloor, doorOnWall, placeDoorBetween, shapeFromBox, type DelveMap } from '@delve/core';
 import { blockersOf, partySight, pointIn, visibilityPolygon, type Page, type Token } from '@delve/table';
 import { decodePng } from '../src/png.ts';
 import { exploredRegion, pageSightData, TableVision, withTableDoors } from '../src/table/vision.ts';
@@ -406,6 +406,42 @@ describe('page data from the Delve map', () => {
     expect(pointIn([{ outer: ring, holes: [] }], [18.5, 5.5])).toBe(false);
     const opened = visibilityPolygon([15, 5.5], blockersOf(pageOf(map, { doorState: { d6: true } })), { x0: -3, y0: -3, x1: 23, y1: 35 });
     expect(pointIn([{ outer: opened, holes: [] }], [18.5, 5.5])).toBe(true);
+  });
+
+  it('lets a turned shut door block exactly its line in a slanted or curved wall, and see through it open', () => {
+    const rooms: DelveMap['objects'] = [
+      { id: 'r1', type: 'room', shape: shapeFromBox('octagon', [0, 0, 10, 10]) },
+      { id: 'r2', type: 'room', shape: { circle: [20, 5, 4] } },
+    ];
+    const base = { ...fixture(), objects: rooms };
+    const door = (id: string, p: [number, number], width: number): DelveMap['objects'][number] => {
+      const ends = doorOnWall(computeFloor(base), p, width)!;
+      return { id, type: 'door', ...placeDoorBetween(computeFloor(base), ends[0], ends[1]), style: 'normal' };
+    };
+    // d1 in the octagon's slanted north-east wall, d2 in the circle's west curve
+    const map = { ...base, objects: [...rooms, door('d1', [8.5, 1.5], 2), door('d2', [16.2, 6.2], 2)] };
+    const data = pageSightData(map);
+    for (const id of ['d1', 'd2']) expect(data.doors.find((d) => d.id === id)).toBeDefined();
+    const box = { x0: -3, y0: -3, x1: 30, y1: 15 };
+    const sees = (from: [number, number], p: [number, number], doorState?: Record<string, boolean>) =>
+      pointIn([{ outer: visibilityPolygon(from, blockersOf(pageOf(map, doorState ? { doorState } : {})), box), holes: [] }], p);
+    const { a, b } = data.doors.find((d) => d.id === 'd1')!;
+    const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    // out through the door's middle, a square into the rock (north-east)
+    const beyond: [number, number] = [mid[0] + 0.71, mid[1] - 0.71];
+    expect(sees([5, 5], beyond)).toBe(false);
+    expect(sees([5, 5], beyond, { d1: true })).toBe(true);
+    // the wall beside the door still blocks, open or shut: no crack at either end of it
+    for (const t of [-0.3, 1.3]) {
+      const side: [number, number] = [a[0] + (b[0] - a[0]) * t + 0.71, a[1] + (b[1] - a[1]) * t - 0.71];
+      expect(sees([5, 5], side, { d1: true })).toBe(false);
+    }
+    for (const end of [a, b]) {
+      for (const k of [0.02, 0.1]) expect(sees([5, 5], [end[0] + 0.71 * k * 10, end[1] - 0.71 * k * 10])).toBe(false);
+    }
+    // the circle's door: shut, the octagon can't be seen from inside the circle, nor the rock west of the door
+    expect(sees([20, 5], [15, 6.5])).toBe(false);
+    expect(sees([20, 5], [15, 6.5], { d2: true })).toBe(true);
   });
 
   it('turns light props into lights on the floor, even a sconce hung on the wall line', () => {

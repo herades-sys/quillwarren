@@ -71,6 +71,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
     - south wall: at [x+k, y+h], along "x"
     - west wall: at [x, y+k], along "y"
     - east wall: at [x+w, y+k], along "y"
+  - Doors can sit in walls at any angle: angle turns one any way, in degrees clockwise from east (0 = along "x", 90 = along "y", 45 runs down to the right, 135 down to the left), for the slanted walls of octagons, hexagons and polygons and for curved and cave walls. Easiest there: add_door near [x, y] (a spot by the wall) instead of at; the door is centred on the nearest wall and turned to match it.
   - A door on the outer edge of the floor leads outside and cuts a gap in the wall. A door across a corridor end or an opening simply sits in it.
   - Styles: ${DOOR_STYLES.join(', ')}. open: true draws it open. Secret doors look like plain wall in the players' view.
 - **Cutouts:** holes in the floor inside rooms. A pillar is a 1 × 1 rect or a circle of radius 0.5. Also pits, chasms and collapsed areas. fill "solid" draws one filled with the wall colour: solid pillars, thick wall blocks, standing stones. The default "rock" shows what lies around the dungeon (a white hole in the clean style), right for pits and chasms.
@@ -130,7 +131,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
   Objects:
   - room {"id","type":"room","shape":{"rect":[x,y,w,h]} | {"circle":[cx,cy,r]} | {"poly":[[x,y],...]},"name"?,"label"?,"notes"?}
   - corridor {"id","type":"corridor","from","to","width"} (or "path" instead of from/to)
-  - door {"id","type":"door","at":[x,y],"along":"x"|"y","width","style"?,"open"?}
+  - door {"id","type":"door","at":[x,y],"along":"x"|"y","angle"?: degrees,"width","style"?,"open"?}
   - cutout {"id","type":"cutout","shape","fill"?: "solid"|"rock"}
   - stairs {"id","type":"stairs","shape","direction","label"?}
   - label {"id","type":"label","text","at":[x,y],"size"?}
@@ -214,7 +215,7 @@ export function objectLine(o: MapObject): string {
     case 'corridor':
       return `${o.id} corridor${name} ${o.path ? `path ${JSON.stringify(o.path)}` : `${o.from ?? '?'} → ${o.to ?? '?'}, auto-routed`}, width ${n(o.width)}${rough(o)}${notes}`;
     case 'door':
-      return `${o.id} door${name} at [${n(o.at[0])}, ${n(o.at[1])}] along ${o.along}, width ${n(o.width)}, ${o.style ?? 'normal'}${o.open ? ', open' : ''}${notes}`;
+      return `${o.id} door${name} at [${n(o.at[0])}, ${n(o.at[1])}] ${o.angle !== undefined ? `angle ${n(o.angle)}°` : `along ${o.along}`}, width ${n(o.width)}, ${o.style ?? 'normal'}${o.open ? ', open' : ''}${notes}`;
     case 'cutout':
       return `${o.id} cutout${name} ${shapeText(o.shape)}${o.fill === 'solid' ? ', solid' : ''}${rough(o)}${notes}`;
     case 'stairs':

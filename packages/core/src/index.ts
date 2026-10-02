@@ -44,9 +44,33 @@ export {
   doorSegment,
   boundarySegments,
   segmentLength,
+  onEdge,
+  placeDoor,
+  placeDoorBetween,
+  shutDoorLines,
   type Segment,
   type Polyline,
 } from './geometry/walls.ts';
+export {
+  angleVector,
+  doorAngle,
+  doorBetween,
+  doorCentre,
+  doorDirection,
+  doorFromCentre,
+  doorNormal,
+  doorOnWall,
+  doorSlot,
+  foldAngle,
+  gapReach,
+  isTurned,
+  nearestAxis,
+  nearestWall,
+  quarterTurn,
+  slotCover,
+  type DoorLine,
+  type DoorSlot,
+} from './geometry/doors.ts';
 export { buildScene, terrainTint, type Scene, type Layer, type RenderOptions, type View, type AssetItem, type ImageItem } from './render/scene.ts';
 export {
   ASSETS,

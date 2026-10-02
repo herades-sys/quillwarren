@@ -13,7 +13,10 @@ import {
   connectOps,
   cropFrame,
   CUTOUT_FILLS,
+  computeFloor,
   describeMap,
+  doorAngle,
+  doorOnWall,
   DOOR_STYLES,
   MARKER_KINDS,
   fogSummary,
@@ -21,9 +24,12 @@ import {
   IMAGE_LAYERS,
   imageBounds,
   imageFit,
+  isTurned,
+  nearestAxis,
   nextId,
   nextLabel,
   parseOps,
+  placeDoorBetween,
   PRESETS,
   propBounds,
   propHidden,
@@ -34,6 +40,7 @@ import {
   scatterAlong,
   withAttachedDoors,
   type AssetInfo,
+  type Door,
   type MapObject,
   type Op,
   type Point,
@@ -67,6 +74,7 @@ Furnish with add_prop (see list_assets for the ids; at is the centre of the foot
 A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.
 Floor numbers: a storey's floor is its level order (0 ground level, -1 one floor below ground, 1 the first floor up; set_map floor changes it). label_stairs gives every stair, ladder and trapdoor its GM label, floor number then flight letter (0A, 1A, 2A up one staircase).
 Room and cutout shapes: rect, circle, poly, or preset {kind: oval|triangle|hexagon|octagon, box: [x, y, w, h]}. Cutouts with fill "solid" draw as solid pillars or wall blocks.
+Doors can sit in walls at any angle: add_door with angle (degrees clockwise from east) for slanted or curved walls, or with near (a spot by the wall) to centre one on the nearest wall and turn it to match.
 Open edges: an archway on the floor's outer edge is drawn as an open end (no hatching or shading in front of it). Anywhere else, add_opening marks an open area: no hatching, shading or shadow inside its shape (walls: true leaves out the wall lines there too, for a cave mouth or a ledge).
 Exports can be cropped: export with crop [x, y, w, h] or around [ids] (plus margin, default 1 square), e.g. rooms 4 and 11 only.
 Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
@@ -324,11 +332,15 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     {
       title: 'Add door',
       description:
-        'Add a door along a wall or across an opening. at is the door\'s start point; along says which way it runs ("x" = horizontal, "y" = vertical).',
+        'Add a door along a wall or across an opening. Doors can sit in walls at any angle. at is the door\'s start point; along says which way it runs ("x" = horizontal, "y" = vertical), ' +
+        'or angle turns it any way, in degrees clockwise from east (0 = along x, 90 = along y, 45 runs down to the right, 135 down to the left): for slanted walls (octagons, hexagons, polygons) and curved ones (circles, caves). ' +
+        'Easiest in such walls: give near (a spot on or by the wall) instead of at, and the door goes on the nearest wall within a square, centred on the wall line and turned to the wall there.',
       inputSchema: {
         map: mapId,
-        at: point,
-        along: z.enum(['x', 'y']),
+        at: point.optional().describe('The door\'s start point, [x, y] in squares (or give near)'),
+        near: point.optional().describe('Instead of at: a spot on or by a wall; the door is centred on the nearest wall there and turned to match it'),
+        along: z.enum(['x', 'y']).optional().describe('"x" = horizontal (default), "y" = vertical'),
+        angle: z.number().gt(-3600).lt(3600).optional().describe('Degrees clockwise from east; turns the door any way (wins over along)'),
         width: z.number().positive().describe('Length of the door in squares'),
         style: z.enum(DOOR_STYLES).optional().describe('default normal'),
         open: z.boolean().optional(),
@@ -339,8 +351,20 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       guarded(() => {
         const map = store.get(a.map).map;
         const id = a.id ?? nextId(map, 'd');
-        const door: MapObject = { id, type: 'door', at: a.at, along: a.along, width: a.width, style: a.style ?? 'normal', ...(a.open ? { open: true } : {}) };
-        return addObject(a.map, door, `Added ${a.style ?? 'normal'} door ${id} at ${a.at.join(',')} along ${a.along}, ${a.width} wide.`);
+        let line: Pick<Door, 'at' | 'along' | 'angle'>;
+        let where = '';
+        if (a.near) {
+          const floor = computeFloor(map);
+          const ends = doorOnWall(floor, a.near, a.width);
+          if (!ends) throw new ValidationError([`near: no wall within a square of [${a.near.join(', ')}]; give at with along or angle instead`]);
+          line = placeDoorBetween(floor, ends[0], ends[1]);
+          where = ' on the wall';
+        } else if (a.at) {
+          line = a.angle !== undefined ? { at: a.at, along: nearestAxis(a.angle), angle: a.angle } : { at: a.at, along: a.along ?? 'x' };
+        } else throw new ValidationError(['give at (the door\'s start point) or near (a spot by a wall)']);
+        const door: Door = { id, type: 'door', ...line, width: a.width, style: a.style ?? 'normal', ...(a.open ? { open: true } : {}) };
+        const runs = isTurned(door) ? `turned ${Math.round(doorAngle(door) * 100) / 100}°` : `along ${door.along}`;
+        return addObject(a.map, door, `Added ${a.style ?? 'normal'} door ${id}${where} at ${door.at.join(',')} ${runs}, ${a.width} wide.`);
       }),
   );
 
@@ -749,7 +773,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'update',
     {
       title: 'Update object',
-      description: 'Set or remove fields of one object, e.g. {"name": "Armoury"}, {"style": "locked"} on a door, {"walls": true} on an open area, or {"notes": "Two ogres; a chest with 40 gp"} on a room, corridor or terrain (GM notes: never drawn, only the GM sees them; unset ["notes"] removes them). id and type can\'t change.',
+      description: 'Set or remove fields of one object, e.g. {"name": "Armoury"}, {"style": "locked"} or {"angle": 30} on a door (turns it about its start point at; unset ["angle"] makes it run along x or y again), {"walls": true} on an open area, or {"notes": "Two ogres; a chest with 40 gp"} on a room, corridor or terrain (GM notes: never drawn, only the GM sees them; unset ["notes"] removes them). id and type can\'t change.',
       inputSchema: { map: mapId, id: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional() },
     },
     (a) => guarded(() => change(a.map, [{ op: 'update', id: a.id, set: a.set, unset: a.unset }], `Updated ${a.id}.`)),

@@ -8,7 +8,7 @@
 import { areaPathsD, EndType, FillRule, inflatePathsD, intersectD, JoinType, unionD, type PathD, type PathsD } from 'clipper2-ts';
 import { openingsOf } from '../geometry/openings.ts';
 import { PRECISION, shapePath } from '../geometry/shapes.ts';
-import { doorSegment } from '../geometry/walls.ts';
+import { doorNormal, doorSegment, gapReach, isTurned } from '../geometry/doors.ts';
 import type { DelveMap, Door, Point } from '../schema.ts';
 import { insidePaths } from './hatching.ts';
 
@@ -42,14 +42,15 @@ export function outerArchways(map: DelveMap, flat: PathsD, reach: number): Outer
     if (d.type !== 'door' || d.style !== 'archway') continue;
     const [a, b] = doorSegment(d);
     const mid: Point = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    const n: Point = d.along === 'x' ? [0, 1] : [1, 0];
-    const k = 0.05;
+    const n = doorNormal(d);
+    // a turned door on a curve: test past the bow of the wall, not in it
+    const k = isTurned(d) ? gapReach(d) + 0.02 : 0.05;
     const plus = insidePaths(flat, mid[0] + n[0] * k, mid[1] + n[1] * k);
     const minus = insidePaths(flat, mid[0] - n[0] * k, mid[1] - n[1] * k);
     if (plus === minus) continue; // floor on both sides (an inner archway) or on neither (not on a wall)
     const dir: Point = plus ? [n[0] ? -n[0] : 0, n[1] ? -n[1] : 0] : n;
     // nothing beyond: another room within reach keeps its band
-    const beyond = intersectD([strip(d, dir, 0.02, reach + PAST)], flat, FillRule.NonZero, PRECISION);
+    const beyond = intersectD([strip(d, dir, isTurned(d) ? k : 0.02, reach + PAST)], flat, FillRule.NonZero, PRECISION);
     if (Math.abs(areaPathsD(beyond)) > 1e-6) continue;
     out.push({ door: d, out: dir });
   }

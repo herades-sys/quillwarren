@@ -14,7 +14,8 @@ import { floorNumberLayer, stairTagLayer } from './floor-marks.ts';
 import { HEIGHT_CLIP, heightDrawing } from './heights.ts';
 import { openAreas } from './open-ends.ts';
 import { fromPath, PRECISION, shapeBounds, shapePath, toPath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
-import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
+import { doorDirection, doorNormal, isTurned } from '../geometry/doors.ts';
+import { doorSegment, shutDoorLines, wallPolylines, type Polyline } from '../geometry/walls.ts';
 import { markerRadius } from '../markers.ts';
 import { imageBounds } from '../images.ts';
 import { inscriptionNear, inscriptionsOf } from '../inscriptions.ts';
@@ -424,7 +425,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const cut = (lines: Polyline[]) => (seenPolys ? clipPolylines(lines, seenPolys) : lines);
   const wallLines = cut(wallPolylines(map, fullFloor, (d) => !hidden(d)));
   // (openings with walls leave both out: wallPolylines does it for the walls)
-  const shut = cut(cutSegments(doors.filter(hidden).map(doorSegment), openWallRings(map), floorTest(fullFloor)).map((s) => open(s)));
+  const shut = cut(cutSegments(shutDoorLines(doors.filter(hidden), fullFloor), openWallRings(map), floorTest(fullFloor)).map((s) => open(s)));
   // roughness 1 means smooth: no hand wobble either
   const wobble = map.roughness === 1 ? 0 : style.walls.roughness;
   const walls = [...wallLines.map((l) => roughen(l, wobble, seed)), ...shut];
@@ -452,24 +453,27 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
       }
       continue;
     }
+    // marks across the door (bars, the meeting line of a double door) run along its normal
+    const n = doorNormal(d);
+    const across = (p: Point, off: number): Point[] => [[p[0] - n[0] * off, p[1] - n[1] * off], [p[0] + n[0] * off, p[1] + n[1] * off]];
     if (kind === 'portcullis') {
-      const n = Math.max(2, Math.round(d.width * 4));
-      for (let k = 0; k <= n; k++) {
-        const t = 0.1 + (0.8 * k) / n;
-        const p: Point = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-        const off = 0.12;
-        marks.push(open(d.along === 'x' ? [[p[0], p[1] - off], [p[0], p[1] + off]] : [[p[0] - off, p[1]], [p[0] + off, p[1]]]));
+      const count = Math.max(2, Math.round(d.width * 4));
+      for (let k = 0; k <= count; k++) {
+        const t = 0.1 + (0.8 * k) / count;
+        marks.push(open(across([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], 0.12)));
       }
       marks.push(open([a, b]));
       continue;
     }
     leaves.push({ outer: doorFrame(d, 0.12, d.open ? 0.12 : 0.3), holes: [] });
-    if (kind === 'double') {
-      marks.push(open(d.along === 'x' ? [[mid[0], mid[1] - 0.15], [mid[0], mid[1] + 0.15]] : [[mid[0] - 0.15, mid[1]], [mid[0] + 0.15, mid[1]]]));
-    }
+    if (kind === 'double') marks.push(open(across(mid, 0.15)));
     if (kind === 'locked') {
       const k = 0.07;
-      leaves.push({ outer: [[mid[0] - k, mid[1] - k], [mid[0] + k, mid[1] - k], [mid[0] + k, mid[1] + k], [mid[0] - k, mid[1] + k]], holes: [] });
+      // the keyhole square, turned with the door
+      const [ux, uy] = doorDirection(d);
+      const at = (s: number, t: number): Point => [mid[0] + (ux * s + n[0] * t) * k, mid[1] + (uy * s + n[1] * t) * k];
+      const keyhole: Point[] = isTurned(d) ? [at(-1, -1), at(1, -1), at(1, 1), at(-1, 1)] : [[mid[0] - k, mid[1] - k], [mid[0] + k, mid[1] - k], [mid[0] + k, mid[1] + k], [mid[0] - k, mid[1] + k]];
+      leaves.push({ outer: keyhole, holes: [] });
     }
   }
   if (leaves.length) layers.push({ name: 'doors', kind: 'fill', polygons: leaves, color: style.doors.fill, stroke: { color: style.doors.stroke, width: style.doors.strokeWidth } });

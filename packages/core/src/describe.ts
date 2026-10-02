@@ -2,7 +2,8 @@
 import { corridorBounds, corridorPath, pathLength, roomsById } from './geometry/corridors.ts';
 import { computeFloor } from './geometry/floor.ts';
 import { containsPoint, shapeArea, shapeBounds } from './geometry/shapes.ts';
-import { boundarySegments, collinearOverlap, doorSegment } from './geometry/walls.ts';
+import { doorAngle, doorCentre, isTurned } from './geometry/doors.ts';
+import { boundarySegments, onEdge } from './geometry/walls.ts';
 import { assetInfo, propHidden } from './assets/catalog.ts';
 import { fogSummary } from './fog.ts';
 import { floorText, isConnector } from './floors.ts';
@@ -71,9 +72,8 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
       return [c.id, path ? corridorBounds(path, c.width) : null] as const;
     }),
   );
-  const doorMid = (d: Door): Point =>
-    d.along === 'x' ? [d.at[0] + d.width / 2, d.at[1]] : [d.at[0], d.at[1] + d.width / 2];
-  const doorText = (d: Door): string => `${d.id} (${d.style ?? 'normal'}${d.open ? ', open' : ''})`;
+  const doorMid = (d: Door): Point => doorCentre(d);
+  const doorText = (d: Door): string => `${d.id} (${d.style ?? 'normal'}${d.open ? ', open' : ''}${isTurned(d) ? `, turned ${fmt(doorAngle(d))}°` : ''})`;
   const usedDoors = new Set<string>();
 
   if (corridors.length) lines.push('Connections:');
@@ -97,7 +97,7 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
     lines.push('Other doors:');
     for (const d of rest) {
       const touching = rooms.filter((r) => containsPoint(shapeBounds(r.shape), doorMid(d))).map(roomName);
-      const outside = edge.some((s) => collinearOverlap(s, doorSegment(d)) > 1e-6);
+      const outside = onEdge(edge, d);
       const where = touching.length ? touching.join(' ↔ ') : 'no room';
       lines.push(`  ${doorText(d)}: ${where}${outside ? (d.style === 'archway' ? ', leads outside (an open end: no hatching or shading in front of it)' : ', leads outside') : ''}`);
     }

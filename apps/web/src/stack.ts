@@ -5,7 +5,7 @@
 // and stairs that meet nothing are flagged. Changes stream in live.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { applyOps, buildScene, computeFloor, computeWalls, doorSegment, revealedBounds, stairLinks, visibleFloor, visiblePolygons, type Bounds, type Connector, type DelveMap, type Door, type Op, type StairPlan } from '@delve/core';
+import { applyOps, buildScene, computeFloor, computeWalls, isTurned, revealedBounds, shutDoorLines, stairLinks, visibleFloor, visiblePolygons, type Bounds, type Connector, type DelveMap, type Door, type Op, type StairPlan } from '@delve/core';
 import { clipSegments, insidePolygons, intersect, startView, storeyHeights, texturePpg, unionOf, wallBox } from './stack-logic.ts';
 import { hasHeights, heightPlan, heightScene, polygonsOf, stairsUphill, type HeightScene, type Polygon } from '@delve/core';
 import { heightMeshes, type FaceKind } from './heights3d.ts';
@@ -190,7 +190,12 @@ function build(l: Loaded): void {
 
   // Walls: the floor's edge minus door gaps; for players, secret doors stay shut.
   let segs = computeWalls(map, fullFloor);
-  if (view === 'players') segs = segs.concat(map.objects.filter((o): o is Door => o.type === 'door' && o.style === 'secret').map(doorSegment));
+  if (view === 'players') {
+    const secret = map.objects.filter((o): o is Door => o.type === 'door' && o.style === 'secret');
+    // turned secret doors open no gap at all, so the wall they sit in stays whole (a curve stays a curve)
+    if (secret.some(isTurned)) segs = computeWalls({ ...map, objects: map.objects.filter((o) => !(o.type === 'door' && o.style === 'secret' && isTurned(o))) }, fullFloor);
+    segs = segs.concat(shutDoorLines(secret, fullFloor));
+  }
   if (fogged) segs = clipSegments(segs, visiblePolygons(map));
   if (wallHeight > 0 && segs.length) {
     const t = 0.16;

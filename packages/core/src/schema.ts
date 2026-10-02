@@ -64,8 +64,16 @@ export const DOOR_STYLES = ['normal', 'double', 'locked', 'secret', 'portcullis'
 export const Door = z.strictObject({
   type: z.literal('door'),
   ...common,
+  /** Where the door's line starts. */
   at: Point,
   along: z.enum(['x', 'y']),
+  /**
+   * Turns the door any way, in degrees clockwise from east (0 runs east like
+   * along "x", 90 south like along "y"), so it sits in a slanted or curved wall.
+   * It wins over `along` (which then holds the nearest axis). Unset: the door
+   * runs along x or y, exactly as doors always did.
+   */
+  angle: z.number().gt(-3600).lt(3600).optional(),
   width: positive,
   style: z.enum(DOOR_STYLES).optional(),
   open: z.boolean().optional(),
