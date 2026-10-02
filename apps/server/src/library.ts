@@ -194,7 +194,7 @@ function categoryCell(p: Place, loggedIn: boolean): string {
 /** One storey in a place's opened list. */
 function storeyRow(m: MapSummary, loggedIn: boolean): string {
   const floor = m.level ? floorText(m.level.order) : '';
-  return `<div class="lib-storey"><span class="numeral lib-floor">${esc(floor)}</span><a class="lib-storey-name" href="/maps/${encodeURIComponent(m.id)}">${esc(m.level?.name ?? m.name)}</a><code>${esc(m.id)}</code><span class="lib-storey-meta">${m.objects} · ${esc(ago(m.updated))}</span>${menu(m, loggedIn, `Downloads for ${m.level?.name ?? m.name}`)}</div>`;
+  return `<div class="lib-storey"><span class="lib-floor" title="Floor">${esc(floor)}</span><a class="lib-storey-name" href="/maps/${encodeURIComponent(m.id)}">${esc(m.level?.name ?? m.name)}</a><code>${esc(m.id)}</code><span class="lib-storey-meta">${m.objects} · ${esc(ago(m.updated))}</span>${menu(m, loggedIn, `Downloads for ${m.level?.name ?? m.name}`)}</div>`;
 }
 
 function placeCard(p: Place, loggedIn: boolean): string {
@@ -206,8 +206,8 @@ function placeCard(p: Place, loggedIn: boolean): string {
   const body = `place-${esc(p.key)}`;
   const meta = `${group ? '' : `${objects} object${objects === 1 ? '' : 's'} · `}edited ${esc(ago(p.updated))}`;
   return `<article class="card map-card elev-sm place ${group ? 'group' : 'single'}"${group ? ` data-place="${esc(p.key)}"` : ''}>
-  <a class="map-card-thumb" href="${open}" tabindex="-1" aria-hidden="true"><img src="${thumbUrl(ground)}" alt="" loading="lazy"></a>
-  <div class="map-card-actions"><a class="btn btn-primary btn-sm" href="${open}">${ICON.play}Open</a>${group ? `<a class="btn btn-secondary btn-sm" href="/maps/${encodeURIComponent(top.id)}/3d" title="All storeys stacked in 3D">3D</a>` : ''}</div>
+  <div class="map-card-thumb"><a class="map-card-thumb-link" href="${open}" tabindex="-1" aria-hidden="true"><img src="${thumbUrl(ground)}" alt="" loading="lazy"></a>
+  <div class="map-card-actions"><a class="btn btn-primary btn-sm" href="${open}">${ICON.play}Open</a>${group ? `<a class="btn btn-secondary btn-sm" href="/maps/${encodeURIComponent(top.id)}/3d" title="All storeys stacked in 3D">3D</a>` : ''}</div></div>
   <div class="map-card-body">
     <div class="lib-title-row"><a class="map-card-title" href="${open}">${esc(p.name)}</a>${group ? '' : menu(ground, loggedIn, `Downloads for ${p.name}`)}</div>
     <span class="map-card-meta">${group ? `<button class="place-toggle" type="button" aria-expanded="false" aria-controls="${body}" title="Show or hide the storeys">${ICON.chev}<span class="tag storeys">${p.storeys.length} storeys</span></button> · ` : ''}${meta}</span>
@@ -350,6 +350,8 @@ export const LIBRARY_CSS = `
   .map-card:has(details[open]) { z-index: 20; }
   .map-card.open { box-shadow: var(--shadow-md), 0 0 0 1px var(--color-accent); }
   .map-card-thumb img { object-fit: contain; padding: 6px; }
+  /* the picture links to the map; Open and 3D sit on the picture (as in the design), so an opened storey list never covers them */
+  .map-card-thumb-link { display: block; width: 100%; height: 100%; }
   .lib-title-row { display: flex; align-items: flex-start; gap: 6px; }
   .lib-title-row .map-card-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .lib-cat:empty { display: none; }
@@ -371,7 +373,8 @@ export const LIBRARY_CSS = `
   .menu .lib-delete { color: var(--color-danger); }
   .place-storeys { display: flex; flex-direction: column; padding: 0 8px 8px; gap: 2px; }
   .lib-storey { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; grid-template-areas: "floor name more" "floor meta more"; align-items: center; column-gap: 8px; padding: 6px 6px; border-radius: 7px; background: var(--color-surface-2); }
-  .lib-floor { grid-area: floor; text-align: center; font-size: 16px; color: var(--color-text-muted); }
+  /* floor numbers in the UI font: the numeral font draws 1 and 0 like I and O at this size */
+  .lib-floor { grid-area: floor; text-align: center; font: 600 var(--text-lg)/1 var(--font-ui); font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
   .lib-storey-name { grid-area: name; color: var(--color-text); text-decoration: none; font-weight: 500; overflow-wrap: anywhere; }
   .lib-storey-name:hover { color: var(--color-accent-text); }
   .lib-storey code { display: none; }
