@@ -75,6 +75,54 @@ describe('categories', () => {
   });
 });
 
+describe('renaming', () => {
+  const rename = (id: string, payload: object, headers: Record<string, string> = bearer) =>
+    app.inject({ method: 'PUT', url: `/api/v1/maps/${id}/name`, headers, payload });
+
+  it('renames a whole place at once, or one storey', async () => {
+    const t = await ashenTower();
+    const res = await rename(t.cellar, { name: '  The   Burnt Tower ' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ name: 'The Burnt Tower', changed: expect.arrayContaining([t.ground, t.wizard, t.cellar]) });
+    for (const m of (await list()).filter((m) => m.level)) expect(m.name).toBe('The Burnt Tower');
+    const storey = await rename(t.cellar, { storey: 'Dungeon' });
+    expect(storey.json()).toEqual({ storey: 'Dungeon', changed: [t.cellar] });
+    const names = (await list()).filter((m) => m.level).map((m) => m.level!.name).sort();
+    expect(names).toEqual(['Dungeon', 'Ground floor', "Wizard's floor"]);
+    // a single map, and the same name again
+    const crypt = await make('Crypt');
+    expect((await rename(crypt, { name: 'Crypt of the Lich' })).json().changed).toEqual([crypt]);
+    expect((await rename(crypt, { name: 'Crypt of the Lich' })).json().changed).toEqual([]);
+  });
+
+  it('checks the input and the login', async () => {
+    const crypt = await make('Crypt');
+    expect((await rename(crypt, { name: 'X' }, {})).statusCode).toBe(401);
+    expect((await rename(crypt, { name: '   ' })).statusCode).toBe(400);
+    expect((await rename(crypt, { name: 'x'.repeat(201) })).statusCode).toBe(400);
+    expect((await rename(crypt, {})).statusCode).toBe(400);
+    expect((await rename(crypt, { storey: 'Cellar' })).statusCode).toBe(400); // not a storey
+    expect((await rename('map_000000000000', { name: 'Gone' })).statusCode).toBe(404);
+  });
+
+  it('is offered in each map’s menu on the start page', async () => {
+    const open = buildApp({ version: 'test', started: 'now' }, { openEdit: true });
+    await open.ready();
+    try {
+      const ground = ((await open.inject({ method: 'POST', url: '/api/v1/maps', payload: { name: 'The Ashen Tower' } })).json() as { id: string }).id;
+      await open.inject({ method: 'POST', url: `/api/v1/maps/${ground}/levels`, payload: { name: 'Cellar', position: 'below' } });
+      await open.inject({ method: 'POST', url: '/api/v1/maps', payload: { name: 'Crypt' } });
+      const page = (await open.inject({ url: '/' })).body;
+      expect(page).toContain('data-rename-kind="storey" data-current="Cellar"');
+      expect(page).toContain('data-rename-kind="place" data-current="The Ashen Tower"');
+      expect(page).toContain('data-rename-kind="place" data-current="Crypt"');
+      expect(page).toContain("'/name'");
+    } finally {
+      await open.close();
+    }
+  });
+});
+
 describe('the library', () => {
   it('puts places on shelves A–Z, the unfiled last, and keeps a place’s storeys together, top first', async () => {
     const t = await ashenTower();

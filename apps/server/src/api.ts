@@ -23,7 +23,7 @@ import {
 import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 'json' };
 import { bearer, checkToken, readCookie, sameOrigin, SESSION_COOKIE, type Sessions } from './auth.ts';
 import { addLevel, levelsOf } from './levels.ts';
-import { setCategory } from './library.ts';
+import { renamePlace, renameStorey, setCategory } from './library.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
 import { render, renderHandout, RenderQueryError, type HandoutQuery, type RenderQuery } from './render.ts';
 import type { MapService } from './service.ts';
@@ -197,6 +197,21 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
     try {
       if (!('category' in body)) throw new ValidationError(['send {"category": "Dungeons"} (or null to take the map off its shelf)']);
       return setCategory(service, id, body.category, byOf(body.by, 'library'));
+    } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  // Renaming: `name` renames the place (the map and all its storeys), `storey` only this storey.
+  app.put('/api/v1/maps/:id/name', { preHandler: writer }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { name?: unknown; storey?: unknown; by?: unknown };
+    try {
+      if (body.name === undefined && body.storey === undefined) throw new ValidationError(['send {"name": "The Ashen Tower"} to rename the place, or {"storey": "Cellar"} to rename this storey']);
+      const by = byOf(body.by, 'library');
+      const place = body.name === undefined ? null : renamePlace(service, id, body.name, by);
+      const storey = body.storey === undefined ? null : renameStorey(service, id, body.storey, by);
+      return { ...(place ? { name: place.name } : {}), ...(storey ? { storey: storey.storey } : {}), changed: [...new Set([...(place?.changed ?? []), ...(storey?.changed ?? [])])] };
     } catch (e) {
       return fail(reply, e);
     }

@@ -1500,7 +1500,27 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     return h(
       'div',
       { class: 'ed-pane ed-pane-map' },
-      field('Name', input({ value: m.name, onchange: (e: Event) => { const v = (e.target as HTMLInputElement).value.trim(); if (v && v !== m.name) setMap({ name: v }); } })),
+      // a storey's map name is its place's name: renaming it renames every storey (the server does all of them)
+      field(
+        m.level ? 'Name of the place · all storeys' : 'Name',
+        input({
+          value: m.name,
+          onchange: (e: Event) => {
+            const v = (e.target as HTMLInputElement).value.trim();
+            if (!v || v === m.name) return;
+            if (!m.level) return setMap({ name: v });
+            void fetch(`/api/v1/maps/${encodeURIComponent(ctx.mapId)}/name`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: v, by: 'editor' }) })
+              .then(async (res) => {
+                if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
+                ctx.toast(`Renamed all storeys to “${v}”.`, 'info');
+              })
+              .catch((err: Error) => {
+                ctx.toast(`Renaming failed: ${err.message}`);
+                renderPanel(true);
+              });
+          },
+        }),
+      ),
       section(
         'Style preset',
         h(

@@ -43,7 +43,7 @@ import { bearer } from './auth.ts';
 import type { ChatTokens } from './chat/tokens.ts';
 import type { ImageLibrary } from './images.ts';
 import { addLevel, levelsOf } from './levels.ts';
-import { setCategory } from './library.ts';
+import { renamePlace, setCategory } from './library.ts';
 import { presetArg, shapeOrPreset } from './draw-args.ts';
 import { render } from './render.ts';
 import { registerSegmentTools } from './segments.ts';
@@ -719,7 +719,12 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           const all = r.changed.length > 1 ? ` (all ${r.changed.length} storeys)` : '';
           filed = r.category === null ? `Took the map off its library shelf${all}.` : `Filed under "${r.category}"${all}.`;
         }
-        const others = ['name', 'style', 'overrides', 'seed', 'roughness', 'level_name', 'floor', 'unit'] as const;
+        // a storey's map name is its place's name: renaming one renames them all
+        if (a.name && map.level) {
+          const r = renamePlace(service, a.map, a.name, BY);
+          filed += `${filed ? ' ' : ''}Renamed the place to "${r.name}" (${r.changed.length} of its storeys changed).`;
+        }
+        const others = ['style', 'overrides', 'seed', 'roughness', 'level_name', 'floor', 'unit', ...(map.level ? [] : ['name' as const])] as const;
         if (filed && others.every((k) => a[k] === undefined)) return text(filed);
         const set: Record<string, unknown> = {};
         let note = '';
@@ -730,7 +735,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           if (clash) note = ` Note: storey "${clash.level?.name ?? clash.name}" (${clash.id}) is floor ${a.floor} too; give each storey its own number.`;
           note += ' Run label_stairs to renumber the stairs.';
         }
-        if (a.name) set.name = a.name;
+        if (a.name && !map.level) set.name = a.name;
         if (a.unit !== undefined) set.grid = { ...map.grid, unit: squareUnit(a.unit) };
         if (a.seed !== undefined) set.seed = a.seed;
         const unset = a.roughness === null ? ['roughness'] : [];

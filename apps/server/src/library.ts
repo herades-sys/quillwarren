@@ -94,6 +94,43 @@ export function setCategory(service: MapService, id: string, category: unknown, 
   return { category: clean, changed };
 }
 
+export const MAX_NAME = 200;
+
+/** A map name as typed: trimmed, inner spaces collapsed, 1 to 200 characters. */
+export function cleanName(v: unknown, what = 'name', max = MAX_NAME): string {
+  const s = typeof v === 'string' ? v.normalize('NFC').trim().replace(/\s+/g, ' ') : '';
+  if (!s || s.length > max) throw new ValidationError([`${what}: give a name of 1 to ${max} characters`]);
+  return s;
+}
+
+/**
+ * Rename a place: the map and every storey of it share one name ("The Ashen
+ * Tower"), so all of them get it. Returns the storeys changed.
+ */
+export function renamePlace(service: MapService, id: string, name: unknown, by: string): { name: string; changed: string[] } {
+  const clean = cleanName(name);
+  service.store.get(id); // 404 for unknown maps
+  const changed: string[] = [];
+  for (const s of levelSiblings(service.store.list(), id)) {
+    if (s.name === clean) continue;
+    service.apply(s.id, [{ op: 'update_map', set: { name: clean } }], { by });
+    changed.push(s.id);
+  }
+  return { name: clean, changed };
+}
+
+/** Rename one storey ("Cellar"): its level name; other storeys keep theirs. */
+export function renameStorey(service: MapService, id: string, name: unknown, by: string): { storey: string; changed: string[] } {
+  const clean = cleanName(name, 'storey', 60);
+  const { map } = service.store.get(id);
+  if (!map.level) throw new ValidationError(['storey: this map is not a storey of a place (rename the map instead)']);
+  if (map.level.name === clean) return { storey: clean, changed: [] };
+  service.apply(id, [{ op: 'update_map', set: { level: { ...map.level, name: clean } } }], { by });
+  // the other storeys' editors show the storey list: refresh it
+  for (const s of levelSiblings(service.store.list(), id)) if (s.id !== id) service.hub.broadcast(s.id, { type: 'levels' });
+  return { storey: clean, changed: [id] };
+}
+
 // ---------- the start page's markup ----------
 // The design's map cards (docs/design/ui-v1, "Cards, tables, tags"): a picture
 // of the map, its name and when it changed, Open and 3D on hover. Shelves fold,
@@ -129,8 +166,13 @@ const ICON = {
 function menu(m: MapSummary, loggedIn: boolean, label: string): string {
   const base = `/api/v1/maps/${encodeURIComponent(m.id)}`;
   const item = (href: string, text: string, sub = '', attrs = '') => `<a class="menu-item has-icon" role="menuitem" href="${href}"${attrs}>${ICON.dl}<span class="spacer">${text}${sub ? `<span class="menu-item-sub">${sub}</span>` : ''}</span></a>`;
+  // renaming: a place's name (all its storeys share it) and, for a storey, its own name
+  const pen = '<svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>';
+  const rename = (kind: 'place' | 'storey', text: string, current: string) =>
+    `<button class="menu-item has-icon lib-rename" role="menuitem" type="button" data-rename="${esc(m.id)}" data-rename-kind="${kind}" data-current="${esc(current)}">${pen}<span class="spacer">${text}</span></button>`;
+  const renames = loggedIn ? (m.level ? rename('storey', 'Rename storey…', m.level.name) + rename('place', 'Rename the place…', m.name) : rename('place', 'Rename…', m.name)) : '';
   const del = loggedIn
-    ? `<button class="menu-item has-icon lib-delete" role="menuitem" type="button" data-delete="${esc(m.id)}" data-name="${esc(m.level ? `${m.name} · ${m.level.name}` : m.name)}"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 4h5M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg><span class="spacer">Delete</span></button>`
+    ? `${renames}<button class="menu-item has-icon lib-delete" role="menuitem" type="button" data-delete="${esc(m.id)}" data-name="${esc(m.level ? `${m.name} · ${m.level.name}` : m.name)}"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 4h5M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg><span class="spacer">Delete</span></button>`
     : '';
   return `<details class="lib-more"><summary class="btn btn-icon" aria-label="${esc(label)}" title="Downloads">${ICON.more}</summary><div class="menu" role="menu">
   <span class="lib-menu-id"><code>${esc(m.id)}</code></span>
@@ -272,6 +314,16 @@ document.querySelectorAll('.cat-input').forEach((input) => {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } if (e.key === 'Escape') { input.value = saved; input.blur(); } });
   input.addEventListener('change', commit);
 });
+document.querySelectorAll('[data-rename]').forEach((b) => b.addEventListener('click', async () => {
+  const storey = b.dataset.renameKind === 'storey';
+  const next = prompt(storey ? 'New name for this storey:' : 'New name (every storey of the place gets it):', b.dataset.current);
+  if (next === null || !next.trim() || next.trim() === b.dataset.current) return;
+  const res = await fetch('/api/v1/maps/' + encodeURIComponent(b.dataset.rename) + '/name', {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(storey ? { storey: next } : { name: next }),
+  });
+  if (!res.ok) { const body = await res.json().catch(() => ({})); alert('Renaming failed: ' + (body.error || res.status)); return; }
+  location.reload();
+}));
 document.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', async () => {
   if (!confirm('Delete "' + b.dataset.name + '"? It disappears from Delve for everyone.')) return;
   const res = await fetch('/api/v1/maps/' + encodeURIComponent(b.dataset.delete), { method: 'DELETE' });
