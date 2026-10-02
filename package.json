@@ -15,7 +15,7 @@
     "demo": "node apps/server/src/cli/demo.ts",
     "mcp": "node apps/server/src/cli/mcp-call.ts",
     "assets": "node scripts/build-assets.ts",
-    "typecheck": "tsc -p . && tsc -p packages/core && tsc -p packages/core/tsconfig.test.json && tsc -p packages/table && tsc -p packages/table/tsconfig.test.json && tsc -p apps/server && tsc -p apps/web && tsc -p apps/web/tsconfig.test.json"
+    "typecheck": "tsc -p . && tsc -p packages/core && tsc -p packages/core/tsconfig.test.json && tsc -p packages/table && tsc -p packages/table/tsconfig.test.json && tsc -p packages/ui && tsc -p packages/ui/tsconfig.test.json && tsc -p apps/server && tsc -p apps/web && tsc -p apps/web/tsconfig.test.json"
   },
   "engines": {
     "node": ">=24"

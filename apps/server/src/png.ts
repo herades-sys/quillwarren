@@ -8,9 +8,10 @@ import { inflateSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-/** Served name -> [npm package path, file]: labels in IM FELL English, room numbers in Marcellus SC. */
+/** Served name -> [npm package path, file]: labels in IM FELL English (the italic is for pages), room numbers in Marcellus SC. */
 const FONTS = {
   'im-fell-english.ttf': ['@expo-google-fonts/im-fell-english/400Regular', 'IMFellEnglish_400Regular.ttf'],
+  'im-fell-english-italic.ttf': ['@expo-google-fonts/im-fell-english/400Regular_Italic', 'IMFellEnglish_400Regular_Italic.ttf'],
   'marcellus-sc.ttf': ['@expo-google-fonts/marcellus-sc/400Regular', 'MarcellusSC_400Regular.ttf'],
 } as const;
 

@@ -20,6 +20,7 @@ import { ImageLibrary, registerImages } from './images.ts';
 import { registerStack } from './stack.ts';
 import type { DiscordConfig } from './table/discord.ts';
 import { registerTable } from './table/routes.ts';
+import { registerUi } from './ui.ts';
 import { MapService } from './service.ts';
 import { MapStore } from './store.ts';
 import { registerViewer } from './viewer.ts';
@@ -112,6 +113,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerPreview(scoped, info, store, auth);
     registerTracePage(scoped, info, auth);
     registerHandoutPage(scoped, store);
+    registerUi(scoped, info);
     registerTable(scoped, {
       maps: store,
       auth,

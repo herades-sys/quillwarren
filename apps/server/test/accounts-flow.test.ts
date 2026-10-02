@@ -71,7 +71,7 @@ async function bootstrap(name = 'Ana') {
   const location = String(start.headers.location);
   expect(location).toMatch(/^\/account\/setup\?token=[\w-]{43}$/);
   const page = await get(location);
-  expect(page.body).toContain('<svg');
+  expect(page.body).toContain('<div class="qr"><svg');
   const secret = secretOf(page.body);
   const done = await post('/account/setup', { token: location.split('=')[1]!, step: 'code', code: code(secret) });
   expect(done.statusCode).toBe(200);
@@ -406,7 +406,7 @@ describe('password-only GM accounts', () => {
     const link = linkOf(made.body);
     const page = await get(link);
     expect(page.body).toContain('Save password and log in');
-    expect(page.body).not.toContain('<svg');
+    expect(page.body).not.toContain('class="qr"');
     const done = await post('/account/setup', { token: link.split('=')[1]!, step: 'password', password: HIVE_PW, password2: HIVE_PW });
     expect(done.statusCode).toBe(303);
     expect(done.headers.location).toBe('/');
@@ -418,7 +418,7 @@ describe('password-only GM accounts', () => {
     const admin = await bootstrap();
     const hive = await addHive(admin.cookie);
     expect(await loggedIn(hive.cookie)).toBe(true);
-    expect((await get('/admin', admin.cookie)).body).toMatch(/Hive<\/strong>.*?GM <span class="tag">password only<\/span>.*?active/s);
+    expect((await get('/admin', admin.cookie)).body).toMatch(/Hive<\/strong>.*?>GM<\/span> <span class="tag tag-neutral">.*?Password only<\/span>.*?Active/s);
     expect((await login('hive', HIVE_PW, '')).statusCode).toBe(303);
     expect((await login('hive', 'not the password', '')).statusCode).toBe(401);
     const tunnel = { headers: { host: 'delve.example', 'cf-connecting-ip': '203.0.113.9', 'x-forwarded-proto': 'https', origin: 'https://delve.example' } };
