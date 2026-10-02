@@ -102,6 +102,8 @@ export interface HandoutQuery {
   crop?: string;
   /** "1": as an attachment, not shown in the browser. */
   download?: string;
+  /** "0": without the handwritten notes (the handout page draws them itself while the GM edits them). */
+  inscriptions?: string;
 }
 
 export function handoutOptions(q: HandoutQuery, ext: 'svg' | 'png'): HandoutOptions {
@@ -125,7 +127,14 @@ export function handoutOptions(q: HandoutQuery, ext: 'svg' | 'png'): HandoutOpti
     dpi,
     assets: assets.body,
     ...(q.crop !== undefined ? { crop: parseFrame(q.crop, 'crop') } : {}),
+    ...(q.inscriptions === '0' ? { inscriptions: false } : {}),
   };
+}
+
+/** The x-handout-frame header: the sheet size and where the map sits on it (core HandoutFrame), for clicks on the page's preview. */
+export function handoutFrameHeader(h: { width: number; height: number; frame: { x: number; y: number; k: number; x0: number; y0: number } }): string {
+  const r = (v: number) => Math.round(v * 1e4) / 1e4;
+  return JSON.stringify({ w: r(h.width), h: r(h.height), x: r(h.frame.x), y: r(h.frame.y), k: Math.round(h.frame.k * 1e6) / 1e6, x0: h.frame.x0, y0: h.frame.y0 });
 }
 
 /** The players' parchment handout as SVG or PNG, e.g. crypt_handout_a4.png. */

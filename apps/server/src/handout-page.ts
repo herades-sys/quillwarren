@@ -2,9 +2,14 @@
 // sheet (core handout.ts), with a preview, the options, downloads and printing.
 // The pictures come from /api/v1/maps/:id/handout.{png,svg}; printing puts the
 // 200 dpi PNG on a page of the chosen paper size, so "Save as PDF" works too.
+// GMs with the editor login also get the Notes tool for handwritten notes on
+// the sheet (/assets/handout.js, apps/web/src/handout.ts).
+import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { htmlDocument, icon, themeSwitch, topBar } from '@delve/ui';
 import { NotFoundError, type MapStore } from './store.ts';
+import { isLoggedIn, type EditorAuth } from './login.ts';
+import { findScript } from './viewer.ts';
 
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -28,6 +33,25 @@ const PAGE_CSS = `
   .check:has(input:disabled) span:last-child { color: var(--color-text-muted); }
   #status { min-height: 1.3em; }
   #print-sheet { display: none; }
+  /* handwritten notes (GM only, apps/web/src/handout.ts): the layer over the preview and the text box */
+  .table { position: relative; }
+  #notes-layer { position: absolute; overflow: visible; pointer-events: none; }
+  #notes-layer.is-on { pointer-events: auto; cursor: crosshair; touch-action: none; }
+  #notes-layer:not(.is-on) .hn-hit { pointer-events: none; }
+  #notes-layer .hn-hit { fill: transparent; stroke: none; pointer-events: all; cursor: move; }
+  #notes-layer .hn:hover .hn-hit { fill: rgba(255, 248, 225, .18); }
+  #notes-layer .hn-off { opacity: .4; }
+  #notes-layer .hn-sel { fill: none; stroke: var(--color-accent); stroke-opacity: 1; stroke-width: 1.5px; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+  .hn-editor { position: absolute; z-index: 2; margin: 0; padding: 2px 6px; resize: none; overflow: hidden; white-space: pre; text-align: center; line-height: 1.2;
+    font-family: "IM Fell English", Georgia, serif; font-style: italic; background: rgba(243, 230, 196, .82); border: 1.5px dashed var(--color-accent); border-radius: var(--radius-sm); outline: none; box-shadow: var(--shadow-md); transform-origin: 50% 50%; }
+  #notes-panel { display: flex; flex-direction: column; gap: 10px; }
+  #notes-panel .btn { justify-content: flex-start; }
+  .hn-inks { display: flex; width: 100%; }
+  .hn-inks .seg-opt { flex: 1; justify-content: center; padding: 7px 4px; }
+  .hn-ink { display: inline-flex; align-items: center; gap: 5px; }
+  #notes-toggle[aria-pressed="true"] { color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+  .hn-ink-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px var(--color-border); }
+  .hn-acts { display: flex; gap: 8px; flex-wrap: wrap; }
   @media (max-width: 820px) {
     main { grid-template-columns: 1fr; }
     aside { box-shadow: inset 0 1px 0 var(--color-border); }
@@ -40,8 +64,22 @@ const PAGE_CSS = `
   }
 `;
 
-function page(id: string, name: string, fogOn: boolean): string {
+/** What the page needs to know about the viewer: GMs with the editor login get the Notes tool and its script. */
+export interface HandoutPageViewer {
+  editor: boolean;
+  version: string;
+}
+
+function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewer = { editor: false, version: '' }): string {
   const initial = JSON.stringify({ id, name, fogOn }).replace(/</g, '\\u003c');
+  // handwritten notes: the panel is filled by /assets/handout.js (apps/web/src/handout.ts)
+  const notesTool = viewer.editor
+    ? `<section id="notes-tool">
+      <span class="section-label">Handwritten notes</span>
+      <div id="notes-panel"><p class="note">Loading the notes tool…</p></div>
+    </section>`
+    : '';
+  const notesScript = viewer.editor ? `<script type="module" src="/assets/handout.js?v=${encodeURIComponent(viewer.version)}"></script>` : '';
   const chev = icon('chevron-down', { size: 14 });
   const tick = `<span class="box">${icon('check', { size: 12, stroke: 2.8 })}</span>`;
   const check = (idAttr: string, label: string, on: boolean, extra = '') => `<label class="check"${extra}><input id="${idAttr}" type="checkbox"${on ? ' checked' : ''}${fogOn || idAttr !== 'revealed' ? '' : ' disabled'}>${tick}<span>${label}</span></label>`;
@@ -66,6 +104,7 @@ function page(id: string, name: string, fogOn: boolean): string {
       ${check('names', 'Room names', false)}
       ${check('revealed', 'Only what the players have seen', false, ` title="${fogOn ? 'Fog of war is on for this map' : 'Turn fog of war on in the editor to use this'}"`)}
     </section>
+    ${notesTool}
     <section>
       <span class="section-label">Get it</span>
       <div class="buttons">
@@ -87,7 +126,7 @@ function page(id: string, name: string, fogOn: boolean): string {
   var $ = function (id) { return document.getElementById(id); };
   var base = '/api/v1/maps/' + encodeURIComponent(init.id) + '/handout';
   var sheet = $('sheet'), status = $('status');
-  var size = null, timer = 0, current = '';
+  var size = null, timer = 0, current = '', previewExtra = {};
   // a cropped handout (the editor's "Crop to selection", MCP export crop): only that part of the map
   var crop = new URLSearchParams(location.search).get('crop');
   if (crop) { var cn = document.createElement('span'); cn.className = 'note'; cn.textContent = 'Cropped to squares ' + crop.split(',').join(', ') + '. '; var wa = document.createElement('a'); wa.href = location.pathname; wa.textContent = 'Whole map'; cn.appendChild(wa); document.querySelector('header').appendChild(cn); }
@@ -102,18 +141,21 @@ function page(id: string, name: string, fogOn: boolean): string {
     return q.toString();
   }
   function update() {
-    var q = query();
     $('png').href = base + '.png?' + query({ dpi: '200', download: '1' });
     $('png-hi').href = base + '.png?' + query({ dpi: '300', download: '1' });
     $('svg').href = base + '.svg?' + query({ download: '1' });
+    // the preview: the downloads' query plus its own dpi and, while the GM writes notes, inscriptions=0
+    var q = query(Object.assign({ dpi: String(Math.round(Math.min(110, 72 * (window.devicePixelRatio || 1)))) }, previewExtra));
+    var withNotes = previewExtra.inscriptions !== '0', frame = null;
     if (q === current) return;
     current = q;
     sheet.classList.add('loading');
     status.textContent = 'Drawing…';
-    fetch(base + '.png?' + query({ dpi: String(Math.round(Math.min(110, 72 * (window.devicePixelRatio || 1)))) })).then(function (res) {
+    fetch(base + '.png?' + q).then(function (res) {
       if (!res.ok) return res.json().then(function (b) { throw new Error(b.error || res.status); });
       var s = (res.headers.get('x-handout-size') || '').match(/^(\\d+)x(\\d+)pt$/);
       size = s ? { w: Number(s[1]), h: Number(s[2]) } : null;
+      frame = res.headers.get('x-handout-frame');
       return res.blob();
     }).then(function (blob) {
       if (q !== current) return;
@@ -122,12 +164,25 @@ function page(id: string, name: string, fogOn: boolean): string {
       sheet.classList.remove('loading');
       status.textContent = size ? 'Sheet ' + Math.round(size.w / 72 * 25.4) + ' × ' + Math.round(size.h / 72 * 25.4) + ' mm.' : '';
       if (size) $('page-size').textContent = '@page { size: ' + size.w + 'pt ' + size.h + 'pt; margin: 0; }';
+      // the notes tool (GM only) lays its layer over the picture once it has its new size
+      var done = function () {
+        handout.last = { frame: frame, notes: withNotes };
+        document.dispatchEvent(new CustomEvent('handout:drawn', { detail: handout.last }));
+      };
+      if (sheet.decode) sheet.decode().then(done, done); else done();
     }).catch(function (e) {
       sheet.classList.remove('loading');
       status.textContent = 'Drawing failed: ' + e.message;
     });
   }
+  // for the notes tool: its own preview query, and drawing again when the map changes
+  var handout = window.delveHandout = {
+    last: null,
+    preview: function (extra) { previewExtra = extra || {}; update(); },
+    refresh: function () { current = ''; clearTimeout(timer); timer = setTimeout(update, 250); }
+  };
   document.querySelectorAll('aside select, aside input').forEach(function (el) {
+    if (el.closest('#notes-panel')) return;
     el.addEventListener(el.type === 'text' ? 'input' : 'change', function () { clearTimeout(timer); timer = setTimeout(update, el.type === 'text' ? 500 : 0); });
   });
   $('print').addEventListener('click', function () {
@@ -143,19 +198,32 @@ function page(id: string, name: string, fogOn: boolean): string {
   update();
 })();
 </script>
+${notesScript}
 `;
   return htmlDocument({ title: `${name} · Handout`, body, extra: `<style id="page-size">@page { size: A4 portrait; margin: 0; }</style><style>${PAGE_CSS}</style>` });
 }
 
-export function registerHandoutPage(app: FastifyInstance, store: MapStore): void {
+export function registerHandoutPage(app: FastifyInstance, store: MapStore, auth?: EditorAuth, version = ''): void {
   app.get('/maps/:id/handout', async (req, reply) => {
     const { id } = req.params as { id: string };
     try {
       const { map } = store.get(id);
-      return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(page(id, map.name, Boolean(map.fog?.on)));
+      const viewer = { editor: auth ? isLoggedIn(auth, req) : false, version };
+      return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(page(id, map.name, Boolean(map.fog?.on), viewer));
     } catch (e) {
       if (!(e instanceof NotFoundError)) throw e;
       return reply.code(404).type('text/plain').send('no such map');
     }
+  });
+
+  // the Notes tool's script, built by scripts/build-web.sh like the others (viewer.ts serves those)
+  let script: string | undefined;
+  app.get('/assets/handout.js', async (_req, reply) => {
+    if (script === undefined) {
+      const file = findScript('handout.js');
+      if (!file) return reply.code(404).type('text/plain').send('handout.js not built: run npm run build:web');
+      script = readFileSync(file, 'utf8');
+    }
+    return reply.type('text/javascript; charset=utf-8').header('cache-control', version === 'dev' ? 'no-store' : 'public, max-age=300').send(script);
   });
 }

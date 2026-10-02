@@ -86,6 +86,7 @@ import {
 import { initImages } from './images.ts';
 import { artUrl, loadCustomProps, onCustomProps, refreshCustomProps } from './custom-props.ts';
 import { customTile, newPropButton } from './prop-maker.ts';
+import { drawInscriptions, inscriptionFields } from './inscriptions.ts';
 import { objectBounds, pad } from './logic.ts';
 import { initSegments } from './segments.ts';
 
@@ -142,8 +143,8 @@ const thumb = (id: string) => artUrl(id);
 /** Turned by 15° steps, folded into 0…345. */
 const turned = (deg: number) => (((Math.round(deg / 15) * 15) % 360) + 360) % 360;
 const SHAPE_ICON: Record<DrawShape, IconName> = { rect: 'shape-rect', circle: 'shape-circle', oval: 'shape-oval', triangle: 'shape-triangle', hexagon: 'shape-hexagon', octagon: 'shape-octagon', freehand: 'shape-freehand' };
-const TYPE_ICON: Record<MapObject['type'], IconName> = { room: 'room', corridor: 'corridor', cutout: 'pillar', door: 'door', stairs: 'stairs', label: 'label', prop: 'prop', terrain: 'terrain', marker: 'marker', image: 'image', opening: 'eraser' };
-const TYPE_NAME: Record<MapObject['type'], string> = { room: 'Room', corridor: 'Corridor', cutout: 'Pillar / cutout', door: 'Door', stairs: 'Stairs', label: 'Label', prop: 'Prop', terrain: 'Terrain', marker: 'GM marker', image: 'Image', opening: 'Open area' };
+const TYPE_ICON: Record<MapObject['type'], IconName> = { room: 'room', corridor: 'corridor', cutout: 'pillar', door: 'door', stairs: 'stairs', label: 'label', prop: 'prop', terrain: 'terrain', marker: 'marker', image: 'image', opening: 'eraser', inscription: 'notes' };
+const TYPE_NAME: Record<MapObject['type'], string> = { room: 'Room', corridor: 'Corridor', cutout: 'Pillar / cutout', door: 'Door', stairs: 'Stairs', label: 'Label', prop: 'Prop', terrain: 'Terrain', marker: 'GM marker', image: 'Image', opening: 'Open area', inscription: 'Handout note' };
 /** Can the device be used with a finger? Then the Select tool offers a Box mode for one-finger drags. */
 const coarse = () => typeof matchMedia === 'function' && matchMedia('(any-pointer: coarse)').matches;
 const DOOR_NAME: Record<(typeof DOOR_STYLES)[number], string> = { normal: 'Door', double: 'Double', locked: 'Locked', secret: 'Secret', portcullis: 'Portcullis', archway: 'Archway' };
@@ -1031,6 +1032,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   function draw(): void {
     layer.replaceChildren();
     if (guide) layer.appendChild(svgEl('path', { d: guide.d, class: 'guide' }));
+    drawInscriptions(layer, map()); // handout notes: dashed boxes, and the text of those not on the map (inscriptions.ts)
     const m = map();
     const px = ctx.squaresPerPx();
     const sel = selection.map(byId).filter((o): o is MapObject => Boolean(o));
@@ -1705,6 +1707,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           shapeRow(o),
           ...shapeFields(o),
         );
+        break;
+      // handwritten notes on the parchment handout (inscriptions.ts)
+      case 'inscription':
+        out.push(...inscriptionFields(o, { apply, mapId: ctx.mapId }));
         break;
     }
     const fc = fogCheck(o);

@@ -7,6 +7,7 @@ import { assetInfo, propHidden } from './assets/catalog.ts';
 import { fogSummary } from './fog.ts';
 import { floorText, isConnector } from './floors.ts';
 import { MARKERS } from './markers.ts';
+import { inscriptionsOf, inscriptionText } from './inscriptions.ts';
 import { areaTitle, hasNotes, isNoteArea } from './notes.ts';
 import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Opening, Point, Prop, Room, Terrain } from './schema.ts';
 import { parseSquareUnit } from './units.ts';
@@ -31,7 +32,7 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
   const corridors = map.objects.filter((o): o is Corridor => o.type === 'corridor');
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
   const cutouts = map.objects.filter((o): o is Cutout => o.type === 'cutout');
-  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain', 'marker', 'image', 'opening'].includes(o.type));
+  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain', 'marker', 'image', 'opening', 'inscription'].includes(o.type));
   const openings = map.objects.filter((o): o is Opening => o.type === 'opening');
   const images = map.objects.filter((o): o is MapImage => o.type === 'image');
   const markers = map.objects.filter((o): o is Marker => o.type === 'marker');
@@ -172,6 +173,12 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
     for (const m of markers) {
       lines.push(`  ${MARKERS[m.kind].symbol} ${m.id} at ${fmt(m.at[0])},${fmt(m.at[1])} ${roomAt(m.at)}${m.done ? ' (done)' : ''}: ${m.text ? JSON.stringify(m.text) : '(no text)'}`);
     }
+  }
+  // handwritten notes on the players' parchment handout (inscriptions.ts)
+  const inscriptions = inscriptionsOf(map);
+  if (inscriptions.length) {
+    lines.push("Handout notes (handwritten on the players' parchment handout; players see them):");
+    for (const o of inscriptions) lines.push(`  ${inscriptionText(o, roomAt, fmt)}`);
   }
   const connectors = map.objects.filter(isConnector);
   if (connectors.some((o) => 'label' in o && o.label)) {

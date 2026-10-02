@@ -13,3 +13,7 @@ for entry in viewer stack screen trace trace-worker table table-dice table3d; do
     --bundle --format=esm --platform=browser --target=es2022 --minify \
     --outfile="$out/$entry.js" --log-level=warning
 done
+# handout.js: the handout page's Notes tool (handwritten notes on the sheet, GM only)
+npx esbuild apps/web/src/handout.ts \
+  --bundle --format=esm --platform=browser --target=es2022 --minify \
+  --outfile="$out/handout.js" --log-level=warning

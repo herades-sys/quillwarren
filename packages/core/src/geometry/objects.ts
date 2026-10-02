@@ -2,6 +2,7 @@
 // shared by the editor (zooming, highlights), the players' screen and fog.
 import { propBounds } from '../assets/catalog.ts';
 import { imageBounds } from '../images.ts';
+import { inscriptionBounds } from '../inscriptions.ts';
 import type { DelveMap, MapObject, Point } from '../schema.ts';
 import { corridorBounds, corridorPath, roomsById } from './corridors.ts';
 import { shapeBounds, type Bounds, type Polygon, type Ring } from './shapes.ts';
@@ -36,6 +37,8 @@ export function objectBounds(o: MapObject, map: DelveMap): Bounds | null {
       return { x0: o.at[0] - 0.4, y0: o.at[1] - 0.4, x1: o.at[0] + 0.4, y1: o.at[1] + 0.4 };
     case 'image':
       return imageBounds(o);
+    case 'inscription':
+      return inscriptionBounds(o);
   }
 }
 

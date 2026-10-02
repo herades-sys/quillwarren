@@ -96,6 +96,9 @@ function moved(o: MapObjectT, dx: number, dy: number): Record<string, unknown> |
     case 'marker':
     case 'image':
       return { at: shift(o.at) };
+    // handwritten handout notes: moved by their centre, like labels
+    case 'inscription':
+      return { at: shift(o.at) };
   }
 }
 

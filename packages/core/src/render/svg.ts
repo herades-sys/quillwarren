@@ -5,6 +5,7 @@ import { markerGlyph } from '../markers.ts';
 import type { Polygon } from '../geometry/shapes.ts';
 import type { Polyline } from '../geometry/walls.ts';
 import { imageUrl } from '../images.ts';
+import { inscriptionSeed, inscriptionSvg } from '../inscriptions.ts';
 import type { AssetItem, ImageItem, Layer, Scene } from './scene.ts';
 
 export interface SvgOptions {
@@ -156,6 +157,8 @@ function layerSvg(layer: Layer, prefix: string): string {
         .join('');
       return items ? g(`<g font-family="${esc(layer.font)}, serif" font-weight="700">${items}</g>`) : '';
     }
+    case 'inscriptions':
+      return layer.items.length ? g(layer.items.map((o) => inscriptionSvg(o, inscriptionSeed(layer.seed, o.id))).join('')) : '';
   }
 }
 

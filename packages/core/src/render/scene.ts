@@ -16,7 +16,9 @@ import { fromPath, PRECISION, shapeBounds, shapePath, toPath, type Bounds, type 
 import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
 import { markerRadius } from '../markers.ts';
 import { imageBounds } from '../images.ts';
+import { inscriptionNear, inscriptionsOf } from '../inscriptions.ts';
 import type { DelveMap, Door, ImageLayer, MapImage, MarkerKind, Point, Prop, Room, Stairs, Terrain } from '../schema.ts';
+import type { Inscription } from '../schema.ts';
 import { hatchStrokes, insidePaths, outsideBand } from './hatching.ts';
 import { hashInts, hashString, rng } from './rng.ts';
 import { resolveStyle, type Style } from './style.ts';
@@ -104,6 +106,8 @@ export type Layer =
   | (LayerBase & { kind: 'markers'; items: { id: string; kind: MarkerKind; at: Point; done: boolean; r: number }[] })
   /** Short labels on rounded boxes `size` squares tall, centred on `at` (the GM's stair labels). */
   | (LayerBase & { kind: 'tags'; items: { text: string; at: Point }[]; size: number; fill: string; color: string; font: string })
+  /** Handwritten handout notes that are on the map too (onMap), drawn as inscriptions.ts draws them; `seed` is the map's. */
+  | (LayerBase & { kind: 'inscriptions'; items: Inscription[]; seed: number })
   /** Uploaded pictures (image objects), each drawn from /api/v1/images/<src>. */
   | (LayerBase & { kind: 'images'; items: ImageItem[] });
 
@@ -474,6 +478,11 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     const shade = fogShade(map, reach);
     if (shade.length) layers.push({ name: 'fog', kind: 'fill', polygons: shade, color: style.fog.color, opacity: style.fog.dim });
   }
+  // Handwritten handout notes the GM put on the map too: in both views, over the
+  // fog shade, and never hidden by fog (the GM writes them for the players).
+  // (only the ones near the picture: resvg panics on content far outside a clipped group, see inscriptionNear)
+  const inscriptions = inscriptionsOf(map, { onMap: true }).filter((n) => inscriptionNear(n, bounds, 0.25 * Math.min(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0)));
+  if (inscriptions.length) layers.push({ name: 'inscriptions', kind: 'inscriptions', items: inscriptions, seed });
   if (view === 'gm') {
     const numbers: { text: string; at: Point; size: number }[] = [];
     for (const r of map.objects.filter((o): o is Room => o.type === 'room')) {

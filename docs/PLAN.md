@@ -68,6 +68,7 @@ See `fixtures/test-map-4p.delve.json` for the test dungeon. The top level looks 
 | `marker` | `kind` (`discover`, `interact`, `trap`), `at`, `text`, `done` | GM note badges ("?", "!", skull), GM view only. Click to read, Shift-click to strike through |
 | `image` | `src` (an uploaded file, `<sha256>.<ext>`), `at` (centre), `w`, `h`, `rotation`, `layer` (`floor` or `props`), `opacity`, `gmOnly` | Your own pictures, uploaded through `/api/v1/images` |
 | `opening` | `shape`, `walls`, `name` | An open area: no hatching, shading or drop shadow inside the shape (both views); `walls: true` leaves the wall lines there out too. Never drawn itself. Outer archways get the same open end by themselves (docs/API.md, "Open ends and open areas") |
+| `inscription` | `text` (≤ 300, `\n` for lines), `at` (centre), `size` (default 0.8), `rotation`, `ink` (`brown`, `black`, `faded`, `red`), `onMap` | Handwritten notes on the players' parchment handout, in IM FELL English Italic; `onMap` draws them on the normal map too. Players see them, fog or not (docs/API.md, "Handwritten notes on the handout") |
 
 ### 2. Operations (the only way to change a map)
 

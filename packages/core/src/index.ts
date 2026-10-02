@@ -110,6 +110,22 @@ export { DRAW_SHAPES, PRESET_SHAPES, OVAL_POINTS, shapeFromBox, shapeFromDrag, d
 export { solidCutouts } from './geometry/solid.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
 export { handoutSvg, PAPERS, type Paper, type HandoutOptions, type Handout } from './render/handout.ts';
+export { frameTransform, type HandoutFrame } from './render/handout.ts';
+export {
+  INSCRIPTION_SIZE,
+  INSCRIPTION_FONT,
+  INSCRIPTION_INK,
+  inscriptionLines,
+  inscriptionSeed,
+  mapSeedOf,
+  inscriptionsSvg,
+  inscriptionBox,
+  inscriptionBounds,
+  inscriptionNear,
+  inscriptionSvg,
+  inscriptionsOf,
+  inscriptionText,
+} from './inscriptions.ts';
 export { MARKERS, MARKER_RADIUS, MIN_MARKER_RADIUS, markerGlyph, markerAt, markerRadius, type MarkerInfo } from './markers.ts';
 export {
   NOTES_MAX,

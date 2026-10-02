@@ -40,6 +40,7 @@ import {
   type Room,
   type Shape,
 } from '@delve/core';
+import { INSCRIPTION_INKS, INSCRIPTION_MAX, INSCRIPTION_SIZE } from '@delve/core';
 import { errorResponse, newMap, tokenGuard } from './api.ts';
 import { bearer } from './auth.ts';
 import type { ChatTokens } from './chat/tokens.ts';
@@ -70,6 +71,7 @@ Exports can be cropped: export with crop [x, y, w, h] or around [ids] (plus marg
 Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
 Wall roughness: set_map roughness 1 (smooth) to 10 (caves); rooms, corridors and cutouts can have their own (update {"roughness": 9}). Rows of props (trees along a road): add_props_along.
 GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.
+Handout notes (add_inscription): handwritten text on the players' parchment handout ("Here be dragons"), in an old italic hand and a brown, black, faded or red ink; on_map writes it on the normal map too. Players see them; update and delete change them like any object.
 GM notes: rooms, corridors and terrain carry notes (a description, monsters, loot) for the GM: add_room notes, or update {"notes": "..."} on any of them. They are never drawn or exported; the GM reads them in the editor and on Delve Table, and describe_map lists them.
 Segments: save_segment saves part of a map under a name (rooms 1–5 as "Temple of Efferd", a patch of trees and grass as "Mixed forest"); place_segment adds a renumbered copy anywhere, turned if asked; fill_with_segment tiles one over the land around the rooms, keeping the floor clear. list_segments shows what is saved.
 The user's own pictures (uploaded in the editor): list_images gives their src, and add_image places one by src (a table in the middle of room 3, a rug, a mosaic on the floor).
@@ -392,6 +394,45 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const map = store.get(a.map).map;
         const id = a.id ?? nextId(map, 'm');
         return addObject(a.map, { id, type: 'marker', kind: a.kind, at: a.at, text: a.text }, `Added ${a.kind} marker ${id} at [${a.at.join(', ')}].`);
+      }),
+  );
+
+  // Handwritten notes on the players' parchment handout (core inscriptions.ts).
+  server.registerTool(
+    'add_inscription',
+    {
+      title: 'Add handout note',
+      description:
+        "Write a note by hand on the players' parchment handout (/maps/<id>/handout), in IM FELL English Italic: \"Here be dragons\" at the edge of the map, \"Beware!\" over the crypt door, a rhyme in the margin. " +
+        'The text is centred on at; line breaks (\\n) start new lines. Only on the handout unless on_map, which also writes it on the normal map renders. Players see it, whatever the fog. ' +
+        'update (e.g. {"text": "...", "ink": "red", "onMap": true}) and delete change it later.',
+      inputSchema: {
+        map: mapId,
+        text: z.string().min(1).max(INSCRIPTION_MAX).describe(`Up to ${INSCRIPTION_MAX} characters; \\n for a new line`),
+        at: point.describe('The middle of the text [x, y] in squares; it may lie outside the rooms, in the margin of the sheet'),
+        size: z.number().positive().max(20).optional().describe(`Text height in squares (default ${INSCRIPTION_SIZE})`),
+        rotation: z.number().min(-180).max(180).optional().describe('Tilt in degrees clockwise; a few degrees (-5 to 5) looks hand-made'),
+        ink: z.enum(INSCRIPTION_INKS).optional().describe('brown (default), black, faded or red'),
+        on_map: z.boolean().optional().describe('Also write it on the normal map (both views); default false: the handout only'),
+        id: z.string().optional().describe('Defaults to the next w<n>'),
+      },
+    },
+    (a) =>
+      guarded(() => {
+        const map = store.get(a.map).map;
+        const id = a.id ?? nextId(map, 'w');
+        const note: MapObject = {
+          id,
+          type: 'inscription',
+          text: a.text.replace(/\r\n?/g, '\n'),
+          at: a.at,
+          ...(a.size !== undefined ? { size: a.size } : {}),
+          ...(a.rotation ? { rotation: a.rotation } : {}),
+          ...(a.ink && a.ink !== 'brown' ? { ink: a.ink } : {}),
+          ...(a.on_map ? { onMap: true } : {}),
+        };
+        const first = a.text.split('\n')[0]!.slice(0, 60);
+        return addObject(a.map, note, `Added handout note ${id} "${first}${first.length < a.text.length ? '…' : ''}" at [${a.at.join(', ')}]${a.on_map ? ', also on the map' : ''}. See it on ${base}/maps/${encodeURIComponent(a.map)}/handout.`);
       }),
   );
 

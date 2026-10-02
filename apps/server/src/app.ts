@@ -117,7 +117,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerStack(scoped, info, store);
     registerPreview(scoped, info, store, auth);
     registerTracePage(scoped, info, auth);
-    registerHandoutPage(scoped, store);
+    registerHandoutPage(scoped, store, auth, info.version);
     registerUi(scoped, info);
     registerTable(scoped, {
       maps: store,

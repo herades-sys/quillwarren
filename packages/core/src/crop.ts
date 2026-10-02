@@ -171,6 +171,8 @@ export function cropScene(scene: Scene, frame: Bounds): Scene {
         return [{ ...l, items: l.items.filter((i) => near(around(i.at, i.r))) }];
       case 'assets':
         return [{ ...l, items: l.items.filter((i) => near(around(i.at, (Math.hypot(i.w, i.h) / 2) * i.scale))) }];
+      case 'inscriptions':
+        return [{ ...l, items: l.items.filter((i) => near(around(i.at, (i.size ?? 0.8) * Math.max(1, i.text.length)))) }];
       case 'images':
         return [{ ...l, items: l.items.filter((i) => near(around(i.at, Math.hypot(i.w, i.h) / 2))) }];
     }

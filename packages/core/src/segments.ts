@@ -42,7 +42,7 @@ const EPS = 1e-6;
 const MAX_TILES = 2500;
 const DIRS = ['n', 'e', 's', 'w'] as const;
 /** Ids by type, as the tools and the editor pick them. */
-const PREFIX: Record<string, string> = { room: 'r', corridor: 'c', cutout: 'p', door: 'd', stairs: 's', label: 'l', prop: 'i', terrain: 't', marker: 'm', opening: 'o' };
+const PREFIX: Record<string, string> = { room: 'r', corridor: 'c', cutout: 'p', door: 'd', stairs: 's', label: 'l', prop: 'i', terrain: 't', marker: 'm', opening: 'o', inscription: 'w' };
 /** Objects centred on `at` that turn by a `rotation` field. */
 const TURNS_WITH_ROTATION = new Set(['prop', 'image']);
 /** What "around the rooms" means: the built part of the map. */
@@ -88,6 +88,8 @@ function tightBounds(o: MapObject, map: DelveMap): Bounds | null {
     return { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
   }
   if (o.type === 'label') return { x0: o.at[0], y0: o.at[1], x1: o.at[0], y1: o.at[1] };
+  // a handwritten note is where its centre is, like a label (its letters are only estimated)
+  if (o.type === 'inscription') return { x0: o.at[0], y0: o.at[1], x1: o.at[0], y1: o.at[1] };
   return objectBounds(o, map);
 }
 
@@ -161,6 +163,11 @@ function transformObject(o: MapObject, f: Xf, turns = 0): MapObject {
       if (r) out.rotation = r;
       else delete out.rotation;
     }
+  }
+  // handwritten handout notes stay upright with their own tilt when a segment turns, so they still read
+  if (o.type === 'inscription') {
+    if (typeof src.rotation === 'number') out.rotation = src.rotation;
+    else delete out.rotation;
   }
   return out as unknown as MapObject;
 }
@@ -331,6 +338,7 @@ const NOUNS: Record<string, [string, string]> = {
   marker: ['GM marker', 'GM markers'],
   image: ['picture', 'pictures'],
   opening: ['open area', 'open areas'],
+  inscription: ['handout note', 'handout notes'],
 };
 
 /** How many objects of each type. */

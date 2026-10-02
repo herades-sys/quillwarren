@@ -19,7 +19,7 @@ const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /** release/web/<name> next to the bundle, or apps/web/dist/<name> in development. */
-function findScript(name: string): string | null {
+export function findScript(name: string): string | null {
   for (const rel of [`./web/${name}`, `../../web/dist/${name}`]) {
     const p = fileURLToPath(new URL(rel, import.meta.url));
     if (existsSync(p)) return p;

@@ -13,6 +13,7 @@ import { resolveStyle } from './style.ts';
 import { sceneToSvg } from './svg.ts';
 import { cropScene } from '../crop.ts';
 import { parseSquareUnit } from '../units.ts';
+import { inscriptionNear, inscriptionsOf, inscriptionsSvg } from '../inscriptions.ts';
 
 export type Paper = 'a4' | 'a3' | 'letter' | 'fit';
 export const PAPERS: Record<Exclude<Paper, 'fit'>, { name: string; w: number; h: number }> = {
@@ -41,6 +42,21 @@ export interface HandoutOptions {
   /** Only this part of the map, in squares (a cropped handout); default: the whole map. */
   crop?: Bounds;
   assets?: RenderOptions['assets'];
+  /** false leaves the handwritten notes (inscription objects) out: the handout page draws them itself while the GM edits them. */
+  inscriptions?: boolean;
+}
+
+/**
+ * Where the map sits on the sheet: the square (x0, y0) is at (x, y) points and
+ * one square is k points, so a sheet point (X, Y) is the square
+ * (x0 + (X - x) / k, y0 + (Y - y) / k). Notes are drawn in this frame too.
+ */
+export interface HandoutFrame {
+  x: number;
+  y: number;
+  k: number;
+  x0: number;
+  y0: number;
 }
 
 export interface Handout {
@@ -50,6 +66,7 @@ export interface Handout {
   height: number;
   paper: Paper;
   landscape: boolean;
+  frame: HandoutFrame;
 }
 
 const INK = '#2E1F11';
@@ -190,6 +207,8 @@ export function handoutSvg(map: DelveMap, o: HandoutOptions = {}): Handout {
   );
   // cropped: only what the sheet shows (see cropScene)
   const scene = o.crop ? cropScene(drawn, drawn.bounds) : drawn;
+  // notes that are on the map too are drawn below with the others, in the sheet's own frame (not clipped to the map)
+  scene.layers = scene.layers.filter((l) => l.kind !== 'inscriptions');
   if (o.names) {
     const fogged = o.revealedOnly && map.fog?.on;
     const items = map.objects
@@ -273,6 +292,13 @@ export function handoutSvg(map: DelveMap, o: HandoutOptions = {}): Handout {
   }
   if (compass) ink += compassRose(W - M - r - 6, M + T * 0.54, r);
   if (bar) ink += scaleBar(M + 6, H - M - B * 0.72, k, Math.min(0.25 * boxW, 220), map, Math.max(8, Math.min(11, B * 0.32)));
+  // the GM's handwritten notes, on top: anchored to map squares, but free to run into the margin
+  const frame: HandoutFrame = { x: mx, y: my, k, x0: scene.bounds.x0, y0: scene.bounds.y0 };
+  // the sheet in squares; a note running more than a quarter sheet past its edge is left out (resvg, see inscriptionNear)
+  const onSheet = { x0: frame.x0 - mx / k, y0: frame.y0 - my / k, x1: frame.x0 + (W - mx) / k, y1: frame.y0 + (H - my) / k };
+  const near = inscriptionsOf(map).filter((n) => inscriptionNear(n, onSheet, (0.25 * Math.min(W, H)) / k));
+  const notes = o.inscriptions === false ? '' : inscriptionsSvg(map, near);
+  if (notes) ink += `<g data-layer="inscriptions" transform="${frameTransform(frame)}">${notes}</g>`;
 
   let stains = '';
   if (o.stains ?? true) {
@@ -311,5 +337,10 @@ export function handoutSvg(map: DelveMap, o: HandoutOptions = {}): Handout {
     `<path d="${edge}" fill="none" stroke="#3B2410" stroke-width="4" filter="url(#hp-rim)" opacity="0.85"/>` +
     `<g opacity="0.94">${ink}</g>` +
     `</g></svg>`;
-  return { svg, width: W, height: H, paper, landscape };
+  return { svg, width: W, height: H, paper, landscape, frame };
+}
+
+/** The SVG transform from map squares to sheet points for a frame (the handout page's overlay uses it too). */
+export function frameTransform(f: HandoutFrame): string {
+  return `translate(${n(f.x)} ${n(f.y)}) scale(${Math.round(f.k * 1e5) / 1e5}) translate(${n(-f.x0)} ${n(-f.y0)})`;
 }

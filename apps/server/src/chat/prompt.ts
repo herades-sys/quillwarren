@@ -77,12 +77,13 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - "No hatching at the top of room 11", room rect [x, y, w, h]: add_opening rect [x, y - 2, w, 2], the band outside the north wall (the band is about 1.3 squares deep). The same at the other walls: south [x, y + h, w, 2], west [x - 2, y, 2, h], east [x + w, y, 2, h].
   - walls: true also leaves out the wall lines inside it, and a wall along its edge with the open area on the outside: a cave mouth, a ledge that drops away, a room edge that is simply open. Without it only the hatching and shading go.
   - Change one with update ({"walls": true}) or resize, remove it with delete. describe_map lists them as open areas.
+- **Handout notes** (add_inscription): handwritten notes on the players' parchment handout (/maps/<id>/handout), in an old italic hand: "Here be dragons" at the edge of the map, "Beware the crypt" over a door, a rhyme in the margin. text (up to 300 characters, \\n for a new line) is centred on at; size is the text height in squares (default 0.8); rotation tilts it a few degrees (−5 to 5 looks hand-made); ink brown (default), black, faded or red; on_map also writes it on the normal map. Players see them, fog or not. The GM can place and edit them on the handout page too.
 - **Terrain** (add_terrain): an area filled with a repeating tile: water, lava, grass, mud, rubble, carpet… It can cover a whole room (pass the room's shape) or open ground outside rooms. Difficult terrain is marked in the catalog.
 - **Wall roughness** from 1 (smooth, cut stone) to 10 (extremely rough, caves): set_map roughness for the whole map, and a room, corridor or cutout can have its own (update {"roughness": 9}), so a natural cave can sit beside a built keep. High levels reshape the floor outline itself; doors stay on straight wall. Unset means the style's own look.
 - **The user's own pictures** (add_image): the user can upload their own images in the editor (the Image tool), e.g. a drawing of a table to stand in the middle of room 3. list_images gives each one's src; add_image places it by src with at = its centre, w × h in squares (give one and the proportions are kept; neither: the longer side is 2 squares), rotation, layer "props" (default, on top of walls) or "floor" (under the grid and walls: rugs, mosaics, floor art), opacity and gm_only.
 - **Rows and scatters of props** (add_props_along): trees along a road, rocks along a cave wall, pillars down a hall. Give a path of points and a spacing in squares; placement "regular" puts one exactly every spacing squares, "irregular" varies the gaps, strays up to spread squares to the sides and turns and sizes each one a little.
 - **Segments:** a saved piece of a map, kept for every map. Save the temple rooms as a segment (save_segment with ids: rooms bring their doors, contents and the corridors between them; or rect for everything inside an area, like a patch of forest), place it again elsewhere (place_segment: fresh ids, room numbers carry on from the map's, optionally turned 90/180/270), or fill the land around a dungeon with a saved forest (fill_with_segment: tiles its props and terrain, keeps the rooms and corridors clear, and the terrain gets holes where the rooms are). list_segments shows what is saved.
-- **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, i props, t terrain, m markers, o open areas, followed by a number (r1, d12). The tools pick the next free id.
+- **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, i props, t terrain, m markers, o open areas, w handout notes, followed by a number (r1, d12). The tools pick the next free id.
 
 # Tools (every one takes map = the map id)
 - list_maps and create_map (name, style, template "empty" or "test-dungeon"): other maps. Only create a map when asked.
@@ -93,6 +94,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - resize (a new shape for a room, cutout or stairs), update (set or unset fields, e.g. {"notes": "..."} or {"style": "locked"}), delete (ids).
 - list_assets (category, search), add_prop (asset, at, rotation, scale, notes), add_props_along (asset, path, spacing, placement, spread), add_terrain (asset plus one of rect, poly or circle).
 - add_marker (kind, at, text): a GM note badge; update {"done": true} or {"text": "..."} changes it.
+- add_inscription (text, at, size, rotation, ink, on_map): a handwritten note on the parchment handout; update {"text": "..."} or {"onMap": true} changes it, delete removes it.
 - list_segments, save_segment (name, ids or rect), place_segment (segment id or name, at = top-left corner, rotation), fill_with_segment (segment, rect or around = squares around the rooms, default 5): see "Segments".
 - add_level (name, position above or below): adds a storey (see "Storeys"). label_stairs: numbers every stair of the place.
 - fog (on, reveal, cover, reveal_area, cover_area, reveal_all, reset): fog of war (see "Fog of war").
@@ -118,6 +120,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - prop {"id","type":"prop","asset","at":[x,y],"rotation"?,"scale"?,"notes"?,"label"? (ladders, trapdoors, spiral stairs)}
   - terrain {"id","type":"terrain","asset","shape"}
   - opening {"id","type":"opening","shape","walls"?: true} (an open area: no hatching or shading inside)
+  - inscription {"id","type":"inscription","text","at":[x,y],"size"?,"rotation"?,"ink"?: "brown"|"black"|"faded"|"red","onMap"?}
 
   With apply_ops you choose the ids yourself, so keep them unique. The tools' error messages name the object and field that's wrong.
 
@@ -212,6 +215,8 @@ export function objectLine(o: MapObject): string {
       return `${o.id} open area${name} ${shapeText(o.shape)}${o.walls ? ', walls left out too' : ''}${notes}`;
     case 'image':
       return `${o.id} image${name} src ${o.src} at [${n(o.at[0])}, ${n(o.at[1])}], ${n(o.w)}×${n(o.h)}${o.rotation ? `, rotation ${n(o.rotation)}` : ''}${o.layer === 'floor' ? ', on the floor' : ''}${o.opacity !== undefined ? `, opacity ${n(o.opacity)}` : ''}${o.gmOnly ? ', GM only' : ''}${notes}`;
+    case 'inscription':
+      return `${o.id} handout note ${q(o.text)} at [${n(o.at[0])}, ${n(o.at[1])}]${o.size ? `, size ${n(o.size)}` : ''}${o.rotation ? `, rotation ${n(o.rotation)}` : ''}${o.ink ? `, ink ${o.ink}` : ''}${o.onMap ? ', also on the map' : ''}${notes}`;
   }
 }
 

@@ -26,6 +26,7 @@ import { addLevel, levelsOf } from './levels.ts';
 import { renamePlace, renameStorey, setCategory } from './library.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
 import { render, renderHandout, RenderQueryError, type HandoutQuery, type RenderQuery } from './render.ts';
+import { handoutFrameHeader } from './render.ts';
 import type { MapService } from './service.ts';
 import { labelStairs, labelStairsSummary } from './stair-labels.ts';
 import { ConflictError, newMapId, NotFoundError, StaleError } from './store.ts';
@@ -340,6 +341,7 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
           .type(out.type)
           .header('content-disposition', `${q.download === '1' ? 'attachment' : 'inline'}; filename="${out.name}"`)
           .header('x-handout-size', `${Math.round(out.handout.width)}x${Math.round(out.handout.height)}pt`)
+          .header('x-handout-frame', handoutFrameHeader(out.handout))
           .send(out.body);
       } catch (e) {
         return fail(reply, e);

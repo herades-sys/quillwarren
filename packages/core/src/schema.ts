@@ -168,9 +168,32 @@ export const Opening = z.strictObject({
   walls: z.boolean().optional(),
 });
 
-export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker', 'image', 'opening'] as const;
+/** The inks a handwritten note can be in: brown (the default), black, faded and red. */
+export const INSCRIPTION_INKS = ['brown', 'black', 'faded', 'red'] as const;
+/** The longest handwritten note, in characters (line breaks count). */
+export const INSCRIPTION_MAX = 300;
 
-export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker, MapImage, Opening]);
+/**
+ * A handwritten note on the players' parchment handout ("Here be dragons"):
+ * the text (line breaks allowed) centred on `at`, `size` squares tall per line
+ * (default 0.8), tilted clockwise by `rotation` degrees, in one of the inks.
+ * Drawn only on the handout unless `onMap`, which also puts it on the normal
+ * map renders (both views). Player-facing: fog of war never hides it.
+ */
+export const Inscription = z.strictObject({
+  type: z.literal('inscription'),
+  ...common,
+  text: z.string().min(1).max(INSCRIPTION_MAX).regex(/\S/, 'must not be blank'),
+  at: Point,
+  size: positive.max(20).optional(),
+  rotation: z.number().min(-180).max(180).optional(),
+  ink: z.enum(INSCRIPTION_INKS).optional(),
+  onMap: z.boolean().optional(),
+});
+
+export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker', 'image', 'opening', 'inscription'] as const;
+
+export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker, MapImage, Opening, Inscription]);
 
 /**
  * Fog of war for the players' screen. With it on, players see only the revealed
@@ -232,6 +255,8 @@ export type CutoutFill = (typeof CUTOUT_FILLS)[number];
 export type MapImage = z.infer<typeof MapImage>;
 export type Opening = z.infer<typeof Opening>;
 export type ImageLayer = (typeof IMAGE_LAYERS)[number];
+export type Inscription = z.infer<typeof Inscription>;
+export type InscriptionInk = (typeof INSCRIPTION_INKS)[number];
 export type Level = z.infer<typeof Level>;
 export type Fog = z.infer<typeof Fog>;
 export type MapObject = z.infer<typeof MapObject>;

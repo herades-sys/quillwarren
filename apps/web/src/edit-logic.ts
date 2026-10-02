@@ -55,6 +55,11 @@ export function hitAll(map: DelveMap, p: Point, tol: number): string[] {
   // uploaded pictures: the ones standing on top come before the props under them; floor ones rank with the areas below
   const pictures = of('image').filter((o) => onImage(o, p, tol));
   for (const im of [...pictures].reverse()) if (im.layer !== 'floor') out.push(im.id);
+  // handwritten handout notes, like labels: their (estimated) box
+  for (const n of of('inscription').reverse()) {
+    const b = objectBounds(n, map);
+    if (b && p[0] >= b.x0 - tol && p[0] <= b.x1 + tol && p[1] >= b.y0 - tol && p[1] <= b.y1 + tol) out.push(n.id);
+  }
   for (const l of map.objects.filter((o) => o.type === 'label' || o.type === 'prop').reverse()) {
     const b = objectBounds(l, map);
     if (b && p[0] >= b.x0 - tol && p[0] <= b.x1 + tol && p[1] >= b.y0 - tol && p[1] <= b.y1 + tol) out.push(l.id);

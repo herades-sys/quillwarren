@@ -368,6 +368,30 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 - **Code:** core `render/handout.ts`, server `handout-page.ts`.
 - **Don't use `feDisplacementMap`** in anything resvg renders. It panics on uneven region rounding (e.g. A3 at 60 dpi), and the panic aborts the whole server.
 - **Keep handout geometry on the page:** a cropped sheet with the whole map's geometry running far past the page made resvg panic under a stain's blur filter (geom.rs `unwrap` on `None`), so cropped handouts are cut to their frame first (`cropScene`).
+- **resvg also panics** when what a clipped or see-through group holds reaches far into negative coordinates (on A4, about 1000 pt left of or above the sheet). Handwritten notes are therefore drawn only when they stay within a quarter sheet of the sheet's edge (core `inscriptionNear`); the same rule, a quarter of the picture's shorter side, keeps far-off `onMap` notes out of map renders.
+
+#### Handwritten notes on the handout
+
+- **The object:** `{ type: "inscription", id, text, at, size?, rotation?, ink?, onMap? }` (ids `w1`, `w2`…).
+  - `text`: 1–300 characters, not blank; `\n` starts a new line.
+  - `at`: the middle of the text in squares, like a label's. It may lie outside the rooms, in the sheet's margin.
+  - `size`: the text height in squares (default 0.8, at most 20). On a dungeon on A4, 0.8 squares is about 15 pt.
+  - `rotation`: tilt in degrees clockwise, −180 to 180. A few degrees looks hand-made.
+  - `ink`: `brown` (the default), `black`, `faded` or `red`.
+  - `onMap`: also draw it on the normal map renders (both views, the editor, Delve Table pages). By default a note is on the handout only.
+- **Who sees them:** they are for the players. They're on every handout, and fog of war never hides them: the GM writes them on purpose, often in unexplored parts ("Here be dragons"). To keep one back, delete it until later.
+- **The look:** IM FELL English Italic (`/fonts/im-fell-english-italic.ttf`, shipped in `release/fonts` and loaded by resvg). Each line is tilted by up to 0.8° and nudged sideways, each word rides a little up or down, is a touch bigger or smaller and a little darker or lighter, and a soft halo of the same ink (a 20% stroke under the letters) looks like ink bled into the paper. The randomness comes from the map seed and the note's id, so a note never shifts between renders. Plain text and strokes only, no filters. On the handout, notes are drawn over everything, in the sheet's own frame, so they can run into the margin; they are clipped by the torn edge.
+- **Everywhere else:** ops (`add`, `update`, `move`, `delete`, undo) like any object. `describeMap` lists them under "Handout notes". Segments carry them (they keep their own tilt when a segment turns). The Dungeon Scrawl export leaves them out.
+- **The page's Notes tool** (GMs with the editor login only; players and visitors see the handout without it). Under "Handwritten notes", "Write notes on the sheet" turns it on:
+  - A click on the parchment opens a small box at that spot. Enter starts a new line; Ctrl+Enter or a click elsewhere saves; Esc cancels.
+  - Drag a note to move it, and arrow keys nudge it (Shift: half a square). Double-click it (or press Enter) to change its text; emptying the text deletes it. Delete or Backspace removes it, and Ctrl+Z / Ctrl+Y undo and redo.
+  - The panel sets the selected note's size (in points on this sheet), tilt, ink and "Also on the normal map". With no note selected, it sets them for new notes, which also keep the last size and ink used. New notes get a random tilt of −3° to 3°, and 0.8 squares unless that would be under 9 or over 24 pt on the sheet (then 14 pt).
+  - Every change is a normal op (`POST /api/v1/maps/:id/ops` with the editor login, same origin, `by: "handout"`), so the editor and viewers follow and undo works. The page follows the map live over the WebSocket.
+  - While the tool is on, the preview is drawn with `inscriptions=0`, and the page draws the notes on top itself (`/assets/handout.js`, `apps/web/src/handout.ts`, with core's own renderer and the page's copy of the font), so they move as you drag. A note that runs too far off the sheet to be printed shows faint. Printing and the downloads always have the notes.
+- **The images' extras:** `inscriptions=0` leaves the notes out of `handout.png` / `handout.svg`, and the header `x-handout-frame: {"w","h","x","y","k","x0","y0"}` says where the map sits on the sheet: the square (`x0`, `y0`) is at (`x`, `y`) points and a square is `k` points, so a sheet point (X, Y) is the square (x0 + (X − x)/k, y0 + (Y − y)/k). `w` × `h` is the sheet in points.
+- **In the editor:** notes show as a dashed box turned with the note; the ones only on the handout also show their text, faint. Select, move, duplicate and delete them like labels; the inspector has text, size, X/Y, tilt, ink and "Also on the map". Placing happens on the handout page.
+- **MCP:** `add_inscription` (see below), then the usual `update` (e.g. `{"text": "…", "ink": "red", "onMap": true}`), `move` and `delete`.
+- **Code:** core `inscriptions.ts` (inks, `inscriptionSvg`, `inscriptionBounds`, `inscriptionNear`) and `render/handout.ts`; web `handout.ts` + `handout-logic.ts` (the page's tool) and `inscriptions.ts` (the editor's drawing and inspector).
 
 ### Dungeon Scrawl `.ds`
 
@@ -436,6 +460,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `add_opening` (a shape or `preset`, `walls?`, `name?`) | An open area: no hatching, shading or shadow inside; with `walls` no wall lines either (see "Open ends and open areas") |
 | `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_props_along` (`asset`, `path`, `spacing?`, `placement?`, `spread?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
 | `add_marker` (`kind` discover/interact/trap, `at`, `text`) | A GM note badge (GM view only); `update` with `{"done": true}` strikes it through |
+| `add_inscription` (`text`, `at`, `size?`, `rotation?`, `ink?` brown/black/faded/red, `on_map?`) | A handwritten note on the players' parchment handout ("Here be dragons"); `on_map` also writes it on the normal map. See "Handwritten notes on the handout" |
 | `list_images`, `add_image` (`src`, `at`, `w?`, `h?`, `rotation?`, `layer?`, `opacity?`, `gm_only?`) | The user's uploaded pictures, placed by `src` |
 | `prop_rules` | How to draw a prop: the art rules, condensed, with two clean example SVGs and a built-in one |
 | `create_prop` (`name`, `w`, `h`, `svg`, `category?`, `tags?`, `blocks?`, `ink?`, `id?`), `update_prop` (`id`, any of those), `get_prop` (`id`), `delete_prop` (`id`, `force?`) | This Delve's own props (see "Custom props"). A refused drawing comes back with what to fix, a saved one with the preview picture (an MCP image) and a link to it. `get_prop` also returns the drawing as sent and the maps that use it |
