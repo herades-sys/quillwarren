@@ -114,6 +114,20 @@ describe('handout notes in pictures', () => {
       expect((await app.inject({ url: `/api/v1/maps/${id}/handout.png?${q}` })).statusCode).toBe(200);
     }
   });
+  it('leaves a stray label far off the map out of the handout (resvg panicked on it and took the server down)', async () => {
+    const id = await newMapId();
+    const ops = [
+      { op: 'add', object: { id: 'l90', type: 'label', text: 'Stray far away', at: [-120, 10] } },
+      { op: 'add', object: { id: 'l91', type: 'label', text: 'The long hall of the old kings', at: [10, 4] } },
+    ];
+    expect((await app.inject({ method: 'POST', url: `/api/v1/maps/${id}/ops`, headers: auth, payload: { ops } })).statusCode).toBe(200);
+    const svg = (await app.inject({ url: `/api/v1/maps/${id}/handout.svg` })).body;
+    expect(svg).not.toContain('Stray far away');
+    expect(svg).toContain('The long hall of the old kings');
+    for (const q of ['dpi=60', 'paper=fit&dpi=53', 'crop=0,0,12,12&dpi=60']) {
+      expect((await app.inject({ url: `/api/v1/maps/${id}/handout.png?${q}` })).statusCode).toBe(200);
+    }
+  });
 });
 
 describe('the handout page', () => {

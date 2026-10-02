@@ -209,6 +209,17 @@ export function handoutSvg(map: DelveMap, o: HandoutOptions = {}): Handout {
   const scene = o.crop ? cropScene(drawn, drawn.bounds) : drawn;
   // notes that are on the map too are drawn below with the others, in the sheet's own frame (not clipped to the map)
   scene.layers = scene.layers.filter((l) => l.kind !== 'inscriptions');
+  // a label or stair tag far off the map (a stray one at [-120, 10]) is left out: resvg panics on what a
+  // clipped group holds far past the sheet, which kills the server (see inscriptionNear). Kept: its anchor
+  // within a quarter of the map's shorter side of the map, and its text within a whole side
+  const side = Math.min(scene.bounds.x1 - scene.bounds.x0, scene.bounds.y1 - scene.bounds.y0);
+  const inside = (x0: number, y0: number, x1: number, y1: number, slack: number) =>
+    x0 >= scene.bounds.x0 - slack && x1 <= scene.bounds.x1 + slack && y0 >= scene.bounds.y0 - slack && y1 <= scene.bounds.y1 + slack;
+  const fits = ([x, y]: readonly [number, number], w: number, h: number) => inside(x, y, x, y, side / 4) && inside(x - w, y - h, x + w, y + h, side);
+  for (const l of scene.layers) {
+    if (l.kind === 'text') l.items = l.items.filter((i) => fits(i.at, i.size * i.text.length * 0.3, i.size));
+    else if (l.kind === 'tags') l.items = l.items.filter((i) => fits(i.at, l.size * 1.5, l.size));
+  }
   if (o.names) {
     const fogged = o.revealedOnly && map.fog?.on;
     const items = map.objects
