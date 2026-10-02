@@ -1,5 +1,7 @@
 # Delve assets: props, environments and the standard kit
 
+Colour props (a second library with a fixed palette) have their own prompt pack: `docs/ASSETS-COLOUR.md`.
+
 This is the art Delve needs, the rules it must follow so the renderer can use it, and ready-made prompts for **Claude Design** (claude.ai/design).
 
 **How to use it:**
