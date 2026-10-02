@@ -26,6 +26,7 @@ import {
   propBounds,
   shapeBounds,
   updateFog,
+  squareUnit,
   ValidationError,
   scatterAlong,
   withAttachedDoors,
@@ -149,6 +150,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         name: z.string().min(1).max(200),
         style: z.enum(presetNames).optional().describe('Look: classic-hatching (default), clean, old-school-blue, print'),
         template: z.enum(['empty', 'test-dungeon']).optional(),
+        unit: z.string().max(20).optional().describe('What one square stands for, in feet or metres: "5 ft" (default), "10 ft", "1.5 m", "2 m"…'),
       },
     },
     (a) =>
@@ -692,6 +694,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         roughness: z.number().int().min(1).max(10).nullable().optional().describe('Wall roughness for the whole map: 1 smooth, 10 extremely rough (caves); null resets'),
         level_name: z.string().min(1).max(60).optional().describe('Rename this storey (only for maps that are storeys, see add_level)'),
         floor: z.number().int().optional().describe("This storey's floor number: 0 ground level, -1 one floor below ground, 1 the first floor up (only for storeys)"),
+        unit: z.string().max(20).optional().describe('What one square stands for: "5 ft", "10 ft", "1.5 m", "2 m"… (only the label and scale bars change; the map keeps its squares)'),
         category: z
           .string()
           .max(60)
@@ -709,7 +712,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           const all = r.changed.length > 1 ? ` (all ${r.changed.length} storeys)` : '';
           filed = r.category === null ? `Took the map off its library shelf${all}.` : `Filed under "${r.category}"${all}.`;
         }
-        const others = ['name', 'style', 'overrides', 'seed', 'roughness', 'level_name', 'floor'] as const;
+        const others = ['name', 'style', 'overrides', 'seed', 'roughness', 'level_name', 'floor', 'unit'] as const;
         if (filed && others.every((k) => a[k] === undefined)) return text(filed);
         const set: Record<string, unknown> = {};
         let note = '';
@@ -721,6 +724,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           note += ' Run label_stairs to renumber the stairs.';
         }
         if (a.name) set.name = a.name;
+        if (a.unit !== undefined) set.grid = { ...map.grid, unit: squareUnit(a.unit) };
         if (a.seed !== undefined) set.seed = a.seed;
         const unset = a.roughness === null ? ['roughness'] : [];
         if (a.roughness) set.roughness = a.roughness;
@@ -733,7 +737,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           const overrides = a.overrides === undefined ? cur.overrides : (a.overrides ?? undefined);
           set.style = { preset: a.style ?? cur.preset, ...(overrides ? { overrides } : {}) };
         }
-        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, overrides, seed, roughness, level_name, floor or category']);
+        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, overrides, seed, roughness, level_name, floor, unit or category']);
         return change(a.map, [{ op: 'update_map', set, ...(unset.length ? { unset } : {}) }], `${filed ? `${filed} ` : ''}Updated map settings (${[...Object.keys(set), ...unset].join(', ')}).${note}`);
       }),
   );

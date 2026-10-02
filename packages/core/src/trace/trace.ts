@@ -188,13 +188,17 @@ export function guessRoles(colours: readonly { colour: RGB; share: number }[]): 
   });
 }
 
-export function tracedMap(result: TraceResult, o: { id: string; name: string; feetPerSquare: number; style?: string; seed?: number }): DelveMap {
+export function tracedMap(
+  result: TraceResult,
+  o: { id: string; name: string; feetPerSquare?: number; unit?: string; style?: string; seed?: number },
+): DelveMap {
   return validateMap({
     format: FORMAT,
     version: FORMAT_VERSION,
     id: o.id,
     name: o.name.trim().slice(0, 200) || 'Traced map',
-    grid: { type: 'square', unit: `${o.feetPerSquare} ft` },
+    // the square size: a unit ("1.5 m"), or feet as before
+    grid: { type: 'square', unit: o.unit ?? `${o.feetPerSquare ?? 5} ft` },
     style: { preset: o.style ?? 'clean' },
     ...(o.seed !== undefined ? { seed: o.seed } : {}),
     objects: result.objects,

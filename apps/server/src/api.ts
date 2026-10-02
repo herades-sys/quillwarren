@@ -16,6 +16,7 @@ import {
   toDungeonScrawl,
   parseOps,
   PRESETS,
+  squareUnit,
   ValidationError,
   type DelveMap,
 } from '@delve/core';
@@ -59,7 +60,7 @@ export function errorResponse(e: unknown): { status: number; body: ErrorBody } {
 const byOf = (v: unknown, fallback: string): string =>
   typeof v === 'string' && v.trim() ? v.trim().slice(0, 40) : fallback;
 
-export function newMap(body: { name?: unknown; style?: unknown; template?: unknown }): DelveMap {
+export function newMap(body: { name?: unknown; style?: unknown; template?: unknown; unit?: unknown }): DelveMap {
   const template = body.template ?? 'empty';
   if (template !== 'empty' && template !== 'test-dungeon') {
     throw new ValidationError([`template must be "empty" or "test-dungeon", got ${JSON.stringify(template)}`]);
@@ -72,7 +73,8 @@ export function newMap(body: { name?: unknown; style?: unknown; template?: unkno
     version: FORMAT_VERSION,
     id: newMapId(),
     name: typeof body.name === 'string' && body.name.trim() ? body.name.trim() : (base?.name ?? 'Untitled map'),
-    grid: base?.grid ?? { type: 'square', unit: '5 ft' },
+    // what one square stands for: "5 ft" unless asked ("1.5 m")
+    grid: { ...(base?.grid ?? { type: 'square' }), unit: body.unit === undefined || body.unit === '' ? (base?.grid.unit ?? '5 ft') : squareUnit(body.unit) },
     style: { preset },
     seed: base?.seed ?? randomInt(1, 2 ** 31),
     objects: base?.objects ?? [],
@@ -295,13 +297,15 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
 
   // A city from Watabou's Medieval Fantasy City Generator (its JSON export) as a new map.
   app.post('/api/v1/maps/import.city', { preHandler: writer, bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
-    const q = req.query as { name?: string; feet?: string; style?: string; by?: string };
+    const q = req.query as { name?: string; feet?: string; unit?: string; style?: string; by?: string };
     try {
+      // the square size: unit ("10 ft", "3 m"), or feet as before
       const feet = q.feet === undefined ? 10 : Number(q.feet);
-      if (!Number.isFinite(feet) || feet < 1 || feet > 100) throw new ValidationError(['feet: feet per square, from 1 to 100 (5 is true scale, 10 the default)']);
+      if (q.unit === undefined && (!Number.isFinite(feet) || feet < 1 || feet > 100)) throw new ValidationError(['feet: feet per square, from 1 to 100 (5 is true scale, 10 the default)']);
+      const unit = q.unit === undefined ? `${feet} ft` : squareUnit(q.unit);
       if (q.style !== undefined && !PRESETS[q.style]) throw new ValidationError([`style: one of ${Object.keys(PRESETS).join(', ')}`]);
       const body = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString('utf8')) : req.body;
-      const { map, notes } = fromWatabou(body, { id: newMapId(), name: q.name, feetPerSquare: feet, seed: randomInt(1, 2 ** 31), ...(q.style ? { style: q.style } : {}) });
+      const { map, notes } = fromWatabou(body, { id: newMapId(), name: q.name, unit, seed: randomInt(1, 2 ** 31), ...(q.style ? { style: q.style } : {}) });
       const change = service.create(map, byOf(q.by, 'import'));
       return reply.code(201).send({ id: change.mapId, rev: change.rev, map: change.map, notes });
     } catch (e) {

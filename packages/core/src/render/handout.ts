@@ -11,6 +11,7 @@ import { hashString, rng } from './rng.ts';
 import { buildScene, type RenderOptions } from './scene.ts';
 import { resolveStyle } from './style.ts';
 import { sceneToSvg } from './svg.ts';
+import { parseSquareUnit } from '../units.ts';
 
 export type Paper = 'a4' | 'a3' | 'letter' | 'fit';
 export const PAPERS: Record<Exclude<Paper, 'fit'>, { name: string; w: number; h: number }> = {
@@ -142,8 +143,7 @@ function nice(v: number): number {
 }
 
 function unitOf(map: DelveMap): { size: number; name: string } {
-  const m = /^\s*(\d+(?:\.\d+)?)\s*([A-Za-z]+)\s*$/.exec(map.grid.unit ?? '');
-  return m ? { size: Number(m[1]), name: m[2]! } : { size: 5, name: 'ft' };
+  return parseSquareUnit(map.grid.unit);
 }
 
 function scaleBar(x: number, y: number, ptPerSquare: number, target: number, map: DelveMap, font: number): string {

@@ -106,7 +106,7 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | GET | `/maps` | | `{ maps: [{ id, name, rev, objects, created, updated, level? }] }`, newest first |
-| POST | `/maps` | `{ name?, style?, template?: "empty" \| "test-dungeon", by? }`, or `{ map: <full delve.map>, by? }` | `201 { id, rev: 1, map }` |
+| POST | `/maps` | `{ name?, style?, template?: "empty" \| "test-dungeon", unit?, by? }`, or `{ map: <full delve.map>, by? }`. `unit` is what one square stands for, in feet or metres: `"5 ft"` (default), `"10 ft"`, `"1.5 m"`, `"2 m"`… | `201 { id, rev: 1, map }` |
 | GET | `/maps/:id` | | `{ id, rev, map }` |
 | DELETE | `/maps/:id` | | `204`. A soft delete: the row stays in the database file, and the id can't be reused. The start page and the editor's map panel have Delete buttons |
 | GET | `/maps/:id/levels` | | `{ levels: [{ id, name, level }] }`: this map's storeys, top first (just the map itself when it has none) |
@@ -307,7 +307,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 ### Cities from Watabou's Medieval Fantasy City Generator
 
 - **Where the file comes from:** in the generator, Menu → Export as → JSON. It's version 0.11 or later: metres, with y pointing north.
-- **Request:** `POST /maps/import.city?name=&feet=10&style=clean` with the file as `application/json` (token or editor login). Returns `201 { id, rev, map, notes }`. The start page has an "Import city (Watabou JSON)" button with a scale choice.
+- **Request:** `POST /maps/import.city?name=&unit=10%20ft&style=clean` (`unit` is the square size in feet or metres, e.g. `3 m`; the older `feet=10` still works) with the file as `application/json` (token or editor login). Returns `201 { id, rev, map, notes }`. The start page has an "Import city (Watabou JSON)" button with a scale choice.
 - **What comes across:**
   - Buildings become rooms, pulled apart by 0.4 m so each keeps its own walls. The keep ("prisms") becomes a Landmark room.
   - Each city or castle wall becomes wall strips, a round tower at every corner, and a gap where a road passes through a corner (a gate). A small gatehouse stands on each side of every gate.

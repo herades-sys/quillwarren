@@ -9,12 +9,12 @@ import { floorText, isConnector } from './floors.ts';
 import { MARKERS } from './markers.ts';
 import { areaTitle, hasNotes, isNoteArea } from './notes.ts';
 import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Point, Prop, Room, Terrain } from './schema.ts';
+import { parseSquareUnit } from './units.ts';
 
 const fmt = (n: number): string => String(Math.round(n * 100) / 100);
 
 function unitOf(map: DelveMap): { size: number; name: string } {
-  const m = /^\s*(\d+(?:\.\d+)?)\s*([A-Za-z]+)\s*$/.exec(map.grid.unit ?? '');
-  return m ? { size: Number(m[1]), name: m[2]! } : { size: 5, name: 'ft' };
+  return parseSquareUnit(map.grid.unit);
 }
 
 const roomName = (r: Room): string => [r.label, r.name ?? '(unnamed)'].filter(Boolean).join(' ');

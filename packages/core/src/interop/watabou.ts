@@ -8,6 +8,7 @@
 import { EndType, FillRule, inflatePathsD, intersectD, JoinType, type PathD, type PathsD } from 'clipper2-ts';
 import { PRECISION } from '../geometry/shapes.ts';
 import { FORMAT, FORMAT_VERSION, type DelveMap, type MapObject, type Point } from '../schema.ts';
+import { metresPerSquare, parseSquareUnit } from '../units.ts';
 import { validateMap } from '../validate.ts';
 
 export class CityImportError extends Error {
@@ -23,6 +24,8 @@ export interface CityImportOptions {
   seed?: number;
   /** Feet per grid square (default 10: a whole town fits on one map). 5 is true Delve scale. */
   feetPerSquare?: number;
+  /** The square size as a unit ("10 ft", "3 m"); wins over feetPerSquare. */
+  unit?: string;
   /** Style preset (default clean: hatching around hundreds of houses gets busy). */
   style?: string;
 }
@@ -35,7 +38,6 @@ export interface CityImportResult {
 type Json = Record<string, unknown>;
 type Ring = [number, number][];
 
-const METRES_PER_FOOT = 0.3048;
 
 const isRing = (v: unknown): v is Ring => Array.isArray(v) && v.length >= 3 && v.every((p) => Array.isArray(p) && typeof p[0] === 'number' && typeof p[1] === 'number');
 
@@ -101,8 +103,8 @@ export function fromWatabou(input: unknown, opts: CityImportOptions): CityImport
   const cropPath: PathsD = [[{ x: crop.x0, y: crop.y0 }, { x: crop.x1, y: crop.y0 }, { x: crop.x1, y: crop.y1 }, { x: crop.x0, y: crop.y1 }]];
   const clip = (paths: PathsD): PathD[] => intersectD(paths, cropPath, FillRule.NonZero, PRECISION).filter((p) => p.length >= 3 && area(p) > 1);
 
-  const feet = opts.feetPerSquare && opts.feetPerSquare > 0 ? opts.feetPerSquare : 10;
-  const m = feet * METRES_PER_FOOT; // metres per square
+  const unit = opts.unit ?? `${opts.feetPerSquare && opts.feetPerSquare > 0 ? opts.feetPerSquare : 10} ft`;
+  const m = metresPerSquare(parseSquareUnit(unit)); // metres per square
   const r2 = (v: number) => Math.round(v * 100) / 100;
   // metres (y north) -> squares (y south), origin at the crop's top-left
   const T = (x: number, y: number): Point => [r2((x - crop.x0) / m), r2((crop.y1 - y) / m)];
@@ -247,7 +249,7 @@ export function fromWatabou(input: unknown, opts: CityImportOptions): CityImport
     version: FORMAT_VERSION,
     id: opts.id,
     name: (opts.name ?? 'Imported city').trim().slice(0, 200) || 'Imported city',
-    grid: { type: 'square', unit: `${feet} ft` },
+    grid: { type: 'square', unit },
     style: { preset: opts.style ?? 'clean' },
     ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
     objects,
@@ -255,7 +257,7 @@ export function fromWatabou(input: unknown, opts: CityImportOptions): CityImport
   const notes = [
     `${houses} buildings${prisms.length ? `, ${prisms.length} landmark${prisms.length === 1 ? '' : 's'}` : ''}${walls.length ? `, ${walls.length === 1 ? 'a wall' : `${walls.length} walls`} with ${towers} towers and ${gates} gate${gates === 1 ? '' : 's'}` : ''}.`,
     `Terrain: ${[roads.length && `${roads.length} road${roads.length === 1 ? '' : 's'}`, rivers.length && 'river', water.length && 'water', squares.length && 'square', polygonsIn(byId('fields')).length && 'fields', polygonsIn(byId('greens')).length && 'parks'].filter(Boolean).join(', ') || 'none'}${treeCount ? `; ${treeCount} trees` : ''}${named.length ? `; ${named.length} district names` : ''}.`,
-    `Scale: 1 square = ${feet} ft, so the city is ${w} × ${h} squares. Streets inside the walls are the gaps between buildings (the export has no street shapes).`,
+    `Scale: 1 square = ${unit}, so the city is ${w} × ${h} squares. Streets inside the walls are the gaps between buildings (the export has no street shapes).`,
   ];
   return { map: validateMap(map), notes };
 }

@@ -7,6 +7,7 @@ import {
   FORMAT,
   FORMAT_VERSION,
   PRESETS,
+  SQUARE_SIZES,
   sceneToSvg,
   validateMap,
   type DelveMap,
@@ -62,10 +63,12 @@ const secureBanner = (): string => `<div class="secure" role="note">
 
 function newMapForm(): string {
   const styles = Object.entries(PRESETS).map(([k, s]) => `<option value="${esc(k)}">${esc(s.name)}</option>`).join('');
+  const squares = SQUARE_SIZES.map((u) => `<option value="${esc(u)}"${u === '5 ft' ? ' selected' : ''}>${esc(u)}</option>`).join('');
   return `<form method="post" action="/maps/new" class="newmap">
   <label>Name <input name="name" required maxlength="200" placeholder="e.g. Goblin warren"></label>
   <label>Style <select name="style">${styles}</select></label>
   <label>Start from <select name="template"><option value="empty">an empty map</option><option value="test-dungeon">the test dungeon</option></select></label>
+  <label>1 square = <select name="unit" title="What one grid square stands for">${squares}</select></label>
   <button class="button primary" type="submit">New map</button>
   <span class="or">or</span>
   <label class="button" for="ds-file">Import Dungeon Scrawl file…</label>
@@ -73,7 +76,7 @@ function newMapForm(): string {
   <label class="button" for="city-file" title="A city from Watabou's Medieval Fantasy City Generator: Menu → Export as → JSON">Import city (Watabou JSON)…</label>
   <input id="city-file" type="file" accept=".json,application/json" hidden>
   <a class="button" href="/import/image" title="A city plan or dungeon picture with flat colours, traced into a map">Trace a map picture (PNG/JPG)…</a>
-  <label>1 square = <select id="city-feet"><option value="5">5 ft (true scale)</option><option value="10" selected>10 ft</option><option value="20">20 ft (overview)</option></select></label>
+  <label title="For the city import: how much of the city one square covers">Import: 1 square = <select id="city-unit"><option value="5 ft">5 ft (true scale)</option><option value="10 ft" selected>10 ft</option><option value="20 ft">20 ft (overview)</option><option value="1.5 m">1.5 m (true scale)</option><option value="3 m">3 m</option><option value="6 m">6 m (overview)</option></select></label>
   <span id="import-status" class="note" role="status"></span>
 </form>
 <script>
@@ -83,8 +86,8 @@ function newMapForm(): string {
     const status = document.getElementById('import-status');
     status.textContent = 'Importing ' + file.name + '…';
     const name = file.name.replace(/\\.json$/i, '').replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
-    const feet = document.getElementById('city-feet').value;
-    const res = await fetch('/api/v1/maps/import.city?feet=' + feet + '&name=' + encodeURIComponent(name), {
+    const unit = document.getElementById('city-unit').value;
+    const res = await fetch('/api/v1/maps/import.city?unit=' + encodeURIComponent(unit) + '&name=' + encodeURIComponent(name), {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: await file.text(),
     });
     const body = await res.json().catch(() => ({}));
@@ -269,7 +272,7 @@ export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapS
   // The start page's "New map" form (logged-in editors only).
   app.post('/maps/new', async (req, reply) => {
     if (!editorSession(auth.sessions, req)) return reply.code(401).type('text/plain').send('log in to create maps');
-    const body = (req.body ?? {}) as { name?: unknown; style?: unknown; template?: unknown };
+    const body = (req.body ?? {}) as { name?: unknown; style?: unknown; template?: unknown; unit?: unknown };
     try {
       const change = store.create(newMap(body), 'editor');
       return reply.redirect(`/maps/${encodeURIComponent(change.mapId)}?edit=1`, 303);
