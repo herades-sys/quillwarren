@@ -5,7 +5,7 @@
 import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
 import { artLoader } from './art.ts';
 import { initChat } from './chat.ts';
-import { SVG_NS } from './ctx.ts';
+import { onControl, SVG_NS } from './ctx.ts';
 import { initEditor } from './editor.ts';
 import { initMarkers } from './markers.ts';
 import { ago, changedIds, countOps, easeInOut, lerpBounds, objectBounds, pad, unionBounds, zoomAt } from './logic.ts';
@@ -243,6 +243,7 @@ const spread = () => {
   return a && b ? { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 } : null;
 };
 stage.addEventListener('pointerdown', (e) => {
+  if (onControl(e)) return; // a button over the map keeps its click
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2 && vb) {
     const s = spread()!;

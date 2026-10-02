@@ -48,7 +48,7 @@ import {
   type Shape,
 } from '@delve/core';
 import type { IconName } from '@delve/ui';
-import type { ViewerCtx } from './ctx.ts';
+import { onControl, type ViewerCtx } from './ctx.ts';
 import { btn, checkbox, field, h, iconBtn, iconEl, input, miniRange, range, seg, select, svgEl, textarea, type Kid } from './dom.ts';
 import { drawHint, FILL_CHOICES, SHAPE_CHOICES, shapeGhost } from './draw-shapes.ts';
 import {
@@ -418,6 +418,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   // ---------- pointer ----------
 
   function onDown(e: PointerEvent): void {
+    if (onControl(e)) return; // the storey, zoom and context-bar buttons keep their clicks
     if (e.pointerType === 'touch') {
       touches.add(e.pointerId);
       if (touches.size > 1) {

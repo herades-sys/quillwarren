@@ -110,7 +110,7 @@ ${viewSeg('view', '')}
   <a class="btn btn-primary ed-wide" id="screen-link" href="/maps/${enc}/screen" target="_blank" rel="noopener" title="Open the players' screen in a new window">${ic('screen', 17)}Players’ screen</a>
   <div class="ed-menu-wrap ed-wide"><button class="btn btn-secondary" type="button" id="export-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu">${ic('download', 17)}Export${icon('chevron-down', { size: 14, className: 'text-muted' })}</button>
     <div class="menu ed-menu" role="menu" id="export-menu" hidden>${exportItems}</div></div>
-  <button class="btn btn-icon ed-storey-btn" type="button" id="storey-btn" aria-label="Change storey" aria-haspopup="menu" aria-expanded="false"${o.levels.length > 1 ? '' : ' hidden'}><span class="ed-storey-chip numeral" id="storey-chip"></span></button>
+  <button class="btn btn-icon ed-storey-btn" type="button" id="storey-btn" aria-label="Change storey" aria-haspopup="menu" aria-expanded="false"${o.levels.length > 1 ? '' : ' hidden'}><span class="ed-storey-chip" id="storey-chip"></span></button>
   <div class="ed-menu-wrap ed-narrow"><button class="btn btn-icon" type="button" id="more-btn" aria-label="More: export, 3D, players’ screen, settings" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">${ic('more', 20)}</button>
     <div class="menu ed-menu" role="menu" id="more-menu" hidden>${moreItems}</div></div>
   <span class="vsep ed-desk"></span>
@@ -204,7 +204,7 @@ export const EDITOR_CSS = `
   .ed-crop { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-top: 6px; box-shadow: inset 0 1px 0 var(--color-border); }
   .ed-crop[hidden] { display: none; }
   .ed-menu-label { padding: 4px 10px 2px; }
-  .ed-storey-chip { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--color-accent); color: var(--color-accent); font-size: 17px; }
+  .ed-storey-chip { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--color-accent); color: var(--color-accent); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
   .ed-avatar { margin-left: 4px; }
 
   .ed-body { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -282,10 +282,12 @@ export const EDITOR_CSS = `
 
   .ed-storeys { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; width: 46px; border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-md); z-index: 5; }
   .ed-storeys[hidden], .ed-storeys:empty { display: none; }
-  .ed-sbtn { width: 38px; height: 34px; border: 0; border-radius: 7px; cursor: pointer; font-family: var(--font-numeral); font-size: 17px; line-height: 1; background: transparent; color: var(--color-text-muted); position: relative; }
+  .ed-sbtn { width: 38px; height: 34px; border: 0; border-radius: 7px; cursor: pointer; font-family: var(--font-ui); font-weight: 600; font-variant-numeric: tabular-nums; font-size: 15px; line-height: 1; background: transparent; color: var(--color-text-muted); position: relative; }
   .ed-sbtn:hover { background: var(--color-hover); color: var(--color-text); }
   .ed-sbtn[aria-current="true"] { background: var(--tint-accent-bg); color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent); }
-  .ed-sbtn-add { height: 28px; display: grid; place-items: center; font-family: inherit; }
+  /* + and − step a storey up or down; the floor numbers use the UI font (the numeral font draws 1 and 0 like I and O) */
+  .ed-sbtn-step { height: 28px; display: grid; place-items: center; font-size: 19px; font-weight: 500; }
+  .ed-sbtn:disabled { opacity: .35; cursor: default; background: transparent; }
   .ed-sname { position: absolute; left: 48px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-family: var(--font-ui); font-size: var(--text-sm); padding: 4px 8px; border-radius: 6px; background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-sm); pointer-events: none; }
   .ed-skeys { font-size: 9.5px; color: var(--color-text-faint); padding: 2px 0 1px; }
   .ed-zoom { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-md); z-index: 5; }

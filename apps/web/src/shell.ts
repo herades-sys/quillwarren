@@ -242,10 +242,32 @@ export function initShell(o: { mapId: string; edit: boolean; view: View; hooks: 
       return;
     }
     storeysBox.hidden = false;
-    const add = (position: 'above' | 'below') =>
-      h('button', { type: 'button', class: 'ed-sbtn ed-sbtn-add', 'aria-label': `Add storey ${position}`, title: `Add storey ${position}`, onclick: () => storeyOpts.onAdd(position) }, iconEl('plus', 15));
+    // + goes up a storey and − down one (like PgUp / PgDn); at the top or bottom they offer a new storey there
+    const step = (dir: 'above' | 'below') => {
+      const next = cur < 0 ? undefined : list[dir === 'above' ? cur - 1 : cur + 1];
+      const label = next
+        ? `${dir === 'above' ? 'Up' : 'Down'} one storey: ${storeyTitle(next)} · ${dir === 'above' ? 'PgUp' : 'PgDn'}`
+        : storeyOpts.canAdd
+          ? `Add a new storey ${dir}`
+          : `No storey ${dir}`;
+      return h(
+        'button',
+        {
+          type: 'button',
+          class: 'ed-sbtn ed-sbtn-step',
+          'aria-label': label,
+          title: label,
+          disabled: !next && !storeyOpts.canAdd,
+          onclick: () => {
+            if (next) return goStorey(next.id);
+            if (storeyOpts.canAdd && confirm(`Add a new, empty storey ${dir} this one?`)) storeyOpts.onAdd(dir);
+          },
+        },
+        dir === 'above' ? '+' : '−',
+      );
+    };
     storeysBox.replaceChildren(
-      ...(storeyOpts.canAdd ? [add('above')] : []),
+      ...(many || storeyOpts.canAdd ? [step('above')] : []),
       ...list.map((s, i) => {
         const here = s.id === o.mapId;
         const title = many ? storeyTitle(s) : 'This map';
@@ -256,7 +278,7 @@ export function initShell(o: { mapId: string; edit: boolean; view: View; hooks: 
           here && many ? h('span', { class: 'ed-sname' }, s.level?.name ?? s.name) : null,
         );
       }),
-      ...(storeyOpts.canAdd ? [add('below')] : []),
+      ...(many || storeyOpts.canAdd ? [step('below')] : []),
       ...(many ? [h('span', { class: 'ed-skeys' }, 'PgUp/Dn')] : []),
     );
   }
@@ -271,7 +293,7 @@ export function initShell(o: { mapId: string; edit: boolean; view: View; hooks: 
       'div',
       { class: 'menu ed-menu', role: 'menu', style: 'right:0;top:48px;width:240px' },
       ...list.map((s, i) =>
-        h('button', { type: 'button', class: 'menu-item', role: 'menuitemradio', 'aria-checked': String(s.id === o.mapId), onclick: () => goStorey(s.id) }, h('span', { class: 'numeral', style: 'min-width:22px' }, number(s, i, list)), storeyTitle(s)),
+        h('button', { type: 'button', class: 'menu-item', role: 'menuitemradio', 'aria-checked': String(s.id === o.mapId), onclick: () => goStorey(s.id) }, h('span', { style: 'min-width:22px;font-weight:600;font-variant-numeric:tabular-nums' }, number(s, i, list)), storeyTitle(s)),
       ),
       ...(storeyOpts.canAdd
         ? (['above', 'below'] as const).map((p) => h('button', { type: 'button', class: 'menu-item has-icon', role: 'menuitem', onclick: () => (closeMenu(), storeyOpts.onAdd(p)) }, iconEl('plus', 16), `Add a storey ${p}`))
