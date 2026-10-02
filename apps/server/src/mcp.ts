@@ -24,6 +24,7 @@ import {
   parseOps,
   PRESETS,
   propBounds,
+  propHidden,
   shapeBounds,
   updateFog,
   squareUnit,
@@ -395,6 +396,10 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         scale: z.number().positive().max(4).optional(),
         name: z.string().max(200).optional(),
         notes: z.string().max(10_000).optional().describe('GM notes, e.g. what is inside a chest'),
+        hidden: z
+          .boolean()
+          .optional()
+          .describe('Hidden from players (GM view only), e.g. a trap they have not found. Default: pressure plates, spike traps and floor runes are hidden, everything else is shown; false shows a hidden trap'),
         id: z.string().optional().describe('Defaults to the next i<n>'),
       },
     },
@@ -412,9 +417,11 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           ...(a.scale && a.scale !== 1 ? { scale: a.scale } : {}),
           ...(a.name ? { name: a.name } : {}),
           ...(a.notes ? { notes: a.notes } : {}),
+          ...(a.hidden !== undefined ? { gmOnly: a.hidden } : {}),
         };
         const b = propBounds(prop);
-        return addObject(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.`);
+        const hidden = propHidden(prop as { asset: string; gmOnly?: boolean }) ? ' It is hidden from players (GM view only).' : '';
+        return addObject(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.${hidden}`);
       }),
   );
 

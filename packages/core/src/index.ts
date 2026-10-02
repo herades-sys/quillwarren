@@ -46,6 +46,8 @@ export {
   assetInfo,
   categoryOf,
   propBounds,
+  propHidden,
+  HIDDEN_ASSETS,
   propCentre,
   type AssetInfo,
   type AssetKind,

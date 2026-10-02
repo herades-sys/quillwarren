@@ -6,6 +6,7 @@
 import {
   ASSETS,
   assetInfo,
+  categoryOf,
   CATEGORIES,
   computeFloor,
   connectOps,
@@ -20,6 +21,8 @@ import {
   NOTES_MAX,
   PRESETS,
   propBounds,
+  propHidden,
+  HIDDEN_ASSETS,
   propCentre,
   scatterAlong,
   shapeBounds,
@@ -1373,6 +1376,13 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           range('Rotation', { value: rot, min: 0, max: 345, step: 15, show: (v) => `${v}°`, keys: 'Q / E', onChange: (v) => void apply([setRotation(id, v)]) }),
           range('Scale', { value: Math.round((o.scale ?? 1) * 100), min: 25, max: 400, step: 5, show: (v) => `${v}%`, onChange: (v) => (v === 100 ? unset('scale') : upd({ scale: v / 100 })) }),
           ...(isConnector(o) ? [stairLabelField(o)] : []),
+          // GM symbols are never drawn for players; anything else can be hidden (traps are by default)
+          ...(categoryOf(o.asset)?.gmOnly
+            ? []
+            : [
+                checkbox('Hidden from players', propHidden(o), (on) => (on === HIDDEN_ASSETS.has(o.asset) ? unset('gmOnly') : upd({ gmOnly: on }))),
+                ...(propHidden(o) ? [h('p', { class: 'hint' }, 'Only in the GM view: players don’t see it on their screen, on Delve Table or in their exports. Untick it once they find it.')] : []),
+              ]),
           field('GM note · only you see this', text(id, 'notes', o.notes, { area: true })),
         );
         break;

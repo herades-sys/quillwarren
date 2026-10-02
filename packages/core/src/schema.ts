@@ -96,6 +96,12 @@ export const Prop = z.strictObject({
   scale: positive.optional(),
   /** Ladders, trapdoors and spiral stairs: the GM stair label, like a stairs object's. */
   label: StairLabel.optional(),
+  /**
+   * Hidden from players: drawn only in the GM view. Unset: the asset decides
+   * (hidden traps such as pressure plates are hidden, everything else is shown);
+   * false shows a hidden trap once the players have found it.
+   */
+  gmOnly: z.boolean().optional(),
 });
 
 /** An area filled with a repeating terrain tile (water, grass, lava…), drawn over the floor and under props. */

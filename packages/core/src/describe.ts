@@ -3,7 +3,7 @@ import { corridorBounds, corridorPath, pathLength, roomsById } from './geometry/
 import { computeFloor } from './geometry/floor.ts';
 import { containsPoint, shapeArea, shapeBounds } from './geometry/shapes.ts';
 import { boundarySegments, collinearOverlap, doorSegment } from './geometry/walls.ts';
-import { assetInfo } from './assets/catalog.ts';
+import { assetInfo, propHidden } from './assets/catalog.ts';
 import { fogSummary } from './fog.ts';
 import { floorText, isConnector } from './floors.ts';
 import { MARKERS } from './markers.ts';
@@ -120,12 +120,18 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
     for (const p of props) {
       const where = roomAt(p.at);
       const byAsset = groups.get(where) ?? new Map<string, string[]>();
-      byAsset.set(p.asset, [...(byAsset.get(p.asset) ?? []), p.id]);
+      // hidden ones (traps not yet found) are listed apart from the ones players see
+      const key = `${p.asset}${propHidden(p) ? '\u0000hidden' : ''}`;
+      byAsset.set(key, [...(byAsset.get(key) ?? []), p.id]);
       groups.set(where, byAsset);
     }
     lines.push('Props:');
     for (const [where, byAsset] of groups) {
-      lines.push(`  ${where}: ${[...byAsset].map(([asset, ids]) => `${assetInfo(asset)?.name ?? asset} (${ids.join(', ')})`).join(', ')}`);
+      const named = [...byAsset].map(([key, ids]) => {
+        const [asset, hidden] = key.split('\u0000');
+        return `${assetInfo(asset!)?.name ?? asset} (${ids.join(', ')}${hidden ? '; hidden from players' : ''})`;
+      });
+      lines.push(`  ${where}: ${named.join(', ')}`);
     }
   }
   if (terrain.length) {

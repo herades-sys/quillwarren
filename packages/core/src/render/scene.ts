@@ -1,7 +1,7 @@
 // buildScene: map + style -> an ordered list of drawing layers in grid squares.
 // sceneToSvg (svg.ts) writes it out; a Canvas backend can draw the same layers.
 import { differenceD, EndType, FillRule, inflatePathsD, intersectD, JoinType, type PathsD } from 'clipper2-ts';
-import { assetInfo, categoryOf, propBounds, type AssetLayer } from '../assets/catalog.ts';
+import { assetInfo, categoryOf, propBounds, propHidden, type AssetLayer } from '../assets/catalog.ts';
 import { fogShade, visiblePaths } from '../fog.ts';
 import { clipPolylines, insidePolygons } from '../geometry/objects.ts';
 import type { Palette } from '../assets/svg.ts';
@@ -239,7 +239,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const clips: Record<string, Polygon[]> = { floor };
   const fb = floorBounds(floor);
   const margin = opts.margin ?? 1;
-  const props = map.objects.filter((o): o is Prop => o.type === 'prop' && (view === 'gm' || !categoryOf(o.asset)?.gmOnly) && seen(o.at));
+  const props = map.objects.filter((o): o is Prop => o.type === 'prop' && (view === 'gm' || !propHidden(o)) && seen(o.at));
   const shownImage = (o: MapImage) => view === 'gm' || !o.gmOnly;
   const images = map.objects.filter((o): o is MapImage => o.type === 'image' && shownImage(o) && seen(o.at));
   const terrain = map.objects
@@ -264,7 +264,8 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
     ...(whole
       ? map.objects.flatMap((o) => (o.type === 'terrain' ? [shapeBounds(o.shape)] : []))
       : terrain.flatMap((x) => (floorBounds(x.polygons) ? [floorBounds(x.polygons)!] : []))),
-    ...(whole ? map.objects.filter((o): o is Prop => o.type === 'prop' && (view === 'gm' || !categoryOf(o.asset)?.gmOnly)) : props).map(propBounds),
+    // every prop counts, hidden ones too, so the GM's and the players' pictures are the same size and line up (e.g. as Roll20 layers)
+    ...map.objects.filter((o): o is Prop => o.type === 'prop' && (Boolean(whole) || seen(o.at))).map(propBounds),
     ...(whole ? map.objects.filter((o): o is MapImage => o.type === 'image' && shownImage(o)) : images).map(imageBounds),
   ];
   const content: Bounds | null = parts.length

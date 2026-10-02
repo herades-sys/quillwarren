@@ -56,6 +56,19 @@ export const CATEGORIES: readonly Category[] = [
 
 export const ASSETS: readonly AssetInfo[] = catalog as AssetInfo[];
 
+/**
+ * Props that are secrets until found: hidden from players unless a prop says
+ * otherwise (gmOnly: false). Kept here rather than in catalog.json, which
+ * `npm run assets` writes from the art's metadata.
+ */
+export const HIDDEN_ASSETS: ReadonlySet<string> = new Set(['pressure-plate', 'spike-trap', 'rune']);
+
+/** Is this prop left out of the players' view? GM symbols always are; otherwise the prop's own gmOnly, or the asset's default. */
+export function propHidden(p: { asset: string; gmOnly?: boolean }): boolean {
+  if (categoryById.get(byId.get(p.asset)?.category ?? '')?.gmOnly) return true;
+  return p.gmOnly ?? HIDDEN_ASSETS.has(p.asset);
+}
+
 const byId = new Map(ASSETS.map((a) => [a.id, a]));
 const categoryById = new Map(CATEGORIES.map((c) => [c.id, c]));
 

@@ -185,6 +185,7 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
 | `GET /assets/icons/<name>.svg`, `/assets/brand/<name>.svg`, `/favicon.svg` | Editor icons and the Delve logo |
 
 - **Props** are `{ type: "prop", asset, at, rotation?, scale? }`. `at` is the centre of the footprint. At rotation 0 a prop faces south, and rotation turns it clockwise in degrees.
+  - **Hidden from players:** `gmOnly: true` keeps a prop out of the players' view (their screen, Delve Table, players' exports and handouts). Unset, the asset decides: pressure plates, spike traps and floor runes (core `HIDDEN_ASSETS`) are hidden until found; `gmOnly: false` shows one. GM symbols are never drawn for players. The editor has a "Hidden from players" checkbox per prop; MCP `add_prop` takes `hidden`. Pictures keep the same size in both views, so the GM and players' PNGs line up.
 - **Prop brush:** in the editor's Prop tool, Shift + drag paints copies of the picked prop along the path.
   - **Regular** puts one every N squares, snapped to the grid like a click.
   - **Irregular** varies the gaps and strays up to `spread` squares to the sides, turning each copy at random and sizing it 0.8–1.2×.
