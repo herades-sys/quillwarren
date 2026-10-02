@@ -2,7 +2,8 @@
 // corridor is routed between its two rooms, from their current positions, so
 // it follows whenever a room moves.
 import { EndType, inflatePathsD, JoinType, type PathsD } from 'clipper2-ts';
-import type { Corridor, DelveMap, Point, Room } from '../schema.ts';
+import type { Corridor, DelveMap, Point, Room, Shape } from '../schema.ts';
+import { outlineRoute, type Mouth } from './attach.ts';
 import { PRECISION, shapeBounds, toPath, type Bounds } from './shapes.ts';
 
 /** Centre for a corridor of width w whose edges land on whole squares. */
@@ -63,7 +64,55 @@ export function corridorPath(c: Corridor, rooms: ReadonlyMap<string, Room>): Poi
   const a = c.from ? rooms.get(c.from) : undefined;
   const b = c.to ? rooms.get(c.to) : undefined;
   if (!a || !b) return null;
+  if (c.route === 'outline') return shapeRoute(a.shape, b.shape, c.width)?.path ?? null;
   return autoRoute(shapeBounds(a.shape), shapeBounds(b.shape), c.width);
+}
+
+// ---------- routes to the rooms' real outlines (Corridor.route "outline") ----------
+
+/** A routed corridor: its centerline, and where it meets each room (the two corners of the mouth, where a door goes). */
+export interface CorridorRoute {
+  path: Point[];
+  mouths: [Mouth, Mouth];
+}
+
+/** The mouth across a routed path's end, square to its last segment (where doorAtEnd puts a door). */
+export function endMouth(path: readonly Point[], end: 'start' | 'end', width: number): Mouth {
+  const [p, q] = end === 'start' ? [path[0]!, path[1]!] : [path.at(-1)!, path.at(-2)!];
+  return p[0] === q[0]
+    ? [
+        [p[0] - width / 2, p[1]],
+        [p[0] + width / 2, p[1]],
+      ]
+    : [
+        [p[0], p[1] - width / 2],
+        [p[0], p[1] + width / 2],
+      ];
+}
+
+/**
+ * The route between two room shapes to their real outlines (core
+ * geometry/attach.ts). Two rectangles keep the box route, which already meets
+ * them exactly; if no clean route exists, the box route is the fallback.
+ */
+export function shapeRoute(a: Shape, b: Shape, width: number): CorridorRoute | null {
+  const box = (): CorridorRoute | null => {
+    const path = autoRoute(shapeBounds(a), shapeBounds(b), width);
+    return path ? { path, mouths: [endMouth(path, 'start', width), endMouth(path, 'end', width)] } : null;
+  };
+  if ('rect' in a && 'rect' in b) return box();
+  return outlineRoute(a, b, width) ?? box();
+}
+
+/** A corridor's route with its mouths, as corridorPath routes it; null for corridors with their own path or a missing room. */
+export function corridorRoute(c: Corridor, rooms: ReadonlyMap<string, Room>): CorridorRoute | null {
+  if (c.path) return null;
+  const a = c.from ? rooms.get(c.from) : undefined;
+  const b = c.to ? rooms.get(c.to) : undefined;
+  if (!a || !b) return null;
+  if (c.route === 'outline') return shapeRoute(a.shape, b.shape, c.width);
+  const path = autoRoute(shapeBounds(a.shape), shapeBounds(b.shape), c.width);
+  return path ? { path, mouths: [endMouth(path, 'start', c.width), endMouth(path, 'end', c.width)] } : null;
 }
 
 /** Area covered by a corridor path: butt ends, square (miter) joins. */

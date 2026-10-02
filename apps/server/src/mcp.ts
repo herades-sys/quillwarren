@@ -59,6 +59,7 @@ import { presetArg, shapeOrPreset } from './draw-args.ts';
 import { registerPropTools } from './prop-tools.ts';
 import { render } from './render.ts';
 import { registerSegmentTools } from './segments.ts';
+import { registerCorridorTools } from './corridor-tools.ts';
 import { registerHeightTools } from './height-tools.ts';
 import type { MapService } from './service.ts';
 import { labelStairs, labelStairsSummary } from './stair-labels.ts';
@@ -242,7 +243,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     {
       title: 'Connect rooms',
       description:
-        'Add a corridor between two rooms. It is routed automatically (straight, or L-shaped) and re-routes when a room moves. ' +
+        'Add a corridor between two rooms. It is routed automatically (straight, L or Z, meeting hexagons, circles and other shapes at their real outlines) and re-routes when a room moves. ' +
         'doors puts doors across the corridor mouths at its current ends (doors stay put if rooms move later).',
       inputSchema: {
         map: mapId,
@@ -263,7 +264,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           doorStyle: a.door_style,
           id: a.id,
         });
-        const len = path.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0);
+        const len = Math.round(path.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0) * 100) / 100;
         return change(
           a.map,
           ops,
@@ -993,6 +994,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
   );
 
   registerSegmentTools(server, service, BY);
+  registerCorridorTools(server, service, BY);
   if (props) registerPropTools(server, props, store, base, BY);
   registerHeightTools(server, service, BY);
   return server;

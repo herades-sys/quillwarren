@@ -35,6 +35,9 @@ export const Room = z.strictObject({
   roughness: Roughness.optional(),
 });
 
+/** Corridor routing: "outline" meets the rooms' real outlines (see Corridor.route). */
+export const CORRIDOR_ROUTES = ['outline'] as const;
+
 export const Corridor = z.strictObject({
   type: z.literal('corridor'),
   ...common,
@@ -43,6 +46,13 @@ export const Corridor = z.strictObject({
   width: positive,
   path: z.array(Point).min(2, 'needs at least 2 points').optional(),
   roughness: Roughness.optional(),
+  /**
+   * How a corridor without `path` is routed. "outline": to the rooms' real
+   * outlines (hexagons, circles, freehand shapes), the way `connect` and the
+   * editor make corridors now. Unset: between the rooms' bounding boxes, as
+   * corridors made before 2026-10-02 are (rerouting switches one over).
+   */
+  route: z.enum(CORRIDOR_ROUTES).optional(),
 });
 
 /** How a cutout looks: "rock" (the default) shows what's around the dungeon; "solid" fills it with the wall colour (pillars, wall blocks). */

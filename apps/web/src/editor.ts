@@ -12,6 +12,7 @@ import {
   CUSTOM_CATEGORY,
   computeFloor,
   connectOps,
+  rerouteOps,
   countsText,
   doorAngle,
   doorSegment,
@@ -835,6 +836,13 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
             : { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
     void apply([{ op: 'add', object: obj }], [obj.id]);
     draw();
+  }
+
+  /** The corridor inspector's Re-route: to the rooms' real outlines, with its doors moved to the new mouths (one undo step). */
+  function reroute(id: string): void {
+    const plan = rerouteOps(map(), [id]);
+    if (plan.ops.length) void apply(plan.ops, [id]);
+    else ctx.toast(plan.skipped[0] ? `Can’t re-route it: ${plan.skipped[0].reason}.` : 'It already meets the rooms’ outlines.', 'info');
   }
 
   function connect(a: string, b: string): void {
@@ -1857,9 +1865,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           field('Name', text(id, 'name', o.name)),
           field('Width', number(o.width, 0.5, (v) => v > 0 && upd({ width: v })), { unit: 'sq' }),
           roughnessField(o),
-          h('p', { class: 'hint' }, `Connects ${o.from ?? '?'} and ${o.to ?? '?'}. ${o.path ? `Custom path, ${o.path.length} points.` : 'Routed automatically; it follows its rooms.'}`),
+          h('p', { class: 'hint' }, `Connects ${o.from ?? '?'} and ${o.to ?? '?'}. ${o.path ? `Custom path, ${o.path.length} points.` : o.route === 'outline' ? 'Routed automatically to the rooms’ outlines; it follows its rooms.' : 'Routed automatically between the rooms’ boxes (an older corridor); it follows its rooms.'}`),
         );
         if (o.path && o.from && o.to) out.push(btn('Route automatically', { icon: 'corridor', onclick: () => unset('path') }));
+        if (o.path || o.route !== 'outline') out.push(btn('Re-route', { icon: 'corridor', title: 'Route it again to the rooms’ real outlines, and move its doors to the new mouths', onclick: () => reroute(id) }));
         break;
       case 'door': {
         // the angle turns it about its middle: 0 runs across, 90 down

@@ -58,7 +58,7 @@ See `fixtures/test-map-4p.delve.json` for the test dungeon. The top level looks 
 | Object | Fields | Notes |
 |---|---|---|
 | `room` | `shape`, `label`, `name`, `notes` | Shapes: `{"rect": [x, y, w, h]}`, `{"poly": [[x, y], ...]}`, `{"circle": [cx, cy, r]}`. Every object may have `name` and `notes`; on rooms, corridors and terrain `notes` are the GM notes (never drawn; see docs/API.md, "GM notes") |
-| `corridor` | `from`, `to`, `width`, `path`, `notes` | Without `path`, the server routes it (straight or L-shaped) and re-routes it whenever a connected room moves. `path` is the centerline, and the ends are square |
+| `corridor` | `from`, `to`, `width`, `path`, `route`, `notes` | Without `path`, the server routes it (straight or L-shaped) and re-routes it whenever a connected room moves. `path` is the centerline, and the ends are square. `route: "outline"` (corridors made since 2026-10-02) routes to the rooms' real outlines instead of their bounding boxes (docs/API.md, "Corridors between rooms of any shape") |
 | `cutout` | `shape`, `name`, `fill` | Removed from the floor: pillars, pits. `fill: "solid"` draws it in the wall colour (solid pillars, wall blocks); the default `"rock"` shows what's around the dungeon |
 | `door` | `at`, `along` (`x` or `y`), `angle?` (degrees clockwise from east; wins over `along`), `width`, `style`, `open` | Styles: normal, double, locked, secret, portcullis, archway. Secret doors render as wall in the players' view. With `angle` a door sits in slanted and curved walls (docs/API.md, "Doors") |
 | `stairs` | `shape`, `direction`, `label` | `label` is the GM stair label: floor number, then flight letter ("0A", "-1C"); ladder, trapdoor and spiral-stair props have it too |

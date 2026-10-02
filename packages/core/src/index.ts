@@ -3,6 +3,7 @@ export { validateMap, ValidationError } from './validate.ts';
 export { applyOps, parseOps, OpError, OpSchema, MAP_FIELDS, type Op, type ApplyResult } from './ops.ts';
 export { describeMap, type DescribeOptions } from './describe.ts';
 export { nextId, nextLabel, doorAtEnd, connectOps, withAttachedDoors, ConnectError, type ConnectOptions, type ConnectPlan } from './build.ts';
+export { rerouteOps, mouthDoor, type RerouteResult } from './build.ts';
 export {
   toDungeonScrawl,
   fromDungeonScrawl,
@@ -37,6 +38,8 @@ export {
   type Bounds,
 } from './geometry/shapes.ts';
 export { autoRoute, corridorPath, corridorOutline, corridorBounds, pathLength, roomsById } from './geometry/corridors.ts';
+export { corridorRoute, shapeRoute, endMouth, type CorridorRoute } from './geometry/corridors.ts';
+export { outlineRoute, type OutlineRoute, type Mouth } from './geometry/attach.ts';
 export { computeFloor, floorPaths, floorArea, polygonsOf } from './geometry/floor.ts';
 export {
   computeWalls,
