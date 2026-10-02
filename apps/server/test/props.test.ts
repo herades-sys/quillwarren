@@ -163,14 +163,14 @@ describe('storeys', () => {
     expect((await app.inject({ method: 'POST', url: `/api/v1/maps/${id}/levels`, headers: auth, payload: { name: '' } })).statusCode).toBe(400);
     expect((await app.inject({ method: 'POST', url: `/api/v1/maps/${id}/levels`, payload: { name: 'Attic' } })).statusCode).toBe(401);
 
-    // the editor shows a storey picker, and deleting a storey takes it out of the group
+    // the map page lists the storeys for its storeys control, and deleting a storey takes it out of the group
     const page = (await app.inject({ url: `/maps/${id}` })).body;
-    expect(page).toMatch(/<select id="storey-select" aria-label="Storey" title="Storeys of this place">/);
-    expect(page).toContain('>1 · Belfry</option>'); // floor number first
+    expect(page).toMatch(/id="storey-btn" aria-label="Change storey" aria-haspopup="menu" aria-expanded="false">/);
+    expect(page).toMatch(/"levels":\[.*"Belfry".*"order":1/s); // floor number 1
     expect((await app.inject({ method: 'DELETE', url: `/api/v1/maps/${cellar.id}`, headers: auth })).statusCode).toBe(204);
     expect((await app.inject({ url: `/api/v1/maps/${id}/levels` })).json().levels).toHaveLength(2);
     const alone = (await app.inject({ url: `/maps/${await newMapId('empty')}` })).body;
-    expect(alone).toMatch(/<select id="storey-select"[^>]* hidden>/);
+    expect(alone).toMatch(/id="storey-btn"[^>]* hidden>/);
   });
 });
 

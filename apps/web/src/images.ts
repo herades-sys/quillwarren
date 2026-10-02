@@ -1,10 +1,10 @@
-// The editor's Image tool (I): the user's own pictures. Upload one (the button,
+// The editor's Image tool (U): the user's own pictures. Upload one (the button,
 // or drop or paste a picture while the tool is on), pick it from the uploaded
 // ones, then click to place it: a ghost follows the pointer, snapped like a
 // prop, and Q / E turn it. Also the panel fields of a selected picture.
 // editor.ts hooks this in; the drawing itself is core's (render/scene.ts).
 import { imageCentre, imageFit, imageUrl, nextId, type DelveMap, type MapImage, type MapObject, type Op, type Point } from '@delve/core';
-import { SVG_NS } from './ctx.ts';
+import { btn, checkbox, field, h as el, iconBtn, input, range, select, svgEl, textarea } from './dom.ts';
 
 /** One uploaded picture, as GET /api/v1/images lists it. */
 export interface ImageInfo {
@@ -42,26 +42,6 @@ export interface ImageTool {
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const TYPES = /^image\/(png|jpeg|webp|gif)$/;
-
-type Attrs = Record<string, string | number | boolean | undefined | ((e: Event) => void)>;
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = {}, ...kids: (Node | string | null | false)[]): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === undefined || v === false) continue;
-    if (typeof v === 'function') e.addEventListener(k.replace(/^on/, ''), v);
-    else if (v === true) e.setAttribute(k, '');
-    else if (k === 'value') (e as HTMLInputElement).value = String(v);
-    else e.setAttribute(k, String(v));
-  }
-  for (const kid of kids) if (kid !== null && kid !== false) e.append(kid);
-  return e;
-}
-
-function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
-  return e;
-}
 
 const degrees = (v: number) => ((Math.round(v) % 360) + 360) % 360;
 const round2 = (v: number) => Math.max(0.05, Math.round(v * 100) / 100);
@@ -197,21 +177,21 @@ export function initImages(host: ImageHost): ImageTool {
   });
 
   function picker(): HTMLElement {
-    const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, hidden: true });
-    input.addEventListener('change', () => {
-      void uploadAll([...(input.files ?? [])]);
-      input.value = '';
+    const fileInput = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, hidden: true });
+    fileInput.addEventListener('change', () => {
+      void uploadAll([...(fileInput.files ?? [])]);
+      fileInput.value = '';
     });
     const grid = library.length
       ? el(
           'div',
-          { class: 'picker-grid', role: 'listbox', 'aria-label': 'Uploaded pictures' },
+          { class: 'ed-grid', role: 'listbox', 'aria-label': 'Uploaded pictures', style: 'grid-template-columns:repeat(3,minmax(0,1fr))' },
           ...library.map((i) =>
             el(
               'button',
-              { type: 'button', 'aria-pressed': String(i.src === chosen), title: `${i.name} · ${i.width}×${i.height} px`, onclick: () => ((chosen = i.src), host.refresh()) },
-              el('img', { src: imageUrl(i.src), alt: '', loading: 'lazy' }),
-              i.name,
+              { type: 'button', class: 'ed-asset', 'aria-pressed': String(i.src === chosen), title: `${i.name} · ${i.width}×${i.height} px`, onclick: () => ((chosen = i.src), host.refresh()) },
+              el('span', { class: 'ed-asset-pic' }, el('img', { src: imageUrl(i.src), alt: '', loading: 'lazy' })),
+              el('span', { class: 'ed-asset-name' }, i.name),
             ),
           ),
         )
@@ -219,29 +199,29 @@ export function initImages(host: ImageHost): ImageTool {
     const pick = chosen ? infoOf(chosen) : undefined;
     const box = el(
       'div',
-      { class: 'picker image-picker' },
-      el('div', { class: 'row' }, el('button', { type: 'button', class: 'upload', disabled: busy, onclick: () => input.click() }, busy ? 'Uploading…' : 'Upload a picture…'), input),
-      el('p', { class: 'hint' }, 'PNG, JPEG, WebP or GIF, up to 10 MB. You can also drop a picture on the map or paste one (Ctrl+V) while this tool is on.'),
+      { class: 'stack', style: 'gap:10px' },
+      el('div', { class: 'ed-row' }, btn(busy ? 'Uploading…' : 'Upload a picture', { kind: 'primary', icon: 'upload', disabled: busy, onclick: () => fileInput.click() }), fileInput),
+      el('p', { class: 'hint' }, 'PNG, JPEG, WebP or GIF, up to 10 MB. Or drop a picture on the map, or paste one (Ctrl V), while this tool is on.'),
       el(
         'div',
-        { class: 'rotate' },
-        'Turned ',
-        el('button', { type: 'button', title: 'Turn left (Q)', onclick: () => ((rotation = degrees(rotation - 90)), host.refresh()) }, '↺'),
-        el('strong', {}, `${rotation}°`),
-        el('button', { type: 'button', title: 'Turn right (E)', onclick: () => ((rotation = degrees(rotation + 90)), host.refresh()) }, '↻'),
+        { class: 'ed-row', style: 'align-items:center' },
+        el('span', { class: 'hint', style: 'flex:1' }, `Turned ${rotation}°`),
+        iconBtn('rotate-ccw', 'Turn left · Q', () => ((rotation = degrees(rotation - 15)), host.refresh()), { size: 16 }),
+        iconBtn('rotate', 'Turn right · E', () => ((rotation = degrees(rotation + 15)), host.refresh()), { size: 16 }),
       ),
       grid,
-      ...(pick ? [el('button', { type: 'button', class: 'danger', title: 'Delete the uploaded file (only when no map uses it)', onclick: () => void forget(pick) }, `Remove “${pick.name}” from Delve`)] : []),
+      ...(pick ? [btn(`Remove “${pick.name}” from Delve`, { kind: 'danger', size: 'sm', icon: 'trash', title: 'Delete the uploaded file (only when no map uses it)', onclick: () => void forget(pick), attrs: { style: 'align-self:flex-start' } })] : []),
     );
     // the panel takes dropped pictures too
     box.addEventListener('dragover', (e) => {
       if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return;
       e.preventDefault();
       box.classList.add('drop');
+      box.style.outline = '2px dashed var(--color-accent)';
     });
-    box.addEventListener('dragleave', () => box.classList.remove('drop'));
+    box.addEventListener('dragleave', () => (box.style.outline = ''));
     box.addEventListener('drop', (e) => {
-      box.classList.remove('drop');
+      box.style.outline = '';
       const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'));
       if (!files.length) return;
       e.preventDefault();
@@ -281,15 +261,14 @@ export function initImages(host: ImageHost): ImageTool {
     const info = infoOf(o.src);
     const set = (s: Record<string, unknown>) => void host.apply([{ op: 'update', id, set: s }]);
     const unset = (k: string) => void host.apply([{ op: 'update', id, unset: [k] }]);
-    const field = (label: string, input: HTMLElement) => el('label', { class: 'field' }, el('span', {}, label), input);
-    const pair = (...kids: HTMLElement[]) => el('div', { class: 'pair' }, ...kids);
+    const pair = (...kids: HTMLElement[]) => el('div', { class: 'ed-two' }, ...kids);
     const num = (value: number, step: number, on: (v: number) => void) =>
-      el('input', {
-        type: 'number',
+      input({
+        inputmode: 'decimal',
         value,
         step,
         onchange: (e: Event) => {
-          const v = Number((e.target as HTMLInputElement).value);
+          const v = Number((e.target as HTMLInputElement).value.replace(',', '.'));
           if (Number.isFinite(v)) on(v);
         },
       });
@@ -301,62 +280,19 @@ export function initImages(host: ImageHost): ImageTool {
       if (nw > 0 && nh > 0 && nw <= 1000 && nh <= 1000) set({ w: nw, h: nh });
     };
     const opacity = Math.round((o.opacity ?? 1) * 100);
-    const shown = el('output', {}, `${opacity}%`);
     return [
-      el(
-        'div',
-        { class: 'image-card' },
-        el('img', { src: imageUrl(o.src), alt: '' }),
-        el('span', { class: 'hint' }, info ? `${info.name} · ${info.width}×${info.height} px` : 'An uploaded picture'),
-      ),
-      pair(field('Width (squares)', num(o.w, 0.25, (v) => v > 0 && resize(v, null))), field('Height (squares)', num(o.h, 0.25, (v) => v > 0 && resize(null, v)))),
-      el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: keep, onchange: (e: Event) => (keep = (e.target as HTMLInputElement).checked) }), ' Keep proportions'),
+      el('div', { class: 'ed-image-card' }, el('img', { src: imageUrl(o.src), alt: '' }), el('span', { class: 'hint' }, info ? `${info.name} · ${info.width}×${info.height} px` : 'An uploaded picture')),
+      pair(field('Width', num(o.w, 0.25, (v) => v > 0 && resize(v, null)), { unit: 'sq' }), field('Height', num(o.h, 0.25, (v) => v > 0 && resize(null, v)), { unit: 'sq' })),
+      checkbox('Keep proportions', keep, (on) => (keep = on)),
       ...(info && info.width > 0 && Math.abs(o.h / o.w - info.height / info.width) > 0.01
-        ? [el('button', { type: 'button', onclick: () => set({ h: round2((o.w * info.height) / info.width) }) }, 'Back to the picture’s own proportions')]
+        ? [btn('Back to the picture’s own proportions', { kind: 'ghost', size: 'sm', onclick: () => set({ h: round2((o.w * info.height) / info.width) }), attrs: { style: 'align-self:flex-start;padding-left:0' } })]
         : []),
-      pair(field('X (centre)', num(o.at[0], 0.5, (v) => set({ at: [v, o.at[1]] }))), field('Y (centre)', num(o.at[1], 0.5, (v) => set({ at: [o.at[0], v] })))),
-      el(
-        'div',
-        { class: 'rotate' },
-        'Turned ',
-        el('button', { type: 'button', title: 'Turn left (Q)', onclick: () => turn(-90, false, [o]) }, '↺'),
-        el('input', { type: 'number', value: o.rotation ?? 0, step: 15, 'aria-label': 'Degrees clockwise', onchange: (e: Event) => { const v = degrees(Number((e.target as HTMLInputElement).value) || 0); if (v) set({ rotation: v }); else unset('rotation'); } }),
-        '°',
-        el('button', { type: 'button', title: 'Turn right (E)', onclick: () => turn(90, false, [o]) }, '↻'),
-      ),
-      field(
-        'Lies',
-        el(
-          'select',
-          { onchange: (e: Event) => ((e.target as HTMLSelectElement).value === 'floor' ? set({ layer: 'floor' }) : unset('layer')) },
-          el('option', { value: 'props', selected: o.layer !== 'floor' }, 'on top (over walls, like a prop)'),
-          el('option', { value: 'floor', selected: o.layer === 'floor' }, 'on the floor (under grid and walls)'),
-        ),
-      ),
-      el(
-        'div',
-        { class: 'field opacity' },
-        el('span', {}, 'Opacity ', shown),
-        el('input', {
-          type: 'range',
-          min: 0,
-          max: 100,
-          step: 5,
-          value: opacity,
-          'aria-label': 'Opacity in percent',
-          oninput: (e: Event) => (shown.textContent = `${(e.target as HTMLInputElement).value}%`),
-          onchange: (e: Event) => {
-            const v = Number((e.target as HTMLInputElement).value);
-            if (v >= 100) unset('opacity');
-            else set({ opacity: v / 100 });
-          },
-        }),
-      ),
-      el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: Boolean(o.gmOnly), onchange: (e: Event) => ((e.target as HTMLInputElement).checked ? set({ gmOnly: true }) : unset('gmOnly')) }), ' GM only (players never see it)'),
-      field(
-        'GM notes (never drawn)',
-        el('textarea', { rows: 3, 'data-field': 'notes', onchange: (e: Event) => { const v = (e.target as HTMLTextAreaElement).value.trim(); if (v !== (o.notes ?? '')) (v ? set({ notes: v }) : unset('notes')); } }, o.notes ?? ''),
-      ),
+      pair(field('X (centre)', num(o.at[0], 0.5, (v) => set({ at: [v, o.at[1]] })), { unit: 'sq' }), field('Y (centre)', num(o.at[1], 0.5, (v) => set({ at: [o.at[0], v] })), { unit: 'sq' })),
+      range('Rotation', { value: degrees(o.rotation ?? 0), min: 0, max: 345, step: 15, show: (v) => `${v}°`, keys: 'Q / E', onChange: (v) => (degrees(v) ? set({ rotation: degrees(v) }) : unset('rotation')) }),
+      field('Lies', select([['props', 'On top, over the walls'], ['floor', 'On the floor, under grid and walls']], o.layer === 'floor' ? 'floor' : 'props', (v) => (v === 'floor' ? set({ layer: 'floor' }) : unset('layer')))),
+      range('Opacity', { value: opacity, min: 0, max: 100, step: 5, show: (v) => `${v}%`, onChange: (v) => (v >= 100 ? unset('opacity') : set({ opacity: v / 100 })) }),
+      checkbox('GM only', Boolean(o.gmOnly), (on) => (on ? set({ gmOnly: true }) : unset('gmOnly')), { hint: '· players never see it' }),
+      field('GM note · only you see this', textarea(o.notes ?? '', { rows: 3, 'data-field': 'notes', onchange: (e: Event) => { const v = (e.target as HTMLTextAreaElement).value.trim(); if (v !== (o.notes ?? '')) (v ? set({ notes: v }) : unset('notes')); } })),
     ];
   }
 

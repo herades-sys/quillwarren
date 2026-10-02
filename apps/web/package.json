@@ -9,6 +9,7 @@
   "dependencies": {
     "@delve/core": "*",
     "@delve/table": "*",
+    "@delve/ui": "*",
     "cannon-es": "0.20.0",
     "pixi.js": "8.21.0",
     "three": "0.186.1"

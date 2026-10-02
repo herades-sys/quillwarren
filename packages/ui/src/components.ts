@@ -9,6 +9,7 @@
 
 export const COMPONENTS_CSS = `
 /* ---------- page and type ---------- */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body { font-size: var(--text-md); line-height: var(--leading-ui); }
 a:hover { color: var(--color-accent-text); }

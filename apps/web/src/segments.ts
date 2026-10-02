@@ -23,7 +23,8 @@ import {
   type Shape,
 } from '@delve/core';
 import { artLoader } from './art.ts';
-import { SVG_NS, type ViewerCtx } from './ctx.ts';
+import type { ViewerCtx } from './ctx.ts';
+import { btn, h, iconBtn, input, seg, svgEl } from './dom.ts';
 
 export type SegmentMode = 'save' | 'place' | 'fill';
 
@@ -62,26 +63,6 @@ export interface SegmentTool {
   selectionSave(ids: string[]): HTMLElement;
   /** Escape: drop a half-done save or rename, or the picked segment (only while the tool is active). true if there was one. */
   cancel(active?: boolean): boolean;
-}
-
-type Attrs = Record<string, string | number | boolean | undefined | ((e: Event) => void)>;
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = {}, ...kids: (Node | string | null | false)[]): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === undefined || v === false) continue;
-    if (typeof v === 'function') el.addEventListener(k.replace(/^on/, ''), v);
-    else if (v === true) el.setAttribute(k, '');
-    else if (k === 'value') (el as HTMLInputElement).value = String(v);
-    else el.setAttribute(k, String(v));
-  }
-  for (const kid of kids) if (kid !== null && kid !== false) el.append(kid);
-  return el;
-}
-
-function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
-  const el = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
-  return el;
 }
 
 const MODES: { id: SegmentMode; name: string; hint: string }[] = [
@@ -361,8 +342,7 @@ export function initSegments(host: SegmentHost): SegmentTool {
 
   /** Enter saves, Escape gives up; neither reaches the editor's own panel keys. */
   function nameInput(value: string, placeholder: string, on: (v: string) => void, done: () => void, quit: () => void): HTMLInputElement {
-    return h('input', {
-      type: 'text',
+    return input({
       value,
       placeholder,
       maxlength: 100,
@@ -383,35 +363,43 @@ export function initSegments(host: SegmentHost): SegmentTool {
     const p = pending!;
     return h(
       'div',
-      { class: 'seg-save' },
+      { class: 'ed-seg-save stack', style: 'gap:8px;padding:10px 12px;border-radius:10px;box-shadow:inset 0 0 0 1px var(--color-accent)' },
       h('p', { class: 'hint' }, `Save ${p.text} as a segment called:`),
       nameInput(p.name, 'e.g. Temple of Efferd', (v) => (p.name = v), () => void save(), () => void cancel()),
-      h('div', { class: 'row' }, h('button', { type: 'button', onclick: () => void save() }, 'Save'), h('button', { type: 'button', onclick: () => void cancel() }, 'Cancel')),
+      h('div', { class: 'ed-row' }, btn('Save', { kind: 'primary', size: 'sm', icon: 'check', onclick: () => void save() }), btn('Cancel', { kind: 'ghost', size: 'sm', onclick: () => void cancel() })),
     );
   }
 
+  const thumbBox = 'width:72px;height:54px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:6px;background:var(--canvas-floor);box-shadow:inset 0 0 0 1px var(--color-border)';
   function item(s: Summary): HTMLElement {
-    const pic = h('span', { class: 'seg-thumb', 'data-seg-thumb': s.id, 'aria-hidden': 'true' });
+    const pic = h('span', { class: 'seg-thumb', 'data-seg-thumb': s.id, 'aria-hidden': 'true', style: thumbBox });
     fillThumb(pic, s.id);
-    const meta = h('span', { class: 'seg-meta' }, `${sizeText(s.size)} · ${countsText(s.counts)}`);
+    const meta = h('span', { class: 'hint', style: 'font-size:12px' }, `${sizeText(s.size)} · ${countsText(s.counts)}`);
+    const on = s.id === chosen;
+    const box = `display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:8px;box-shadow:${on ? '0 0 0 2px var(--color-accent)' : 'inset 0 0 0 1px var(--color-border)'}`;
     if (renaming?.id === s.id) {
       const r = renaming;
       return h(
         'div',
-        { class: 'seg-item', role: 'option', 'aria-selected': String(s.id === chosen) },
-        h('div', { class: 'seg-pick' }, pic, h('span', { class: 'seg-text' }, nameInput(r.name, s.name, (v) => (r.name = v), () => void rename(s.id, r.name), () => void cancel()), meta)),
-        h('div', { class: 'seg-acts' }, h('button', { type: 'button', onclick: () => void rename(s.id, r.name) }, 'Save name'), h('button', { type: 'button', onclick: () => void cancel() }, 'Cancel')),
+        { class: 'seg-item', role: 'option', 'aria-selected': String(on), style: box },
+        h('div', { style: 'display:flex;gap:8px;align-items:center' }, pic, h('span', { class: 'stack', style: 'gap:2px;min-width:0;flex:1' }, nameInput(r.name, s.name, (v) => (r.name = v), () => void rename(s.id, r.name), () => void cancel()), meta)),
+        h('div', { class: 'ed-row' }, btn('Save name', { kind: 'primary', size: 'sm', onclick: () => void rename(s.id, r.name) }), btn('Cancel', { kind: 'ghost', size: 'sm', onclick: () => void cancel() })),
       );
     }
     return h(
       'div',
-      { class: 'seg-item', role: 'option', 'aria-selected': String(s.id === chosen) },
-      h('button', { type: 'button', class: 'seg-pick', title: `${s.name}: ${sizeText(s.size)} squares`, onclick: () => choose(s.id) }, pic, h('span', { class: 'seg-text' }, h('span', { class: 'seg-name' }, s.name), meta)),
+      { class: 'seg-item', role: 'option', 'aria-selected': String(on), style: box },
+      h(
+        'button',
+        { type: 'button', title: `${s.name}: ${sizeText(s.size)} squares`, onclick: () => choose(s.id), style: 'display:flex;gap:8px;align-items:center;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer' },
+        pic,
+        h('span', { class: 'stack', style: 'gap:2px;min-width:0' }, h('span', { style: 'font-weight:500;overflow-wrap:anywhere' }, s.name), meta),
+      ),
       h(
         'div',
-        { class: 'seg-acts' },
-        h('button', { type: 'button', onclick: () => ((renaming = { id: s.id, name: s.name }), host.refreshTools(), focusIn('.seg-item input')) }, 'Rename'),
-        h('button', { type: 'button', class: 'danger', onclick: () => void remove(s) }, 'Delete'),
+        { class: 'ed-row' },
+        btn('Rename', { kind: 'ghost', size: 'sm', onclick: () => ((renaming = { id: s.id, name: s.name }), host.refreshTools(), focusIn('.seg-item input')) }),
+        btn('Delete', { kind: 'ghost', size: 'sm', onclick: () => void remove(s), attrs: { style: 'color:var(--color-danger)' } }),
       ),
     );
   }
@@ -419,11 +407,7 @@ export function initSegments(host: SegmentHost): SegmentTool {
   function options(): HTMLElement[] {
     if (!library && !loading) void load();
     const out: HTMLElement[] = [
-      h(
-        'div',
-        { class: 'seg-modes', role: 'radiogroup', 'aria-label': 'What the Segment tool does' },
-        ...MODES.map((m) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(m.id === mode), 'aria-pressed': String(m.id === mode), onclick: () => setMode(m.id) }, m.name)),
-      ),
+      seg('segment-mode', MODES.map((m) => [m.id, m.name] as [SegmentMode, string]), mode, (v) => setMode(v), 'ed-seg-full'),
       h('p', { class: 'hint' }, MODES.find((m) => m.id === mode)!.hint),
     ];
     if (mode === 'save' && pending && !('ids' in pending.pick)) out.push(saveForm());
@@ -431,25 +415,24 @@ export function initSegments(host: SegmentHost): SegmentTool {
       out.push(
         h(
           'div',
-          { class: 'rotate' },
-          'Turned ',
-          h('button', { type: 'button', title: 'Turn left (Q)', onclick: () => turn(-90) }, '↺'),
-          h('strong', {}, `${rotation}°`),
-          h('button', { type: 'button', title: 'Turn right (E)', onclick: () => turn(90) }, '↻'),
+          { class: 'ed-row', style: 'align-items:center' },
+          h('span', { class: 'hint', style: 'flex:1' }, `Turned ${rotation}°`),
+          iconBtn('rotate-ccw', 'Turn left · Q', () => turn(-90), { size: 16 }),
+          iconBtn('rotate', 'Turn right · E', () => turn(90), { size: 16 }),
         ),
       );
     }
-    if (mode === 'fill') out.push(h('button', { type: 'button', class: 'seg-around', onclick: fillAround }, `Fill around the rooms (${AROUND} squares out)`));
+    if (mode === 'fill') out.push(btn(`Fill around the rooms (${AROUND} squares out)`, { icon: 'grid', onclick: fillAround, attrs: { style: 'align-self:flex-start' } }));
     if (!library) out.push(h('p', { class: 'hint' }, 'Loading the saved segments…'));
     else if (!library.length) out.push(h('p', { class: 'hint' }, 'No segments saved yet. Choose Save and drag a box around part of the map.'));
-    else out.push(h('div', { class: 'seg-lib', role: 'listbox', 'aria-label': 'Saved segments' }, ...library.map(item)));
+    else out.push(h('div', { class: 'stack', role: 'listbox', 'aria-label': 'Saved segments', style: 'gap:6px' }, ...library.map(item)));
     return out;
   }
 
   function selectionSave(ids: string[]): HTMLElement {
     const key = `ids:${ids.join(',')}`;
     if (pending?.key === key) return saveForm();
-    return h('button', { type: 'button', onclick: () => startSave({ ids }) }, 'Save as segment…');
+    return btn('Save as segment…', { kind: 'ghost', size: 'sm', icon: 'segment', onclick: () => startSave({ ids }), attrs: { style: 'align-self:flex-start;padding-left:0' } });
   }
 
   function draw(layer: SVGElement, hover: Point | null): void {

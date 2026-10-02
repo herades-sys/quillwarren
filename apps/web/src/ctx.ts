@@ -1,5 +1,6 @@
 // What the viewer hands the editor. Kept apart so viewer.ts and editor.ts don't import each other.
-import type { DelveMap, Op, Point } from '@delve/core';
+import type { DelveMap, Op, Point, View } from '@delve/core';
+import type { Shell } from './shell.ts';
 
 export const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -7,6 +8,8 @@ export interface ViewerCtx {
   mapId: string;
   stage: HTMLElement;
   overlay: SVGSVGElement;
+  /** The page chrome: toasts, status, layout, drawers and sheets. */
+  shell: Shell;
   /** Pointer events the editor consumed; the viewer won't pan for these. */
   handled: WeakSet<Event>;
   map(): DelveMap;
@@ -22,7 +25,10 @@ export interface ViewerCtx {
   onRender(cb: () => void): void;
   onView(cb: () => void): void;
   toast(msg: string, kind?: 'error' | 'info'): void;
-  setEditing(on: boolean): void;
+  /** GM or players' view, and the grid on or off (a viewing choice, kept in this browser). */
+  view(): View;
+  grid(): boolean;
+  toggleGrid(): void;
   /** Open a GM marker's note box (markers.ts), e.g. right after placing one. */
   openMarker?(id: string): void;
 }

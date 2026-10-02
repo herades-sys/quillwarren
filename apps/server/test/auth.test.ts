@@ -95,10 +95,11 @@ describe('editor login', () => {
     const id = /^\/maps\/(map_[0-9a-f]+)\?edit=1$/.exec(String(res.headers.location))![1]!;
     expect((await app.inject({ url: `/api/v1/maps/${id}` })).json().map).toMatchObject({ name: 'Goblin warren', style: { preset: 'clean' } });
     const page = await app.inject({ url: `/maps/${id}`, headers: { cookie } });
-    expect(page.body).toContain('id="edit-toggle"');
+    expect(page.body).toContain('id="rail"');
     expect(page.body).toContain('"loggedIn":true');
     const anon = await app.inject({ url: `/maps/${id}` });
     expect(anon.body).toContain('Log in to edit');
+    expect(anon.body).not.toContain('id="rail"');
     expect((await app.inject({ method: 'POST', url: '/maps/new', payload: 'name=x', headers: { 'content-type': 'application/x-www-form-urlencoded' } })).statusCode).toBe(401);
   });
 

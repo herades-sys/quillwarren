@@ -1,11 +1,19 @@
-// The chat panel: talk to Claude about the open map. A message goes to
+// The Claude panel: talk to Claude about the open map. A message goes to
 // POST /api/v1/maps/:id/chat and the reply streams back as JSON lines. Map
 // changes arrive over the live socket like any other edit, so they draw and
 // highlight on their own. The conversation is kept per map in this browser.
+// Laid out as in the design: avatars and times, Claude's changes as a list,
+// "working" with a Stop button while a reply runs.
 import type { Bounds } from '@delve/core';
+import type { IconName } from '@delve/ui';
+import { h, iconEl } from './dom.ts';
+import type { Shell } from './shell.ts';
 
 export interface ChatHost {
   mapId: string;
+  shell: Shell;
+  /** Who is logged in, for the avatar on your messages. */
+  account: { name: string } | null;
   /** Ids selected in the editor (empty when not editing). */
   selection(): string[];
   /** The part of the map on screen, in squares. */
@@ -21,6 +29,8 @@ interface Msg {
   role: 'user' | 'claude' | 'error';
   text?: string;
   parts?: Part[];
+  /** When it was sent (ms); older saved messages have none. */
+  at?: number;
 }
 interface Saved {
   session?: string;
@@ -46,6 +56,16 @@ const TOOL_LABEL: Record<string, string> = {
   add_door: 'Adding a door',
   add_stairs: 'Adding stairs',
   add_label: 'Adding a label',
+  add_marker: 'Adding a GM marker',
+  list_assets: 'Looking through the props',
+  add_prop: 'Placing a prop',
+  add_props_along: 'Placing props',
+  add_terrain: 'Adding terrain',
+  list_images: 'Looking through the pictures',
+  add_image: 'Placing a picture',
+  fog: 'Changing the fog',
+  add_level: 'Adding a storey',
+  label_stairs: 'Numbering the stairs',
   move: 'Moving',
   resize: 'Reshaping',
   update: 'Updating',
@@ -57,6 +77,39 @@ const TOOL_LABEL: Record<string, string> = {
   export: 'Making a download link',
   focus: 'Showing you',
   apply_ops: 'Applying changes',
+};
+const TOOL_ICON: Record<string, IconName> = {
+  add_room: 'room',
+  connect: 'corridor',
+  add_cutout: 'pillar',
+  add_door: 'door',
+  add_stairs: 'stairs',
+  label_stairs: 'stairs',
+  add_label: 'label',
+  add_marker: 'marker',
+  add_prop: 'prop',
+  add_props_along: 'brush',
+  list_assets: 'prop',
+  add_terrain: 'terrain',
+  add_image: 'image',
+  list_images: 'image',
+  fog: 'fog',
+  add_level: 'layers',
+  move: 'pan',
+  resize: 'fit',
+  update: 'settings',
+  set_map: 'settings',
+  delete: 'trash',
+  undo: 'undo',
+  redo: 'redo',
+  render: 'eye',
+  focus: 'eye',
+  export: 'download',
+  apply_ops: 'layers',
+  get_map: 'search',
+  describe_map: 'search',
+  list_maps: 'search',
+  create_map: 'plus',
 };
 
 const SUGGESTIONS_FILLED = [
@@ -138,13 +191,6 @@ export function markdown(src: string): string {
 
 // ---------- panel ----------
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
-
 const store = {
   get<T>(key: string): T | null {
     try {
@@ -165,8 +211,8 @@ const store = {
 
 function toolDetail(p: ToolPart): string {
   const a = p.input;
-  if (typeof a.name === 'string' && a.name) return ` "${a.name}"`;
-  if (typeof a.text === 'string' && a.text) return ` "${a.text}"`;
+  if (typeof a.name === 'string' && a.name) return ` “${a.name}”`;
+  if (typeof a.text === 'string' && a.text) return ` “${a.text}”`;
   if (Array.isArray(a.ids)) return ` ${a.ids.slice(0, 4).join(', ')}${a.ids.length > 4 ? '…' : ''}`;
   if (typeof a.id === 'string') return ` ${a.id}`;
   if (typeof a.from === 'string' && typeof a.to === 'string') return ` ${a.from} → ${a.to}`;
@@ -174,18 +220,28 @@ function toolDetail(p: ToolPart): string {
   return '';
 }
 
+const clock = (ms?: number) => (ms ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+const initialsOf = (name: string) => {
+  const w = name.trim().split(/\s+/).filter(Boolean);
+  return (w.length > 1 ? w[0]![0]! + w[1]![0]! : (w[0] ?? 'Y').slice(0, 2)).toUpperCase();
+};
+
 export function initChat(host: ChatHost, opts: { model: string }): void {
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const panel = $('chat');
   const toggle = $<HTMLButtonElement>('chat-toggle');
+  const phone = document.getElementById('chat-phone') as HTMLButtonElement | null;
   const log = $('chat-log');
   const status = $('chat-status');
   const usage = $('chat-usage');
+  const live = $('chat-live');
   const form = $<HTMLFormElement>('chat-form');
   const input = $<HTMLTextAreaElement>('chat-input');
   const sendBtn = $<HTMLButtonElement>('chat-send');
   const modelSel = $<HTMLSelectElement>('chat-model');
   if (!panel || !toggle) return;
+  const hint = usage.innerHTML;
+  const me = host.account?.name ?? 'You';
 
   const key = `delve-chat:${host.mapId}`;
   const saved = store.get<Saved>(key) ?? { messages: [] };
@@ -193,23 +249,28 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
   const messages: Msg[] = saved.messages ?? [];
   let busy: AbortController | null = null;
   let checked = false;
+  let open = false;
 
-  modelSel.replaceChildren(...MODELS.map(([v, label]) => Object.assign(el('option', undefined, label), { value: v })));
+  modelSel.replaceChildren(...MODELS.map(([v, label]) => h('option', { value: v }, label)));
   modelSel.value = store.get<string>('delve-chat-model') ?? opts.model;
   if (!modelSel.value) modelSel.value = 'sonnet';
   modelSel.addEventListener('change', () => store.set('delve-chat-model', modelSel.value));
 
   const save = () => store.set(key, { session, messages: messages.slice(-100) });
 
-  function setOpen(on: boolean): void {
-    panel.hidden = !on;
+  function setOpen(on: boolean, focus = on): void {
+    open = on;
+    const phoneLayout = host.shell.layout() === 'phone';
+    panel.hidden = !on && !phoneLayout;
+    if (phoneLayout) host.shell.setSheet(on ? 'claude' : null);
+    else if (document.body.classList.contains('sheet-claude')) host.shell.setSheet(null);
     toggle.setAttribute('aria-pressed', String(on));
-    document.body.classList.toggle('chatting', on);
+    phone?.setAttribute('aria-pressed', String(on));
     store.set('delve-chat-open', on);
     host.layout();
     if (on) {
       draw();
-      input.focus();
+      if (focus) input.focus();
       if (!checked) void checkBridge();
     }
   }
@@ -219,77 +280,86 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     try {
       const res = await fetch('/api/v1/chat');
       const body = (await res.json()) as { enabled?: boolean; ok?: boolean; error?: string; claude?: string };
-      if (!body.enabled) setStatus('The chat isn\'t set up on this server.', 'bad');
-      else if (!body.ok) setStatus(`Claude isn't reachable: ${body.error ?? 'unknown problem'}`, 'bad');
+      if (!body.enabled) setStatus('The chat isn’t set up on this server.', 'bad');
+      else if (!body.ok) setStatus(`Claude isn’t reachable: ${body.error ?? 'unknown problem'}`, 'bad');
       else if (!busy) setStatus('');
     } catch {
-      setStatus('Couldn\'t reach Delve to check the chat.', 'bad');
+      setStatus('Couldn’t reach Delve to check the chat.', 'bad');
     }
   }
 
   function setStatus(text: string, kind: 'info' | 'bad' = 'info'): void {
     status.textContent = text;
     status.dataset.kind = kind;
-    status.hidden = !text;
+    status.hidden = !text || (kind === 'info' && Boolean(busy)); // while working, the reply itself shows it
   }
 
   // ---------- drawing ----------
 
-  function claudeBody(m: Msg): HTMLElement {
-    const box = el('div', 'msg claude');
-    let chips: HTMLElement | null = null;
+  const meta = (name: string, rest: string) => h('span', { class: 'ed-msg-meta' }, h('b', {}, name), rest ? ` · ${rest}` : '');
+
+  function changes(tools: ToolPart[]): HTMLElement {
+    return h(
+      'div',
+      { class: 'ed-changes' },
+      ...tools.map((p) => {
+        const row = h('div', { class: 'ed-change', 'data-state': p.state, title: p.result ?? '' }, iconEl(p.state === 'failed' ? 'alert' : p.state === 'running' ? (TOOL_ICON[p.name] ?? 'check') : (TOOL_ICON[p.name] ?? 'check'), 15), h('span', { class: 'spacer' }, `${TOOL_LABEL[p.name] ?? p.name}${toolDetail(p)}`));
+        return row;
+      }),
+    );
+  }
+
+  function claudeBody(m: Msg, working: boolean): HTMLElement {
+    const body = h('div', { class: 'ed-msg-body' }, meta('Claude', working ? 'working' : clock(m.at)));
+    let tools: ToolPart[] = [];
+    const flushTools = () => {
+      if (tools.length) body.append(changes(tools));
+      tools = [];
+    };
     for (const p of m.parts ?? []) {
-      if (p.kind === 'tool') {
-        if (!chips) {
-          chips = el('div', 'tools');
-          box.append(chips);
-        }
-        const chip = el('span', 'tool', `${TOOL_LABEL[p.name] ?? p.name}${toolDetail(p)}`);
-        chip.dataset.state = p.state;
-        if (p.result) chip.title = p.result;
-        chips.append(chip);
-      } else {
-        chips = null;
-        const div = el('div', 'md');
+      if (p.kind === 'tool') tools.push(p);
+      else {
+        flushTools();
+        const div = h('div', { class: 'ed-msg-text' });
         div.innerHTML = markdown(p.text); // escaped by markdown()
-        box.append(div);
+        body.append(div);
       }
     }
-    if (!(m.parts ?? []).length) box.append(el('span', 'typing', 'Thinking'));
-    return box;
+    flushTools();
+    if (working) {
+      const running = (m.parts ?? []).filter((p): p is ToolPart => p.kind === 'tool' && p.state === 'running').at(-1);
+      body.append(
+        h('span', { class: 'ed-typing' }, h('span', { class: 'ed-dots', 'aria-hidden': 'true' }, h('span'), h('span'), h('span')), running ? `${TOOL_LABEL[running.name] ?? running.name}…` : status.textContent || 'Thinking…'),
+        h('button', { type: 'button', class: 'btn btn-secondary btn-sm', style: 'align-self:flex-start', onclick: () => busy?.abort() }, iconEl('stop', 14), 'Stop', h('span', { class: 'key' }, 'Esc')),
+      );
+    }
+    return h('div', { class: 'ed-msg' }, h('span', { class: 'ed-claude-mark', 'aria-hidden': 'true' }, 'C'), body);
   }
 
   function draw(): void {
-    if (panel.hidden) return;
+    if (!open) return;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
     const kids: HTMLElement[] = [];
     if (!messages.length) {
-      const empty = el('div', 'chat-empty');
-      empty.append(el('p', undefined, 'Ask Claude to build or change this map. It sees the whole map, what you have selected and where you are looking, and you watch every change happen. Everything can be undone.'));
-      for (const s of host.hasObjects() ? SUGGESTIONS_FILLED : SUGGESTIONS_EMPTY) {
-        const b = el('button', undefined, s);
-        b.type = 'button';
-        b.addEventListener('click', () => {
-          input.value = s;
-          input.focus();
-        });
-        empty.append(b);
-      }
-      kids.push(empty);
+      kids.push(
+        h(
+          'div',
+          { class: 'ed-suggest' },
+          h('p', {}, 'Ask Claude to build or change this map. It sees the whole map, what you have selected and where you are looking, and you watch every change happen. Each reply is one undo step.'),
+          ...(host.hasObjects() ? SUGGESTIONS_FILLED : SUGGESTIONS_EMPTY).map((s) => h('button', { type: 'button', onclick: () => ((input.value = s), input.focus()) }, s)),
+        ),
+      );
     }
     messages.forEach((m, i) => {
-      if (m.role === 'user') kids.push(el('div', 'msg user', m.text ?? ''));
-      else if (m.role === 'error') kids.push(el('div', 'msg error', m.text ?? ''));
-      else {
-        const body = claudeBody(m);
-        if (busy && i === messages.length - 1) body.classList.add('live');
-        kids.push(body);
-      }
+      if (m.role === 'user') kids.push(h('div', { class: 'ed-msg ed-msg-user' }, h('span', { class: 'avatar avatar-sm' }, initialsOf(me)), h('div', { class: 'ed-msg-body' }, meta(me === 'You' ? 'You' : (me.split(/\s+/)[0] ?? me), clock(m.at)), h('span', { class: 'ed-msg-text' }, m.text ?? ''))));
+      else if (m.role === 'error') kids.push(h('div', { class: 'ed-msg ed-msg-error' }, h('span', { class: 'ed-claude-mark', style: 'box-shadow:inset 0 0 0 1.5px var(--color-danger);color:var(--color-danger)' }, iconEl('alert', 13)), h('div', { class: 'ed-msg-body' }, h('span', { class: 'ed-msg-text' }, m.text ?? ''))));
+      else kids.push(claudeBody(m, Boolean(busy) && i === messages.length - 1));
     });
     log.replaceChildren(...kids);
     if (atBottom || busy) log.scrollTop = log.scrollHeight;
-    sendBtn.textContent = busy ? 'Stop' : 'Send';
-    sendBtn.classList.toggle('primary', !busy);
+    sendBtn.replaceChildren(iconEl(busy ? 'stop' : 'send', 15), h('span', {}, busy ? 'Stop' : 'Send'));
+    sendBtn.title = busy ? 'Stop · Esc' : 'Send · Enter';
+    live.hidden = !busy;
   }
 
   let drawQueued = false;
@@ -308,17 +378,18 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     const parts: string[] = [];
     if (ev.fiveHour !== undefined) parts.push(`${Math.round(ev.fiveHour * 100)}% of 5 h`);
     if (ev.sevenDay !== undefined) parts.push(`${Math.round(ev.sevenDay * 100)}% of week`);
-    usage.textContent = parts.length ? `Subscription used: ${parts.join(' · ')}` : '';
+    if (parts.length) usage.textContent = `Subscription used: ${parts.join(' · ')}`;
+    else usage.innerHTML = hint;
     usage.dataset.kind = (ev.fiveHour ?? 0) > 0.85 || ev.status === 'rejected' ? 'bad' : '';
   }
 
   async function run(text: string, retried = false): Promise<void> {
-    const reply: Msg = { role: 'claude', parts: [] };
+    const reply: Msg = { role: 'claude', parts: [], at: Date.now() };
     messages.push(reply);
     const parts = reply.parts!;
     const abort = new AbortController();
     busy = abort;
-    setStatus('Claude is thinking…');
+    setStatus('Thinking…');
     drawSoon();
     let restart = false;
     try {
@@ -357,7 +428,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
               const last = parts.at(-1);
               if (last?.kind === 'text') last.text += ev.text;
               else parts.push({ kind: 'text', text: ev.text.replace(/^\n+/, '') });
-              setStatus('Claude is writing…');
+              setStatus('Writing…');
               break;
             }
             case 'tool':
@@ -370,7 +441,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
                 p.state = ev.ok ? 'ok' : 'failed';
                 p.result = ev.text;
               }
-              setStatus('Claude is thinking…');
+              setStatus('Thinking…');
               break;
             }
             case 'usage':
@@ -380,23 +451,23 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
               session = ev.session || session;
               if (!ev.ok) {
                 if (!retried && /no conversation found/i.test(ev.error ?? '')) restart = true;
-                else messages.push({ role: 'error', text: ev.error ?? 'Claude stopped with an error.' });
+                else messages.push({ role: 'error', text: ev.error ?? 'Claude stopped with an error.', at: Date.now() });
               }
               break;
             case 'error':
               if (ev.code === 'no_session' && !retried) restart = true;
-              else messages.push({ role: 'error', text: ev.error });
+              else messages.push({ role: 'error', text: ev.error, at: Date.now() });
               break;
           }
           drawSoon();
         }
       }
     } catch (e) {
-      if (abort.signal.aborted) messages.push({ role: 'error', text: 'Stopped. Changes Claude already made are kept (undo removes them).' });
-      else messages.push({ role: 'error', text: `The chat failed: ${(e as Error).message}` });
+      if (abort.signal.aborted) messages.push({ role: 'error', text: 'Stopped. Changes Claude already made are kept (undo removes them).', at: Date.now() });
+      else messages.push({ role: 'error', text: `The chat failed: ${(e as Error).message}`, at: Date.now() });
     } finally {
       busy = null;
-      if (!parts.length) messages.splice(messages.indexOf(reply), 1); // no empty "Thinking" bubble left behind
+      if (!parts.length) messages.splice(messages.indexOf(reply), 1); // no empty reply left behind
       setStatus('');
       save();
       draw();
@@ -416,7 +487,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
-    messages.push({ role: 'user', text });
+    messages.push({ role: 'user', text, at: Date.now() });
     save();
     void run(text);
   }
@@ -429,7 +500,10 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       if (!busy) submit();
-    } else if (e.key === 'Escape') input.blur();
+    } else if (e.key === 'Escape') {
+      if (busy) busy.abort();
+      else input.blur();
+    }
   });
   $('chat-new').addEventListener('click', () => {
     if (busy) busy.abort();
@@ -440,6 +514,19 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     input.focus();
   });
   $('chat-close').addEventListener('click', () => setOpen(false));
-  toggle.addEventListener('click', () => setOpen(panel.hidden !== false));
-  setOpen(store.get<boolean>('delve-chat-open') === true);
+  toggle.addEventListener('click', () => setOpen(!open));
+  phone?.addEventListener('click', () => setOpen(!open));
+  window.addEventListener('keydown', (e) => {
+    const t = e.target as HTMLElement;
+    if ((e.ctrlKey || e.metaKey) && e.key === '.') {
+      e.preventDefault();
+      setOpen(!open);
+    } else if (e.key === '/' && !t.closest('input, select, textarea') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      setOpen(true);
+    } else if (e.key === 'Escape' && busy && !t.closest('input, select, textarea')) busy.abort();
+  });
+  // phones show Claude as a sheet that only opens on request
+  host.shell.onLayout((l) => setOpen(l === 'phone' ? false : open, false));
+  setOpen(host.shell.layout() !== 'phone' && store.get<boolean>('delve-chat-open') === true, false);
 }

@@ -2,7 +2,8 @@
 // a small box, Shift-click it to strike it through (done) or back. Only in the
 // GM view. Editing the note or striking it through needs the editor login;
 // anyone looking at the GM view can read it.
-import { markerAt, markerGlyph, MARKERS, type DelveMap, type Marker, type Op, type Point } from '@delve/core';
+import { markerAt, MARKERS, type DelveMap, type Marker, type Op, type Point } from '@delve/core';
+import { checkbox, h, iconBtn, iconEl } from './dom.ts';
 
 export interface MarkerCtx {
   stage: HTMLElement;
@@ -27,11 +28,10 @@ export interface Markers {
   close(): void;
 }
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export function initMarkers(ctx: MarkerCtx): Markers {
   const box = document.createElement('div');
-  box.className = 'marker-box';
+  box.className = 'note-pop ed-note';
   box.hidden = true;
   box.setAttribute('role', 'dialog');
   document.body.appendChild(box);
@@ -95,25 +95,13 @@ export function initMarkers(ctx: MarkerCtx): Markers {
 
   function build(m: Marker, focus: boolean): void {
     const info = MARKERS[m.kind];
-    const icon = document.createElementNS(SVG_NS, 'svg');
-    icon.setAttribute('viewBox', '-1.4 -1.4 2.8 2.8');
-    icon.setAttribute('class', 'marker-icon');
-    icon.innerHTML = markerGlyph(m.kind, false);
-    const title = document.createElement('strong');
-    title.textContent = info.name;
-    const x = document.createElement('button');
-    x.type = 'button';
-    x.className = 'marker-close';
-    x.title = 'Close (Esc)';
-    x.textContent = '×';
-    x.addEventListener('click', close);
-    const head = document.createElement('div');
-    head.className = 'marker-head';
-    head.append(icon, title, x);
+    const badge = h('span', { class: `marker marker-sm marker-${m.kind}` }, m.kind === 'trap' ? iconEl('skull', 13, 2) : m.kind === 'discover' ? '?' : '!');
+    const head = h('div', { class: 'note-pop-head' }, badge, h('span', { class: 'kicker' }, info.name), iconBtn('x', 'Close the note', close, { title: 'Close · Esc', size: 15 }));
 
     let body: HTMLElement;
     if (ctx.canEdit) {
       const ta = document.createElement('textarea');
+      ta.className = 'input';
       ta.value = m.text;
       ta.rows = 4;
       ta.maxLength = 2000;
@@ -133,24 +121,17 @@ export function initMarkers(ctx: MarkerCtx): Markers {
       body = ta;
     } else {
       body = document.createElement('p');
+      body.className = 'ed-note-text';
       body.textContent = m.text || '(no note)';
     }
     body.classList.add('marker-text');
 
-    const foot = document.createElement('div');
-    foot.className = 'marker-foot';
-    if (ctx.canEdit) {
-      const done = document.createElement('input');
-      done.type = 'checkbox';
-      done.checked = Boolean(m.done);
-      done.addEventListener('change', () => toggleDone(byId(m.id) ?? m));
-      const lbl = document.createElement('label');
-      lbl.append(done, ' Done: strike it through');
-      foot.append(lbl);
-    }
-    const hint = document.createElement('span');
-    hint.textContent = 'Shift-click the marker to strike it through';
-    foot.append(hint);
+    const foot = h(
+      'div',
+      { class: 'ed-note-foot' },
+      ctx.canEdit ? checkbox('Done: strike it through', Boolean(m.done), () => toggleDone(byId(m.id) ?? m)) : null,
+      h('span', {}, 'Shift-click a marker to strike it through'),
+    );
 
     box.replaceChildren(head, body, foot);
     box.dataset.kind = m.kind;
@@ -186,7 +167,7 @@ export function initMarkers(ctx: MarkerCtx): Markers {
     const m = byId(openId);
     if (!m || ctx.view() !== 'gm') return close();
     box.classList.toggle('done', Boolean(m.done));
-    const done = box.querySelector<HTMLInputElement>('.marker-foot input');
+    const done = box.querySelector<HTMLInputElement>('.ed-note-foot input');
     if (done) done.checked = Boolean(m.done);
     const text = box.querySelector<HTMLTextAreaElement | HTMLParagraphElement>('.marker-text');
     if (text instanceof HTMLTextAreaElement) {

@@ -1,13 +1,15 @@
 // Live map viewer, and host for the editor. Renders with @delve/core in the
 // browser, follows every change over the WebSocket, and pans to whatever
-// Claude focuses on. Viewing never needs a login; editing does.
-import { applyOps, buildScene, floorText, PRESETS, sceneToSvg, storeyTitle, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
+// Claude focuses on. Viewing never needs a login; editing does. The chrome
+// around the map (menus, zoom, storeys, toasts) is shell.ts.
+import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
 import { artLoader } from './art.ts';
 import { initChat } from './chat.ts';
 import { SVG_NS } from './ctx.ts';
 import { initEditor } from './editor.ts';
 import { initMarkers } from './markers.ts';
 import { ago, changedIds, countOps, easeInOut, lerpBounds, objectBounds, pad, unionBounds, zoomAt } from './logic.ts';
+import { initShell, type Storey } from './shell.ts';
 
 interface Initial {
   id: string;
@@ -16,6 +18,7 @@ interface Initial {
   /** This map's storeys, top first. */
   levels: Storey[];
   edit: { loggedIn: boolean; passwordSet: boolean };
+  account: { name: string; role: 'admin' | 'gm' } | null;
   /** Only for logged-in editors on a server with the chat bridge set up. */
   chat?: { enabled: boolean; model: string };
 }
@@ -29,12 +32,6 @@ type Incoming =
   | { type: 'error'; error: string; ref?: number }
   | { type: 'pong' };
 
-interface Storey {
-  id: string;
-  name: string;
-  level?: { group: string; name: string; order: number };
-}
-
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const initial = JSON.parse($('delve-initial').textContent ?? '{}') as Initial;
@@ -43,23 +40,29 @@ let map = initial.map;
 let rev = initial.rev;
 const params = new URLSearchParams(location.search);
 let view: View = params.get('view') === 'players' ? 'players' : 'gm';
-let styleOverride = params.get('style') && PRESETS[params.get('style')!] ? params.get('style') : null;
+const styleOverride = params.get('style') && PRESETS[params.get('style')!] ? params.get('style') : null;
+const store = {
+  get: (k: string) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  set: (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v);
+    } catch {
+      /* private window: the choice just isn't kept */
+    }
+  },
+};
+let grid = store.get('delve-grid') !== 'off';
 
 const stage = $<HTMLDivElement>('stage'); // takes the pointer input
 const canvas = $<HTMLDivElement>('canvas'); // holds the map SVG, replaced on every render
 const overlay = document.getElementById('overlay') as unknown as SVGSVGElement; // highlights and editor marks
-const ui = {
-  name: $('map-name'),
-  rev: $('map-rev'),
-  dot: $('conn-dot'),
-  conn: $('conn-text'),
-  activity: $('activity'),
-  toast: $('toast'),
-  style: $<HTMLSelectElement>('style-select'),
-  png: $<HTMLAnchorElement>('png-link'),
-  fit: $<HTMLButtonElement>('fit'),
-};
-const viewButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-view]')];
+const nameEl = $('map-name');
 
 let svg: SVGSVGElement | null = null;
 let bounds: Bounds | null = null;
@@ -70,6 +73,18 @@ const highlights: { b: Bounds; until: number; kind: 'focus' | 'change' }[] = [];
 const renderHooks: (() => void)[] = [];
 const viewHooks: (() => void)[] = [];
 const handled = new WeakSet<Event>();
+
+const shell = initShell({
+  mapId,
+  edit: initial.edit.loggedIn,
+  view,
+  hooks: {
+    setView: (v) => setView(v),
+    zoomIn: () => zoomBy(0.8),
+    zoomOut: () => zoomBy(1.25),
+    fit: () => fit(),
+  },
+});
 
 // ---------- prop and terrain art, loaded as the map needs it ----------
 
@@ -89,10 +104,10 @@ function renderSoon(): void {
 function render(): void {
   art.ensure(map);
   const m = styleOverride ? { ...map, style: { ...map.style, preset: styleOverride } } : map;
-  // fog of war: the GM sees unrevealed parts shaded, the players' view doesn't draw them
-  // the floor number is a badge in the corner of the stage here, not part of the picture
+  // fog of war: the GM sees unrevealed parts shaded, the players' view doesn't draw them;
+  // the floor number is the storeys control here, not part of the picture
   const scene = buildScene(m, { view, assets: art.body, fog: view === 'players' ? 'hide' : 'dim', floorNumber: false });
-  showFloor();
+  if (!grid) scene.layers = scene.layers.filter((l) => l.name !== 'grid');
   stage.style.background = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '';
   canvas.innerHTML = sceneToSvg(scene, { ppg: 20 });
   svg = canvas.querySelector('svg');
@@ -112,6 +127,7 @@ function applyViewBox(): void {
   const box = `${vb.x0} ${vb.y0} ${vb.x1 - vb.x0} ${vb.y1 - vb.y0}`;
   svg?.setAttribute('viewBox', box);
   overlay.setAttribute('viewBox', box);
+  if (bounds) shell.setZoom((100 * Math.max(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0)) / Math.max(vb.x1 - vb.x0, vb.y1 - vb.y0));
   viewHooks.forEach((f) => f());
 }
 
@@ -123,16 +139,16 @@ function drawHighlights(): void {
   if (!highlights.length) return;
   const g = document.createElementNS(SVG_NS, 'g');
   g.setAttribute('class', 'hl');
-  for (const h of highlights) {
-    const b = pad(h.b, 0.2);
+  for (const hl of highlights) {
+    const b = pad(hl.b, 0.2);
     const r = document.createElementNS(SVG_NS, 'rect');
     for (const [k, v] of Object.entries({ x: b.x0, y: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, rx: 0.25 })) r.setAttribute(k, String(v));
-    r.setAttribute('class', `hl-${h.kind}`);
+    r.setAttribute('class', `hl-${hl.kind}`);
     g.appendChild(r);
   }
   overlay.prepend(g);
   clearTimeout(highlightTimer);
-  highlightTimer = window.setTimeout(drawHighlights, Math.max(50, Math.min(...highlights.map((h) => h.until)) - now));
+  highlightTimer = window.setTimeout(drawHighlights, Math.max(50, Math.min(...highlights.map((x) => x.until)) - now));
 }
 
 function highlight(ids: string[], kind: 'focus' | 'change', ms: number): Bounds | null {
@@ -147,47 +163,26 @@ function highlight(ids: string[], kind: 'focus' | 'change', ms: number): Bounds 
 // ---------- chrome ----------
 
 function updateChrome(): void {
-  ui.name.textContent = map.name;
+  nameEl.textContent = map.name;
   document.title = `${map.name} · Delve`;
-  ui.rev.textContent = `rev ${rev}`;
-  for (const b of viewButtons) b.setAttribute('aria-pressed', String(b.dataset.view === view));
-  ui.style.value = styleOverride ?? '';
-  const q = new URLSearchParams({ view, ...(styleOverride ? { style: styleOverride } : {}) });
-  ui.png.href = `/api/v1/maps/${encodeURIComponent(mapId)}/render.png?${q}`;
+  shell.syncView(view);
   const url = new URL(location.href);
-  for (const k of ['view', 'style']) url.searchParams.delete(k);
+  url.searchParams.delete('view');
   if (view === 'players') url.searchParams.set('view', view);
-  if (styleOverride) url.searchParams.set('style', styleOverride);
   history.replaceState(null, '', url);
 }
 
-/** A storey's floor number, big in the stage's top-left corner (0 ground level, −1 below it); nothing for a single map. */
-function showFloor(): void {
-  const badge = document.getElementById('floor-badge');
-  if (!badge) return;
-  badge.hidden = !map.level;
-  badge.textContent = map.level ? floorText(map.level.order) : '';
-  badge.title = map.level ? `Floor ${floorText(map.level.order)}: ${map.level.name}` : '';
-}
-
-function setConnection(state: 'live' | 'connecting' | 'offline' | 'deleted'): void {
-  ui.dot.dataset.state = state;
-  ui.conn.textContent = { live: 'Live', connecting: 'Connecting…', offline: 'Offline, retrying', deleted: 'Map deleted' }[state];
+function setView(v: View): void {
+  view = v;
+  render();
 }
 
 function showActivity(): void {
-  ui.activity.textContent = lastChange ? `${lastChange.text} · ${ago(Date.now() - lastChange.at)}` : 'Waiting for changes';
+  if (lastChange) shell.setActivity(`${lastChange.text} · ${ago(Date.now() - lastChange.at)}`);
 }
 setInterval(showActivity, 5000);
 
-let toastTimer: number | undefined;
-function toast(msg: string, kind: 'error' | 'info' = 'error'): void {
-  ui.toast.textContent = msg;
-  ui.toast.dataset.kind = kind;
-  ui.toast.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (ui.toast.hidden = true), kind === 'error' ? 6000 : 2500);
-}
+const toast = (msg: string, kind: 'error' | 'info' = 'error') => shell.toast(msg, kind);
 
 // ---------- view animation, pan and zoom ----------
 
@@ -212,6 +207,14 @@ function fit(): void {
   animateTo({ ...bounds }, 400);
 }
 
+function zoomBy(factor: number, at?: Point): void {
+  if (!vb || !bounds) return;
+  cancelAnimationFrame(anim ?? 0);
+  vb = zoomAt(vb, at ?? [(vb.x0 + vb.x1) / 2, (vb.y0 + vb.y1) / 2], factor, 3, (bounds.x1 - bounds.x0) * 3);
+  userMoved = true;
+  applyViewBox();
+}
+
 function toMap(clientX: number, clientY: number): Point | null {
   const ctm = svg?.getScreenCTM();
   if (!svg || !ctm) return null;
@@ -224,20 +227,30 @@ const squaresPerPx = (): number => 1 / (svg?.getScreenCTM()?.a || 20);
 stage.addEventListener(
   'wheel',
   (e) => {
-    if (!vb || !bounds) return;
     e.preventDefault();
     const p = toMap(e.clientX, e.clientY);
-    if (!p) return;
-    cancelAnimationFrame(anim ?? 0);
-    vb = zoomAt(vb, p, Math.exp(e.deltaY * 0.0015), 3, (bounds.x1 - bounds.x0) * 3);
-    userMoved = true;
-    applyViewBox();
+    if (p) zoomBy(Math.exp(e.deltaY * 0.0015), p);
   },
   { passive: false },
 );
 
+// One pointer drags the map; two pinch it (phones and tablets).
+const pointers = new Map<number, { x: number; y: number }>();
 let drag: { x: number; y: number; vb: Bounds; scale: number } | null = null;
+let pinch: { d: number; vb: Bounds; mid: Point } | null = null;
+const spread = () => {
+  const [a, b] = [...pointers.values()];
+  return a && b ? { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 } : null;
+};
 stage.addEventListener('pointerdown', (e) => {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2 && vb) {
+    const s = spread()!;
+    const mid = toMap(s.cx, s.cy);
+    if (mid) pinch = { d: s.d, vb: { ...vb }, mid };
+    drag = null;
+    return;
+  }
   if (handled.has(e) || e.button !== 0) return;
   const ctm = svg?.getScreenCTM();
   if (!vb || !ctm) return;
@@ -247,6 +260,19 @@ stage.addEventListener('pointerdown', (e) => {
   stage.classList.add('dragging');
 });
 stage.addEventListener('pointermove', (e) => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && bounds) {
+    const s = spread();
+    if (!s || !s.d) return;
+    const k = pinch.d / s.d;
+    const w = Math.min(Math.max((pinch.vb.x1 - pinch.vb.x0) * k, 3), (bounds.x1 - bounds.x0) * 3);
+    const f = w / (pinch.vb.x1 - pinch.vb.x0);
+    const [mx, my] = pinch.mid;
+    vb = { x0: mx - (mx - pinch.vb.x0) * f, y0: my - (my - pinch.vb.y0) * f, x1: mx + (pinch.vb.x1 - mx) * f, y1: my + (pinch.vb.y1 - my) * f };
+    userMoved = true;
+    applyViewBox();
+    return;
+  }
   if (!drag) return;
   const dx = (e.clientX - drag.x) / drag.scale;
   const dy = (e.clientY - drag.y) / drag.scale;
@@ -254,7 +280,9 @@ stage.addEventListener('pointermove', (e) => {
   userMoved = true;
   applyViewBox();
 });
-const endDrag = () => {
+const endDrag = (e: PointerEvent) => {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
   drag = null;
   stage.classList.remove('dragging');
 };
@@ -263,58 +291,35 @@ stage.addEventListener('pointercancel', endDrag);
 stage.addEventListener('dblclick', (e) => {
   if (!handled.has(e)) fit();
 });
-ui.fit.addEventListener('click', fit);
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement;
-  if (t.closest('input, select, textarea') || e.ctrlKey || e.metaKey || !vb || !bounds) return;
-  const centre: Point = [(vb.x0 + vb.x1) / 2, (vb.y0 + vb.y1) / 2];
-  const maxW = (bounds.x1 - bounds.x0) * 3;
-  if (e.key === 'f' || e.key === '0') fit();
-  else if (e.key === '+' || e.key === '=') {
-    vb = zoomAt(vb, centre, 0.8, 3, maxW);
-    userMoved = true;
-    applyViewBox();
-  } else if (e.key === '-') {
-    vb = zoomAt(vb, centre, 1.25, 3, maxW);
-    userMoved = true;
-    applyViewBox();
-  }
+  if (t.closest('input, select, textarea') || e.altKey) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === '0') {
+    e.preventDefault();
+    fit();
+  } else if (mod) return;
+  else if (e.key === '+' || e.key === '=') zoomBy(0.8);
+  else if (e.key === '-') zoomBy(1.25);
+  else if (e.shiftKey && e.key.toLowerCase() === 'p') setView(view === 'gm' ? 'players' : 'gm');
+  else if (e.shiftKey && e.key.toLowerCase() === 'g') toggleGrid();
 });
 
-for (const b of viewButtons) {
-  b.addEventListener('click', () => {
-    view = b.dataset.view === 'players' ? 'players' : 'gm';
-    render();
-  });
-}
-ui.style.addEventListener('change', () => {
-  styleOverride = ui.style.value || null;
+function toggleGrid(): void {
+  grid = !grid;
+  store.set('delve-grid', grid ? 'on' : 'off');
   render();
-});
+}
 
 // ---------- storeys ----------
 
 let storeys: Storey[] = initial.levels ?? [];
-const storeySelect = document.getElementById('storey-select') as HTMLSelectElement | null;
-function showStoreys(): void {
-  if (!storeySelect) return;
-  storeySelect.replaceChildren(
-    ...storeys.map((s) => Object.assign(document.createElement('option'), { value: s.id, textContent: storeyTitle(s), selected: s.id === mapId })),
-  );
-  storeySelect.hidden = storeys.length < 2;
-}
 async function refreshStoreys(): Promise<void> {
   const res = await fetch(`/api/v1/maps/${encodeURIComponent(mapId)}/levels`);
   if (!res.ok) return;
   storeys = ((await res.json()) as { levels: Storey[] }).levels;
-  showStoreys();
+  shell.setStoreys(storeys);
 }
-storeySelect?.addEventListener('change', () => {
-  // same view, style and edit mode on the other storey
-  const url = new URL(location.href);
-  url.pathname = `/maps/${encodeURIComponent(storeySelect.value)}`;
-  location.href = url.toString();
-});
 
 // ---------- live connection ----------
 
@@ -332,7 +337,7 @@ const pending = new Map<number, { ok: (rev: number) => void; fail: (e: Error) =>
 
 let retry = 1000;
 function connect(): void {
-  setConnection('connecting');
+  shell.setConnection('connecting');
   const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/maps/${encodeURIComponent(mapId)}/live`);
   ws = socket;
   let gone = false;
@@ -341,7 +346,7 @@ function connect(): void {
     switch (msg.type) {
       case 'hello':
         retry = 1000;
-        setConnection('live');
+        shell.setConnection('live');
         if (msg.rev !== rev) {
           map = msg.map;
           rev = msg.rev;
@@ -394,7 +399,7 @@ function connect(): void {
         break;
       case 'deleted':
         gone = true;
-        setConnection('deleted');
+        shell.setConnection('deleted');
         socket.close();
         break;
       default:
@@ -405,7 +410,7 @@ function connect(): void {
     for (const p of pending.values()) p.fail(new Error('connection lost; the change may not have been saved'));
     pending.clear();
     if (gone) return;
-    setConnection('offline');
+    shell.setConnection('offline');
     setTimeout(connect, retry);
     retry = Math.min(retry * 2, 15000);
   };
@@ -415,7 +420,11 @@ function send(ops: Op[]): Promise<number> {
   return new Promise((ok, fail) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) return fail(new Error('not connected; wait a moment and try again'));
     const ref = nextRef++;
-    pending.set(ref, { ok, fail });
+    shell.setSave('saving');
+    pending.set(ref, {
+      ok: (r) => (shell.setSave('saved'), ok(r)),
+      fail: (e) => (shell.setSave('failed'), fail(e)),
+    });
     ws.send(JSON.stringify({ type: 'ops', ops, ref, by: 'editor' }));
   });
 }
@@ -433,8 +442,8 @@ async function historyAction(action: 'undo' | 'redo'): Promise<void> {
 
 render();
 drawHighlights();
-showActivity();
 connect();
+shell.setStoreys(storeys);
 
 let editor: { selection(): string[]; tool(): string | null } | null = null;
 // before the editor: its capture listeners must see marker clicks first
@@ -464,6 +473,7 @@ if (initial.edit.loggedIn) {
     mapId,
     stage,
     overlay,
+    shell,
     handled,
     map: () => map,
     rev: () => rev,
@@ -475,10 +485,9 @@ if (initial.edit.loggedIn) {
     onRender: (cb) => renderHooks.push(cb),
     onView: (cb) => viewHooks.push(cb),
     toast,
-    setEditing: (on) => {
-      document.body.classList.toggle('editing', on);
-      requestAnimationFrame(() => applyViewBox());
-    },
+    view: () => view,
+    grid: () => grid,
+    toggleGrid,
   });
 }
 
@@ -486,6 +495,8 @@ if (initial.chat?.enabled) {
   initChat(
     {
       mapId,
+      shell,
+      account: initial.account,
       selection: () => editor?.selection() ?? [],
       view: () => (vb ? { ...vb } : null),
       layout: () => requestAnimationFrame(() => applyViewBox()),
@@ -494,3 +505,6 @@ if (initial.chat?.enabled) {
     { model: initial.chat.model },
   );
 }
+
+// the canvas keeps its picture centred when panels open and close
+new ResizeObserver(() => applyViewBox()).observe(stage);

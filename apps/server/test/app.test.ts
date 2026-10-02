@@ -92,7 +92,8 @@ describe('preview page', () => {
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain('<script id="delve-initial" type="application/json">');
     expect(page.body).toContain('<script type="module" src="/assets/viewer.js?v=v1">');
-    expect(page.body).toContain('aria-pressed="true">Players’ view');
+    expect(page.body).toContain('<input type="radio" name="view" value="players" checked>'); // the GM / Players switch starts on Players
+    expect(page.body).not.toMatch(/id="players-banner"[^>]* hidden/);
     expect(page.body).toMatch(/<svg [^>]*viewBox=/); // first picture is server-rendered
     expect((await withToken.inject({ url: '/' })).body).toContain(`href="/maps/${id}"`);
     expect((await withToken.inject({ url: '/maps/map_nope' })).statusCode).toBe(404);

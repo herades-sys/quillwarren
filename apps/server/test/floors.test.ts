@@ -112,16 +112,17 @@ describe('floor numbers', () => {
     ws.terminate();
   });
 
-  it('shows the floor as a badge on the viewer page and in the storey picker, not in the first picture', async () => {
+  it('shows the floors in the storeys control on the map page, not in the first picture', async () => {
     const id = await newMapId('test-dungeon');
     const cellar = await addLevel(id, 'Cellar', 'below');
     const page = (await app.inject({ url: `/maps/${cellar}` })).body;
-    expect(page).toContain('<div id="floor-badge" aria-label="Floor number">−1</div>');
-    expect(page).toContain('>−1 · Cellar</option>');
-    expect(page).toContain('>0 · Ground floor</option>');
+    // the control is drawn by the page script from the storeys in the initial data
+    expect(page).toContain('id="storeys"');
+    expect(page).toMatch(/"levels":\[.*"Ground floor".*"Cellar".*"order":-1/s);
+    expect(page).toMatch(/<button class="btn btn-icon ed-storey-btn" type="button" id="storey-btn" aria-label="Change storey" aria-haspopup="menu" aria-expanded="false">/);
     expect(page).not.toContain('data-layer="floor-number"');
     const alone = (await app.inject({ url: `/maps/${await newMapId()}` })).body;
-    expect(alone).toContain('<div id="floor-badge" aria-label="Floor number" hidden></div>');
+    expect(alone).toMatch(/id="storey-btn"[^>]* hidden>/);
     // GM renders carry the number in the corner; the players' view doesn't
     expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=gm` })).body).toContain('data-layer="floor-number"');
     expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=players` })).body).not.toContain('data-layer="floor-number"');
