@@ -357,6 +357,30 @@ describe('account store', () => {
       expect(s.verifyLogin('Hive', 'a new hive password here', totp(base32Decode(secret), later), later)?.factor).toBe('code');
     });
 
+    it('can be switched from the authenticator to password only, keeping the password and sessions', () => {
+      const s = open();
+      const gm = activate(s, 'Gm', 'gm', T0);
+      const session = s.createSession(gm.id, {}, T0);
+      const turnOn = s.createLink(gm.id, 'authenticator', T0);
+      const u = s.makePasswordOnly(gm.id);
+      expect(u).toMatchObject({ passwordOnly: true, active: true, recoveryLeft: 0 });
+      expect(s.sessionUser(session, T0)).not.toBeNull();
+      expect(s.link(turnOn, T0)).toBeNull(); // an open "new authenticator" link goes too
+      const later = T0 + 30_000;
+      expect(s.verifyLogin('Gm', 'a long enough password', '', later)?.factor).toBe('password');
+      expect(s.useSecondFactor(gm.id, totp(base32Decode(gm.secret), later), later)).toBeNull();
+      expect(s.useSecondFactor(gm.id, gm.codes[0]!, later)).toBeNull();
+      expect(() => s.makePasswordOnly(gm.id)).toThrow(/already/);
+      const admin = activate(s, 'Ana', 'admin', T0);
+      expect(() => s.makePasswordOnly(admin.id)).toThrow(/Admin accounts/);
+      // a GM still setting up keeps the link, which now asks for the password alone
+      const pending = s.createUser('Bo', 'gm', T0);
+      const token = s.createLink(pending.id, 'new', T0);
+      expect(s.makePasswordOnly(pending.id).active).toBe(false);
+      expect(s.link(token, T0)!.passwordOnly).toBe(true);
+      expect(s.completePasswordLink(token, PW, T0).active).toBe(true);
+    });
+
     it('can be switched to need the authenticator by a reset', () => {
       const s = open();
       const hive = s.createUser('Hive', 'gm', T0, { passwordOnly: true });

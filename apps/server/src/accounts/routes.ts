@@ -238,6 +238,15 @@ export function registerAccounts(app: FastifyInstance, auth: EditorAuth, account
           const token = accounts.resetLogin(target.id, Date.now(), { passwordOnly: false });
           return adminView(reply, cur, { newLink: linkFor(target, token, target.active), notice: NOTICES.get('authenticator-required') });
         }
+        case 'make-password-only': {
+          if (!target) return adminView(reply, cur, { error: 'There is no such account.' }, 404);
+          const user = accounts.makePasswordOnly(target.id);
+          return adminView(reply, cur, {
+            notice: user.active
+              ? `${user.name} now logs in with name and password only. Their password and sessions stay; their authenticator and recovery codes no longer work.`
+              : `${user.name}'s setup link now asks for a password only.`,
+          });
+        }
         case 'link': {
           if (!target) return adminView(reply, cur, { error: 'There is no such account.' }, 404);
           if (target.id === me.id) return adminView(reply, cur, { error: 'Change your own password or authenticator on your account page.' }, 400);

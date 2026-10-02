@@ -310,6 +310,24 @@ export class AccountStore {
     });
   }
 
+  /**
+   * Turn a GM's authenticator off: from now on name and password are enough.
+   * The password and sessions stay; the authenticator secret, recovery codes and
+   * any open "new authenticator" link go. A GM still setting up keeps their
+   * setup link, which then asks for the password only.
+   */
+  makePasswordOnly(id: number): User {
+    const r = this.row(id);
+    if (!r) throw new AccountError('There is no such account.');
+    if (r.role === 'admin') throw new AccountError('Admin accounts always use an authenticator app. Make the account a GM first.');
+    if (r.two_factor === 0) throw new AccountError(`${String(r.name)} logs in with a password only already.`);
+    return this.tx(() => {
+      this.db.prepare(`UPDATE users SET two_factor = 0, totp_secret = NULL, totp_last_step = -1, recovery_hashes = '[]' WHERE id = ?`).run(id);
+      this.db.prepare(`DELETE FROM setup_links WHERE user_id = ? AND purpose = 'authenticator'`).run(id);
+      return this.user(id)!;
+    });
+  }
+
   // ---------- setup links ----------
 
   /** A one-time link token (the only copy; only its hash is kept). It replaces the account's earlier link. */

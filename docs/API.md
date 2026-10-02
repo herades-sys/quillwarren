@@ -28,6 +28,7 @@ The browser editor has two kinds of account, **admin** and **GM**. Both can edit
 - **Password only** (a checkbox when adding a GM): the account logs in with name and password alone, from home and through the tunnel alike. Its setup link only asks for the password (at least 12 characters), which finishes the setup and logs in. It has no recovery codes. Lockouts work as for every account. Admin accounts can't be password only, and a password-only account can't be made admin. The admin list tags these accounts "password only".
 - **Reset login:** locks the account (password, authenticator, recovery codes and sessions all go) and makes a new setup link. The account keeps its mode. For accounts not yet set up, the same button just makes a new link.
 - **Require authenticator** (password-only accounts): resets the login, and the new setup link asks for a password and an authenticator.
+- **Password only** (GMs with an authenticator): the other way round, without a new link. The GM keeps their password and sessions; their authenticator, recovery codes and any open "new authenticator" link stop working. A GM still setting up keeps their setup link, which then asks for the password only. Admins can't be switched.
 - Make admin / make GM, remove an account, and see and end sessions ("Log out everywhere" per account, or "Log out everyone except me").
 - The last active admin can't be removed, demoted or reset. Admins can't remove, demote or reset themselves here (their own login is on `/account`).
 

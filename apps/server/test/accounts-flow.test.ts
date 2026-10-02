@@ -472,6 +472,27 @@ describe('password-only GM accounts', () => {
     expect((await login('Hive', HIVE_PW, code(secret))).statusCode).toBe(303);
   });
 
+  it('can be made from an existing GM on the admin page, who keeps their password and stays logged in', async () => {
+    const admin = await bootstrap();
+    const gm = await addAccount(admin.cookie, 'Gm');
+    const before = (await get('/admin', admin.cookie)).body;
+    expect(before).toContain('value="make-password-only"');
+    expect(before.match(/value="make-password-only"/g)).toHaveLength(1); // the GM's row only, never an admin's
+    const res = await post('/admin', { action: 'make-password-only', user: '2' }, admin.cookie);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Gm now logs in with name and password only');
+    expect(res.body).toMatch(/Gm<\/strong>.*?Password only/s);
+    expect(res.body).not.toContain('value="make-password-only"');
+    expect(await loggedIn(gm.cookie)).toBe(true);
+    tick();
+    expect((await login('Gm', GM_PW, '')).statusCode).toBe(303);
+    expect((await login('Gm', 'not the password', '')).statusCode).toBe(401);
+    // twice, an admin, or not from the admin: refused
+    expect((await post('/admin', { action: 'make-password-only', user: '2' }, admin.cookie)).statusCode).toBe(400);
+    expect((await post('/admin', { action: 'make-password-only', user: '1' }, admin.cookie)).statusCode).toBe(400);
+    expect((await post('/admin', { action: 'make-password-only', user: '2' }, gm.cookie)).statusCode).toBe(403);
+  });
+
   it('keep their mode on a reset, and the admin can require the authenticator', async () => {
     const admin = await bootstrap();
     const hive = await addHive(admin.cookie);
