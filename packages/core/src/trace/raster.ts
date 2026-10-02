@@ -1,4 +1,4 @@
-// Raster tools for tracing a map picture: colour clustering, clean-up of
+// Raster tools for tracing a map picture: clean-up of
 // binary masks, connected parts, outlines along pixel edges, and outline
 // simplification. Pure number crunching on typed arrays (browser and Node).
 
@@ -15,111 +15,7 @@ export interface Mask {
   px: Uint8Array;
 }
 
-// ---------- colours ----------
-
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const d2 = (a: RGB, r: number, g: number, b: number) => (a.r - r) ** 2 + (a.g - g) ** 2 + (a.b - b) ** 2;
-
-/**
- * The picture's main colours (k-means++ on up to `sample` pixels; transparent
- * pixels are skipped). Sorted by how much of the picture each one covers.
- */
-export function mainColours(rgba: Uint8Array | Uint8ClampedArray, k = 7, sample = 60_000, seed = 1): { colour: RGB; share: number }[] {
-  const n = rgba.length / 4;
-  const step = Math.max(1, Math.floor(n / sample));
-  const pts: number[] = [];
-  for (let i = 0; i < n; i += step) if (rgba[i * 4 + 3]! >= 128) pts.push(rgba[i * 4]!, rgba[i * 4 + 1]!, rgba[i * 4 + 2]!);
-  const m = pts.length / 3;
-  if (!m) return [];
-  const rand = rng(seed);
-  const centres: RGB[] = [];
-  const first = Math.floor(rand() * m) * 3;
-  centres.push({ r: pts[first]!, g: pts[first + 1]!, b: pts[first + 2]! });
-  const best = new Float64Array(m).fill(Infinity);
-  while (centres.length < Math.min(k, m)) {
-    const c = centres.at(-1)!;
-    let total = 0;
-    for (let i = 0; i < m; i++) {
-      best[i] = Math.min(best[i]!, d2(c, pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!));
-      total += best[i]!;
-    }
-    if (total === 0) break;
-    let pick = rand() * total;
-    let j = 0;
-    while (j < m - 1 && (pick -= best[j]!) > 0) j++;
-    centres.push({ r: pts[j * 3]!, g: pts[j * 3 + 1]!, b: pts[j * 3 + 2]! });
-  }
-  const assign = new Int32Array(m);
-  for (let it = 0; it < 14; it++) {
-    const sum = centres.map(() => [0, 0, 0, 0]);
-    for (let i = 0; i < m; i++) {
-      let bi = 0;
-      let bd = Infinity;
-      for (let c = 0; c < centres.length; c++) {
-        const dd = d2(centres[c]!, pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
-        if (dd < bd) {
-          bd = dd;
-          bi = c;
-        }
-      }
-      assign[i] = bi;
-      const s = sum[bi]!;
-      s[0]! += pts[i * 3]!;
-      s[1]! += pts[i * 3 + 1]!;
-      s[2]! += pts[i * 3 + 2]!;
-      s[3]!++;
-    }
-    centres.forEach((c, i) => {
-      const s = sum[i]!;
-      if (s[3]) {
-        c.r = s[0]! / s[3]!;
-        c.g = s[1]! / s[3]!;
-        c.b = s[2]! / s[3]!;
-      }
-    });
-  }
-  const counts = centres.map(() => 0);
-  for (let i = 0; i < m; i++) counts[assign[i]!]!++;
-  return centres
-    .map((c, i) => ({ colour: { r: Math.round(c.r), g: Math.round(c.g), b: Math.round(c.b) }, share: counts[i]! / m }))
-    .filter((c) => c.share > 0)
-    .sort((a, b) => b.share - a.share);
-}
-
-/** Each pixel's nearest colour (index), 255 for transparent pixels. */
-export function classify(rgba: Uint8Array | Uint8ClampedArray, colours: readonly RGB[]): Uint8Array {
-  const n = rgba.length / 4;
-  const out = new Uint8Array(n);
-  for (let i = 0; i < n; i++) {
-    if (rgba[i * 4 + 3]! < 128) {
-      out[i] = 255;
-      continue;
-    }
-    const r = rgba[i * 4]!;
-    const g = rgba[i * 4 + 1]!;
-    const b = rgba[i * 4 + 2]!;
-    let bi = 0;
-    let bd = Infinity;
-    for (let c = 0; c < colours.length; c++) {
-      const dd = d2(colours[c]!, r, g, b);
-      if (dd < bd) {
-        bd = dd;
-        bi = c;
-      }
-    }
-    out[i] = bi;
-  }
-  return out;
-}
+// ---------- masks ----------
 
 export function maskOf(classes: Uint8Array, w: number, h: number, pick: (c: number) => boolean): Mask {
   const px = new Uint8Array(w * h);
@@ -132,41 +28,50 @@ export function maskOf(classes: Uint8Array, w: number, h: number, pick: (c: numb
 /**
  * 1 where any pixel within r (a square) is 1 (dilate), or where all are
  * (erode; outside the picture counts as 1, so parts touching the edge don't shrink).
+ * Rows with prefix sums, then columns with running counts row by row (cache friendly).
  */
 function sweep(m: Mask, r: number, any: boolean): Mask {
   if (r <= 0) return { w: m.w, h: m.h, px: m.px.slice() };
   const { w, h } = m;
+  const src = m.px;
   const tmp = new Uint8Array(w * h);
   const out = new Uint8Array(w * h);
-  // rows
+  const pre = new Int32Array(w + 1);
   for (let y = 0; y < h; y++) {
-    let count = 0;
     const row = y * w;
-    for (let x = -r; x < w; x++) {
-      const add = x + r;
-      if (add < w) count += m.px[row + add]!;
-      const drop = x - r - 1;
-      if (drop >= 0) count -= m.px[row + drop]!;
-      if (x >= 0) {
-        const span = Math.min(w - 1, x + r) - Math.max(0, x - r) + 1;
-        tmp[row + x] = any ? (count > 0 ? 1 : 0) : count === span ? 1 : 0;
-      }
+    for (let x = 0; x < w; x++) pre[x + 1] = pre[x]! + src[row + x]!;
+    for (let x = 0; x < w; x++) {
+      const lo = x - r < 0 ? 0 : x - r;
+      const hi = x + r >= w ? w - 1 : x + r;
+      const c = pre[hi + 1]! - pre[lo]!;
+      tmp[row + x] = any ? (c > 0 ? 1 : 0) : c === hi - lo + 1 ? 1 : 0;
     }
   }
-  // columns
-  for (let x = 0; x < w; x++) {
-    let count = 0;
-    for (let y = -r; y < h; y++) {
-      const add = y + r;
-      if (add < h) count += tmp[add * w + x]!;
-      const drop = y - r - 1;
-      if (drop >= 0) count -= tmp[drop * w + x]!;
-      if (y >= 0) {
-        const span = Math.min(h - 1, y + r) - Math.max(0, y - r) + 1;
-        out[y * w + x] = any ? (count > 0 ? 1 : 0) : count === span ? 1 : 0;
-      }
-    }
+  const count = new Int32Array(w);
+  // rows 0..r-1 start in the window of row 0
+  for (let y = 0; y < Math.min(r, h); y++) for (let x = 0; x < w; x++) count[x] = count[x]! + tmp[y * w + x]!;
+  for (let y = 0; y < h; y++) {
+    const add = y + r;
+    if (add < h) for (let x = 0, a = add * w; x < w; x++) count[x] = count[x]! + tmp[a + x]!;
+    const drop = y - r - 1;
+    if (drop >= 0) for (let x = 0, d = drop * w; x < w; x++) count[x] = count[x]! - tmp[d + x]!;
+    const span = Math.min(h - 1, y + r) - Math.max(0, y - r) + 1;
+    const row = y * w;
+    if (any) for (let x = 0; x < w; x++) out[row + x] = count[x]! > 0 ? 1 : 0;
+    else for (let x = 0; x < w; x++) out[row + x] = count[x] === span ? 1 : 0;
   }
+  return { w, h, px: out };
+}
+
+/** Opening with a 2 × 2 square: drops lines one pixel thin, keeps two-pixel ones (thin walls in a small picture). */
+export function open2(m: Mask): Mask {
+  const { w, h, px } = m;
+  const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < h ? px[y * w + x]! : 1);
+  const er = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) er[y * w + x] = at(x, y) & at(x + 1, y) & at(x, y + 1) & at(x + 1, y + 1);
+  const out = new Uint8Array(w * h);
+  const e = (x: number, y: number) => (x >= 0 && y >= 0 ? er[y * w + x]! : 0);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[y * w + x] = px[y * w + x]! & (e(x, y) | e(x - 1, y) | e(x, y - 1) | e(x - 1, y - 1));
   return { w, h, px: out };
 }
 
@@ -179,8 +84,8 @@ export const close = (m: Mask, r: number) => erode(dilate(m, r), r);
 
 // ---------- connected parts ----------
 
-/** 8-connected parts of the 1s: a label per pixel (0 = none) and each part's pixel count. */
-export function parts(m: Mask): { labels: Int32Array; sizes: number[] } {
+/** Connected parts of the 1s (8-connected, or 4-connected with `four`): a label per pixel (0 = none) and each part's pixel count. */
+export function parts(m: Mask, four = false): { labels: Int32Array; sizes: number[] } {
   const { w, h, px } = m;
   const labels = new Int32Array(w * h);
   const sizes: number[] = [0];
@@ -203,7 +108,7 @@ export function parts(m: Mask): { labels: Int32Array; sizes: number[] } {
         if (yy < 0 || yy >= h) continue;
         for (let dx = -1; dx <= 1; dx++) {
           const xx = x + dx;
-          if ((dx === 0 && dy === 0) || xx < 0 || xx >= w) continue;
+          if ((dx === 0 && dy === 0) || xx < 0 || xx >= w || (four && dx !== 0 && dy !== 0)) continue;
           const j = yy * w + xx;
           if (px[j] && !labels[j]) {
             labels[j] = next;
@@ -218,15 +123,70 @@ export function parts(m: Mask): { labels: Int32Array; sizes: number[] } {
   return { labels, sizes };
 }
 
+/** 1D squared distance transform of f (Felzenszwalb and Huttenlocher), written into d. */
+function edt1(f: Float64Array, n: number, d: Float64Array, v: Int32Array, z: Float64Array): void {
+  let k = 0;
+  v[0] = 0;
+  z[0] = -Infinity;
+  z[1] = Infinity;
+  for (let q = 1; q < n; q++) {
+    if (f[q] === Infinity && f[v[k]!] === Infinity) continue;
+    let s = (f[q]! + q * q - (f[v[k]!]! + v[k]! * v[k]!)) / (2 * q - 2 * v[k]!);
+    while (s <= z[k]!) {
+      k--;
+      s = (f[q]! + q * q - (f[v[k]!]! + v[k]! * v[k]!)) / (2 * q - 2 * v[k]!);
+    }
+    k++;
+    v[k] = q;
+    z[k] = s;
+    z[k + 1] = Infinity;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) {
+    while (z[k + 1]! < q) k++;
+    const dq = q - v[k]!;
+    d[q] = dq * dq + f[v[k]!]!;
+  }
+}
+
+/** Euclidean distance from each 1 pixel to the nearest 0 (or to outside the mask, when `edge` is set), 0 on the 0s. */
+export function distanceTransform(m: Mask, edge = false): Float32Array {
+  const { w, h, px } = m;
+  const pad = edge ? 1 : 0;
+  const W = w + 2 * pad;
+  const H = h + 2 * pad;
+  const g = new Float64Array(W * H).fill(edge ? 0 : Infinity);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) g[(y + pad) * W + x + pad] = px[y * w + x] ? Infinity : 0;
+  const n = Math.max(W, H);
+  const f = new Float64Array(n);
+  const d = new Float64Array(n);
+  const v = new Int32Array(n);
+  const z = new Float64Array(n + 1);
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) f[y] = g[y * W + x]!;
+    edt1(f, H, d, v, z);
+    for (let y = 0; y < H; y++) g[y * W + x] = d[y]!;
+  }
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) f[x] = g[y * W + x]!;
+    edt1(f, W, d, v, z);
+    const yy = y - pad;
+    if (yy < 0 || yy >= h) continue;
+    for (let x = pad; x < W - pad; x++) out[yy * w + x - pad] = Math.sqrt(d[x]!);
+  }
+  return out;
+}
+
 /** Fill holes (4-connected 0-areas not touching the edge) up to maxArea pixels: text printed over a building, say. */
 export function fillHoles(m: Mask, maxArea: number): Mask {
-  const { w, h } = m;
-  const inv: Mask = { w, h, px: m.px.map((v) => (v ? 0 : 1)) };
-  const out = m.px.slice();
-  const seen = new Uint8Array(w * h);
-  const queue = new Int32Array(w * h);
-  for (let start = 0; start < inv.px.length; start++) {
-    if (!inv.px[start] || seen[start]) continue;
+  const { w, h, px } = m;
+  const n = w * h;
+  const out = px.slice();
+  const seen = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  for (let start = 0; start < n; start++) {
+    if (px[start] || seen[start]) continue;
     let head = 0;
     let tail = 0;
     queue[tail++] = start;
@@ -235,14 +195,11 @@ export function fillHoles(m: Mask, maxArea: number): Mask {
     while (head < tail) {
       const i = queue[head++]!;
       const x = i % w;
-      const y = (i - x) / w;
-      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) edge = true;
-      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
-        if (j >= 0 && inv.px[j] && !seen[j]) {
-          seen[j] = 1;
-          queue[tail++] = j;
-        }
-      }
+      if (x === 0 || x === w - 1 || i < w || i >= n - w) edge = true;
+      if (x > 0 && !px[i - 1] && !seen[i - 1]) (seen[i - 1] = 1), (queue[tail++] = i - 1);
+      if (x < w - 1 && !px[i + 1] && !seen[i + 1]) (seen[i + 1] = 1), (queue[tail++] = i + 1);
+      if (i >= w && !px[i - w] && !seen[i - w]) (seen[i - w] = 1), (queue[tail++] = i - w);
+      if (i < n - w && !px[i + w] && !seen[i + w]) (seen[i + w] = 1), (queue[tail++] = i + w);
     }
     if (!edge && tail <= maxArea) for (let q = 0; q < tail; q++) out[queue[q]!] = 1;
   }

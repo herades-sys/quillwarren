@@ -15,8 +15,16 @@ export {
 } from './interop/dungeonscrawl.ts';
 export { METRES_PER_FOOT, SQUARE_SIZES, metresPerSquare, parseSquareUnit, squareUnit, type SquareUnit } from './units.ts';
 export { fromWatabou, CityImportError, type CityImportOptions, type CityImportResult } from './interop/watabou.ts';
-export { mainColours, classify, downscale, dropGridLines, outlines, simplify, signedArea, type RGB, type Mask } from './trace/raster.ts';
-export { traceImage, guessRoles, tracedMap, TRACE_ROLES, TRACE_MIN_WIDTH, type TraceRole, type TraceOptions, type TraceResult } from './trace/trace.ts';
+export { downscale, dropGridLines, outlines, simplify, signedArea, distanceTransform, type RGB, type Mask } from './trace/raster.ts';
+export { mainColours, classify, colourStats, toLab, deltaE, MERGE_DELTA_E, type Lab, type ColourStats, type ColourSpace, type ColourOptions } from './trace/colour.ts';
+export { detectGrid, wallLattice, luminance, GRID_MIN_STRENGTH, GRID_MIN_FILL, type GridFit } from './trace/grid.ts';
+export { analysePicture, coloursForMode, guessDungeonRoles, DEFAULT_COLOURS, PAINTED_COLOURS, PAINTED_TEXTURE, TYPICAL_WALL, type PictureAnalysis } from './trace/analyse.ts';
+export { tracePainted, guessPaintedRoles, squareUp, splitBlock, minAreaRect, paintedScale, paintedSmoothing, type PaintedOptions, type PaintedResult } from './trace/painted.ts';
+export { traceDungeon, wallThickness, type DungeonRole, type DungeonTraceOptions, type DungeonTraceResult } from './trace/dungeon.ts';
+export { splitRooms, type RoomPiece, type Split } from './trace/rooms.ts';
+export { snapRing, type SnapOptions } from './trace/snap.ts';
+export { kuwahara, textureShare } from './trace/smooth.ts';
+export { traceImage, guessRoles, tracedMap, dungeonRole, TRACE_ROLES, TRACE_MODES, TRACE_TERRAIN, TRACE_MIN_WIDTH, type TraceRole, type TraceMode, type TraceOptions, type TraceResult } from './trace/trace.ts';
 export {
   shapePath,
   shapeBounds,

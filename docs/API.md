@@ -441,29 +441,47 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 - **Dungeon Scrawl:** the result exports to `.ds` like any map, one outline per house.
 - **Code:** core `fromWatabou`.
 
-### Tracing a map picture (PNG, JPG)
+### Tracing a map picture (PNG, JPG, WebP)
 
-- **Page:** `/import/image`, linked from the start page as "Trace a map picture". The picture never leaves the browser: `/assets/trace.js` runs the page, and `/assets/trace-worker.js` does the tracing, so the page stays responsive. Only the finished map goes to the server, through `POST /api/v1/maps` with `{ map }`, which needs the editor login.
+- **Page:** `/import/image`, linked from the start page as "Trace a map picture". The picture never leaves the browser: `/assets/trace.js` runs the page, and `/assets/trace-worker.js` does the work, so the page stays responsive. Only the finished map goes to the server, through `POST /api/v1/maps` with `{ map }`, which needs the editor login.
 - **Steps:**
   1. Load the picture (choose, drop or paste). Pictures bigger than 2000 px are shrunk first.
-  2. Delve finds the main colours (4–12, default 7) and guesses a role for each. Roles: ignore, building/room, wall, water, road, grass, field, sand.
-  3. Set the scale:
-     - the picture's width in feet, or
-     - Measure: click both ends of a scale bar and enter its length in m or ft.
-     - The page shows the squares over the picture, so you can check the scale.
-  4. Optionally crop to the part you want.
-  5. Check the outlines over the picture, or the finished map, then Create map. It opens in the editor.
-- **What comes across:**
+  2. Delve looks at it (`analysePicture`): its main colours, a printed grid, whether it is painted or textured, and the kind of map. The kind can be switched:
+     - **Dungeon or battle map:** light floor inside dark wall lines (Dungeon Scrawl, DungeonFog, One Page Dungeon, Delve's own renders, drawings and scans).
+     - **City plan:** flat colours (Watabou's generator) or painted (RPG city maps).
+     - **Painted or textured** (a checkbox, set when the picture has a lot of texture): the colours are found on a smoothed copy (a Kuwahara filter: textures, brush strokes and the lit and shaded side of a roof flatten, edges stay).
+  3. Set the scale, and **1 square =** any of `SQUARE_SIZES` (5, 10, 20 ft or 1, 1.5, 2, 3, 5 m). The map gets that unit (`grid.unit`). The scale comes from one of:
+     - **Grid** (the default when a grid was found): one grid cell is one square. The cell size in px and how many squares a cell is can be changed. **Grid lines** (a tool): click two grid lines and say how many squares apart they are.
+     - **Scale bar:** **Measure** both ends, then enter its length in m or ft.
+     - **Width:** the whole picture's width in m or ft.
+     - The page draws the squares over the picture (pink when they come from the grid), so the scale can be checked. Without a printed grid, dungeon pictures start from the lattice their straight walls stand on (`wallLattice`: the same frequency fit on the wall lines' centres, near a first guess from the wall thickness, walls being about 0.12 squares thick), and say so.
+  4. Check the colour roles. Roles: ignore, building/room, wall, water, road, grass, field, sand. They read by kind: in a dungeon "building" is the floor and "wall" the wall lines (and text); in a city "wall" is the city wall.
+  5. Optionally crop, check the outlines over the picture or the finished map, then Create map. It opens in the editor.
+- **Dungeon mode** (`trace/dungeon.ts`):
+  - Ink is the wall colours (plus the soft grey edges darker than halfway to the floor). Thick ink, what survives an opening a little thinner than the measured wall width, is a wall; thin ink (grid lines, text, hatching strokes, door leaves, furniture) is not.
+  - The parts that walls enclose are floor when they are mostly floor coloured, walled all round, not cut by the picture's edge and, with a grid, show the grid; without a grid, hatched rock is told apart by its many strokes. The ground round the map, rock between rooms and the inside of pillars are left out.
+  - Door leaves (small light rectangles in an ink outline, a quarter of a square thick) close their gap while the floor is looked for, so a door to the outside doesn't open the floor to it. They become Delve doors on the half-square grid; the floor runs through the opening.
+  - Holes over a third of a square stay (pillars and pits as cutouts, solid when they are mostly ink); smaller ones (room numbers, text, symbols) are filled.
+  - The floor grows half a wall into the walls, because a map's wall line is drawn on the floor's edge. A thin wall with floor on both sides (two rooms behind one wall, a shut secret door) stays as a solid cutout named "Wall", and the floor runs on under it.
+  - Each floor area is split into rooms and corridors (`trace/rooms.ts`): every pixel's local thickness (the biggest disk, and the biggest square, inside the floor that covers it); pieces are where both change gently, crumbs and thin strips join a neighbour, and pieces longer than three times their width (up to 2.6 squares) are corridors.
+  - Outlines are tidied (`trace/snap.ts`): straight walls along x, y or at 45° within 0.2 squares of a half-square line move onto it (not into a neighbour behind a thin wall), corners are rebuilt where the walls meet, short kinks go, and curves (round rooms, caves) stay smooth polygons.
+  - Water (blue) and grass (green) inside are terrain.
+- **City mode, flat colours** (`trace/trace.ts`), as before:
   - Buildings become rooms. Courtyards stay holes (cutouts). Small holes, like printed text, are filled.
   - Walls become rooms named "Wall". A shape with a hole, like a ring wall, is split into solid pieces that overlap by a pixel.
   - The other roles become terrain.
-- **Clean-up:**
-  - A printed grid is removed. This means straight lines up to 3 px thick that cross at least 12% of the picture; short lines such as house outlines stay.
+  - A printed grid is removed: straight lines up to 3 px thick that cross at least 12% of the picture; short lines such as house outlines stay.
   - Each role skips parts thinner than a set width in squares. Walls default to 0.5 and water to 1, which drops text, outlines and house shadows in those colours.
-  - Pieces under 0.3 squares are dropped.
-  - Touching buildings can be joined into blocks. They stay separate by default.
-- **Command line:** `npm run trace -- picture.png out.delve.json --width-ft 1684 [--feet 10] [--roles ignore,building,water,wall,...] [--min water=1.5] [--join] [--render out.png]`. It prints the colours with the guessed roles, and reads PNG only (decoded with `node:zlib`).
-- **Code:** core `trace/raster.ts` (colours, masks, outlines) and `trace/trace.ts` (`traceImage`, `guessRoles`, `tracedMap`).
+  - Pieces under 0.3 squares are dropped. Touching buildings can be joined into blocks.
+  - Its colours are plain RGB k-means (7 by default) and its roles the old guesses, so flat plans trace as they always did.
+- **City mode, painted** (`trace/painted.ts`; sizes scale with the picture, for one about 1300 px long):
+  - Colours in Lab on the smoothed copy (12 by default), roles from hue and layout: red to brown roofs (both shades) are buildings, grey or dark olive the wall, pale cyan to blue water, greens grass, light yellow fields, the sandy colour among the houses streets, white and black left out.
+  - Houses: the roof colours as the unsmoothed picture has them (there the thin gaps of street between touching houses are still open), ridge highlights, tiles and printed numbers filled, strong dark lines part touching houses. Each house is squared up: its oriented rectangle, or right angles in its own direction; a block of several houses is cut into rectangles when they cover it well. Join touching buildings makes blocks instead.
+  - The city wall: the long thin lines of the wall colour (its blobs are dark roofs), and "houses" far longer than wide. Round and square buildings standing on the wall line are its towers (circles named "Tower").
+  - Water (brooks a few pixels wide too), streets, gardens and fields become terrain with their holes. Anything inside a big pale area (a legend box, a cartouche) is left out.
+- **Command line:** `npm run trace -- picture.png out.delve.json [--mode dungeon|city] [--painted|--flat] [--unit "2 m"] [--px-per-square N | --ppm N | --width N | --width-ft N] [--colours 8] [--roles ignore,building,...] [--min water=1.5] [--join] [--render out.png]`. `--ppm` is picture pixels per metre (from a scale bar). Dungeon pictures with a grid need no scale. It prints what it found and reads PNG only (decoded with `node:zlib`).
+- **Benchmark:** `npm run trace-bench -- [--set full|quick|perf] [--out dir] [--verbose] [--timings] [--legacy [--true-scale]] [--city feyvale.png] [--sample painted.png --sample-ppm 2.18 --sample-unit "2 m"]` renders the bench maps (`apps/server/src/cli/trace-bench-lib.ts`: the test dungeon and six more, every style, 30–100 px per square, with and without the grid, noisy, blurred, with room numbers), traces them as the page does and prints floor IoU, scale error, room count, the share of outline points on half squares and the time. `--out` writes the pictures and overlays. `apps/server/test/trace-bench.test.ts` holds a fast subset to thresholds (IoU ≥ 0.95, scale within 2 %).
+- **Code:** core `trace/colour.ts` (Lab, `mainColours`, `classify`, `colourStats`), `trace/grid.ts` (`detectGrid`), `trace/smooth.ts` (`kuwahara`, `textureShare`), `trace/analyse.ts` (`analysePicture`, `coloursForMode`, role guesses), `trace/dungeon.ts`, `trace/rooms.ts`, `trace/snap.ts`, `trace/painted.ts`, `trace/raster.ts` (masks, outlines) and `trace/trace.ts` (`traceImage`, `guessRoles`, `tracedMap`).
 
 ## Live: WebSocket `/maps/:id/live`
 

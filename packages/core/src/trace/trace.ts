@@ -1,16 +1,28 @@
-// Tracing a map picture (a city plan, a scanned dungeon) into a Delve map.
-// Each main colour gets a role; buildings and walls become rooms, the other
-// roles become terrain. Thin lines (grid, outlines) are cleaned away, text
-// holes in buildings are filled, and shapes with holes that Delve can't hold
-// in one piece (a city wall ring, a park around houses) are split in two.
+// Tracing a map picture into a Delve map, in one of two modes.
+// - Dungeon (and battle maps): light floor drawn inside dark wall lines, often on
+//   a grid. The floor becomes rooms and corridors and Delve draws the walls; see
+//   dungeon.ts.
+// - City plan (Watabou's generator and other flat-colour plans): each main colour
+//   gets a role; buildings and walls become rooms, the other roles become
+//   terrain. Thin lines (grid, outlines) are cleaned away, text holes in
+//   buildings are filled, and shapes with holes that Delve can't hold in one
+//   piece (a city wall ring, a park around houses) are split in two.
 import { FORMAT, FORMAT_VERSION, type DelveMap, type MapObject, type Point } from '../schema.ts';
 import { validateMap } from '../validate.ts';
-import { classify, close, dropGridLines, fillHoles, maskOf, open, outlines, parts, signedArea, simplify, type Mask, type RGB } from './raster.ts';
+import { classify, type ColourSpace } from './colour.ts';
+import { traceDungeon, type DungeonRole } from './dungeon.ts';
+import { paintedSmoothing, tracePainted } from './painted.ts';
+import { kuwahara } from './smooth.ts';
+import { close, dropGridLines, fillHoles, maskOf, open, outlines, parts, signedArea, simplify, type Mask, type RGB } from './raster.ts';
 
 export const TRACE_ROLES = ['ignore', 'building', 'wall', 'water', 'road', 'grass', 'field', 'sand'] as const;
 export type TraceRole = (typeof TRACE_ROLES)[number];
 
-const TERRAIN: Partial<Record<TraceRole, string>> = { water: 'water-deep', road: 'cobblestones', grass: 'grass', field: 'dirt', sand: 'sand' };
+export const TRACE_MODES = ['dungeon', 'city'] as const;
+export type TraceMode = (typeof TRACE_MODES)[number];
+
+export const TRACE_TERRAIN: Partial<Record<TraceRole, string>> = { water: 'water-deep', road: 'cobblestones', grass: 'grass', field: 'dirt', sand: 'sand' };
+const TERRAIN = TRACE_TERRAIN;
 
 /** Parts thinner than this many squares are dropped, by default: text, outlines and shadows printed in the wall or water colour. */
 export const TRACE_MIN_WIDTH: Partial<Record<TraceRole, number>> = { wall: 0.5, water: 1 };
@@ -21,31 +33,54 @@ export interface TraceOptions {
   /** RGBA pixels, row by row. */
   rgba: Uint8Array | Uint8ClampedArray;
   colours: RGB[];
-  /** A role for each colour. */
+  /** A role for each colour. In dungeon mode "building" is the floor and "wall" the wall lines. */
   roles: TraceRole[];
   /** Picture pixels per grid square. */
   pxPerSquare: number;
-  /** Drop shapes smaller than this many squares (default 0.3). */
+  /** Where the colours were found and are compared: as mainColours found them (default rgb in city mode, lab in dungeon mode). */
+  space?: ColourSpace;
+  /** A painted picture (textures, shading): colours were found on a smoothed copy, and city mode squares up houses and finds the wall by its shape. */
+  painted?: boolean;
+  /** That smoothed copy (made here when left out). */
+  smoothed?: Uint8Array | Uint8ClampedArray;
+  /** City plan (the default) or dungeon / battle map. */
+  mode?: TraceMode;
+  /** The picture pixel where square (0, 0) is, e.g. where two grid lines cross (default the top left corner). */
+  origin?: [number, number];
+  /** Dungeon mode: the picture has a printed grid at this scale, so floors have to show it (default false). */
+  printedGrid?: boolean;
+  /** Dungeon mode: split the floor into rooms and corridors (default true). */
+  split?: boolean;
+  /** Dungeon mode: move straight walls this close onto the half-square grid (squares, default 0.2; 0 = off). */
+  snap?: number;
+  /** Drop shapes smaller than this many squares (default 0.3; dungeon floors 0.5). */
   minArea?: number;
   /** Remove lines and specks thinner than about 2r + 1 pixels, and close cuts that thin (default 1). */
   clean?: number;
   /** For each role, drop parts thinner than this many squares (defaults in TRACE_MIN_WIDTH). */
   minWidth?: Partial<Record<TraceRole, number>>;
-  /** Remove a printed grid: long straight lines across the picture, up to 3 pixels thick (default true). */
+  /** City mode: remove a printed grid: long straight lines across the picture, up to 3 pixels thick (default true). */
   grid?: boolean;
+  /** Painted city: square the houses up (oriented rectangles and right angles; default true). */
+  regular?: boolean;
   /** Join houses that only a thin line separates into one block (default false). */
   join?: boolean;
-  /** Fill holes in buildings smaller than this many squares, e.g. printed text (default 3). */
+  /** Fill holes in buildings smaller than this many squares, e.g. printed text (default 3; in dungeon mode 0.35, bigger ones are pillars). */
   fillHoles?: number;
+  /** Dungeon mode: filled in with the milliseconds each stage took. */
+  timings?: Record<string, number>;
   /** Outline simplification in pixels (default 1.5). */
   simplify?: number;
 }
 
 export interface TraceResult {
+  /** City mode: per role; dungeon mode: room, corridor, pillar, wall and terrain. */
   objects: MapObject[];
-  counts: Partial<Record<TraceRole, number>>;
+  counts: Record<string, number>;
   /** Picture size in squares. */
   size: [number, number];
+  /** Dungeon mode: the wall lines' thickness found, in picture pixels. */
+  wallWidth?: number;
 }
 
 type P = [number, number];
@@ -114,20 +149,71 @@ function solidRings(m: Mask, minPx: number, depth = 0): P[][] {
   return out;
 }
 
+/** How each trace role reads in a dungeon picture. */
+export function dungeonRole(r: TraceRole): DungeonRole {
+  return r === 'building' ? 'floor' : r === 'wall' ? 'ink' : TERRAIN[r] ? 'terrain' : 'other';
+}
+
 export function traceImage(o: TraceOptions): TraceResult {
+  if (o.mode === 'dungeon') {
+    const r = traceDungeon({
+      width: o.width,
+      height: o.height,
+      rgba: o.rgba,
+      classes: classify(o.painted ? (o.smoothed ?? kuwahara(o.rgba, o.width, o.height, paintedSmoothing(o.width, o.height), 2)) : o.rgba, o.colours, o.space ?? 'lab'),
+      roles: o.roles.map(dungeonRole),
+      terrain: o.roles.map((r) => TERRAIN[r]),
+      s: o.pxPerSquare,
+      origin: o.origin ?? [0, 0],
+      grid: o.printedGrid ?? false,
+      ...(o.minArea !== undefined ? { minArea: o.minArea } : {}),
+      ...(o.fillHoles !== undefined ? { fillHoles: o.fillHoles } : {}),
+      ...(o.split !== undefined ? { split: o.split } : {}),
+      ...(o.snap !== undefined ? { snap: o.snap } : {}),
+      ...(o.timings ? { timings: o.timings } : {}),
+    });
+    const [ox, oy] = o.origin ?? [0, 0];
+    return {
+      objects: r.objects,
+      counts: { room: r.rooms, corridor: r.corridors, door: r.doors, pillar: r.pillars, wall: r.walls, terrain: r.terrain },
+      size: [Math.ceil((o.width - ox) / o.pxPerSquare), Math.ceil((o.height - oy) / o.pxPerSquare)],
+      wallWidth: r.wallWidth,
+    };
+  }
+  if (o.painted) {
+    // a painted city: colours from the smoothed picture, the fine lines between houses from the picture itself
+    const src = o.smoothed ?? kuwahara(o.rgba, o.width, o.height, paintedSmoothing(o.width, o.height), 2);
+    const r = tracePainted({
+      width: o.width,
+      height: o.height,
+      rgba: o.rgba,
+      classes: classify(src, o.colours, o.space ?? 'lab'),
+      origClasses: classify(o.rgba, o.colours, o.space ?? 'lab'),
+      roles: o.roles,
+      s: o.pxPerSquare,
+      origin: o.origin ?? [0, 0],
+      ...(o.join !== undefined ? { join: o.join } : {}),
+      ...(o.regular !== undefined ? { regular: o.regular } : {}),
+      ...(o.minArea !== undefined ? { minArea: o.minArea } : {}),
+    });
+    const [ox, oy] = o.origin ?? [0, 0];
+    return { objects: r.objects, counts: r.counts, size: [Math.ceil((o.width - ox) / o.pxPerSquare), Math.ceil((o.height - oy) / o.pxPerSquare)] };
+  }
   const { width: w, height: h } = o;
   const s = o.pxPerSquare;
+  const [ox, oy] = o.origin ?? [0, 0];
   const minPx = Math.max(4, (o.minArea ?? 0.3) * s * s);
   const clean = Math.max(0, Math.round(o.clean ?? 1));
   const tol = o.simplify ?? 1.5;
   const minWidth = { ...TRACE_MIN_WIDTH, ...o.minWidth };
   // opening with radius r drops anything thinner than 2r + 1 pixels
   const thin = (role: TraceRole) => Math.max(clean, Math.floor(((minWidth[role] ?? 0) * s - 1) / 2));
-  const classes = (o.grid ?? true) ? dropGridLines(classify(o.rgba, o.colours), w, h) : classify(o.rgba, o.colours);
+  const plain = classify(o.rgba, o.colours, o.space ?? 'rgb');
+  const classes = (o.grid ?? true) ? dropGridLines(plain, w, h) : plain;
   const r2 = (v: number) => Math.round(v * 100) / 100;
-  const toSquares = (ring: readonly P[]): Point[] => simplify(ring, tol).map(([x, y]) => [r2(x / s), r2(y / s)]);
+  const toSquares = (ring: readonly P[]): Point[] => simplify(ring, tol).map(([x, y]) => [r2((x - ox) / s), r2((y - oy) / s)]);
   const objects: MapObject[] = [];
-  const counts: TraceResult['counts'] = {};
+  const counts: Record<string, number> = {};
   let n = 0;
   const id = (p: string) => `${p}${++n}`;
 
