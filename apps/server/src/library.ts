@@ -3,7 +3,7 @@
 // level group, e.g. the Ashen Tower's three floors) as one row that opens to
 // show each storey. A place's storeys share one category: setCategory files the
 // whole place at once.
-import { levelSiblings, ValidationError } from '@delve/core';
+import { floorText, levelSiblings, ValidationError } from '@delve/core';
 import type { MapService } from './service.ts';
 import type { MapSummary } from './store.ts';
 
@@ -95,22 +95,52 @@ export function setCategory(service: MapService, id: string, category: unknown, 
 }
 
 // ---------- the start page's markup ----------
+// The design's map cards (docs/design/ui-v1, "Cards, tables, tags"): a picture
+// of the map, its name and when it changed, Open and 3D on hover. Shelves fold,
+// a place's storeys open under its card; both are remembered per browser.
 
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const when = (iso: string): string => iso.replace('T', ' ').slice(0, 16);
 
-function actions(m: MapSummary, loggedIn: boolean): string {
+/** "just now", "5 min ago", "2 h ago", "yesterday", "3 d ago", then the date. */
+export function ago(iso: string, now = Date.now()): string {
+  const s = Math.max(0, (now - Date.parse(iso)) / 1000);
+  if (!Number.isFinite(s)) return iso.slice(0, 10);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 2 * 86400) return 'yesterday';
+  if (s < 30 * 86400) return `${Math.floor(s / 86400)} d ago`;
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** Big maps (a Watabou city) take seconds in the hatched styles: their card picture uses the plain one. */
+const BIG = 300;
+const thumbUrl = (m: MapSummary): string => `/api/v1/maps/${encodeURIComponent(m.id)}/render.svg?view=gm${m.objects > BIG ? '&style=clean' : ''}&rev=${m.rev}`;
+
+const ICON = {
+  play: '<svg class="icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
+  more: '<svg class="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18.5" cy="12" r="1"/></svg>',
+  chev: '<svg class="icon chev" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+  dl: '<svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
+};
+
+/** A map's downloads (and Delete for editors), in a small menu. */
+function menu(m: MapSummary, loggedIn: boolean, label: string): string {
   const base = `/api/v1/maps/${encodeURIComponent(m.id)}`;
+  const item = (href: string, text: string, sub = '', attrs = '') => `<a class="menu-item has-icon" role="menuitem" href="${href}"${attrs}>${ICON.dl}<span class="spacer">${text}${sub ? `<span class="menu-item-sub">${sub}</span>` : ''}</span></a>`;
   const del = loggedIn
-    ? `\n    <button class="button danger" type="button" data-delete="${esc(m.id)}" data-name="${esc(m.level ? `${m.name} · ${m.level.name}` : m.name)}">Delete</button>`
+    ? `<button class="menu-item has-icon lib-delete" role="menuitem" type="button" data-delete="${esc(m.id)}" data-name="${esc(m.level ? `${m.name} · ${m.level.name}` : m.name)}"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 4h5M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg><span class="spacer">Delete</span></button>`
     : '';
-  return `<a class="button primary" href="/maps/${encodeURIComponent(m.id)}">Open live view</a>
-    <a class="button" href="${base}/render.png?view=players">Roll20 PNG · players</a>
-    <a class="button" href="${base}/render.png">PNG · GM</a> <a class="button" href="${base}/render.svg">SVG</a>
-    <a class="button" href="${base}/export.ds" title="Open this map in Dungeon Scrawl">Dungeon Scrawl</a>
-    <a class="button" href="/maps/${encodeURIComponent(m.id)}/handout" title="The players' map on old parchment, to print or hand out">Parchment handout</a>
-    <a class="button" href="${base}/describe">Text</a>${del}`;
+  return `<details class="lib-more"><summary class="btn btn-icon" aria-label="${esc(label)}" title="Downloads">${ICON.more}</summary><div class="menu" role="menu">
+  <span class="lib-menu-id"><code>${esc(m.id)}</code></span>
+  ${item(`${base}/render.png?view=players`, 'Roll20 PNG · players', '70 px per square, no GM marks', ' download')}
+  ${item(`${base}/render.png`, 'PNG · GM', '', ' download')}
+  ${item(`${base}/render.svg`, 'SVG', '', ' download')}
+  ${item(`${base}/export.ds`, 'Dungeon Scrawl .ds', 'Opens in Dungeon Scrawl', ' download title="Open this map in Dungeon Scrawl"')}
+  ${item(`/maps/${encodeURIComponent(m.id)}/handout`, 'Parchment handout', 'The players’ map to print', ' title="The players\' map on old parchment, to print or hand out"')}
+  ${item(`${base}/describe`, 'Text', 'What Claude reads')}
+  ${del}</div></details>`;
 }
 
 function categoryCell(p: Place, loggedIn: boolean): string {
@@ -119,58 +149,50 @@ function categoryCell(p: Place, loggedIn: boolean): string {
   return `<input class="cat-input" type="text" list="map-categories" maxlength="${MAX_CATEGORY}" value="${esc(p.category ?? '')}" placeholder="Category…" aria-label="Category of ${esc(what)}" title="Type a category and press Enter: the map moves to that shelf" data-cat-for="${esc(p.storeys[0]!.id)}">`;
 }
 
-function mapRow(m: MapSummary, loggedIn: boolean, opts: { storey?: boolean; category?: string } = {}): string {
-  const storey = m.level ? ` <span class="tag" title="One storey of a multi-storey place">${esc(m.level.name)}</span>` : '';
-  return `<tr${opts.storey ? ' class="storey"' : ''}>
-  <td><strong>${esc(m.name)}</strong>${storey}<br><code>${esc(m.id)}</code></td>
-  <td class="cat">${opts.category ?? ''}</td>
-  <td class="num">${m.rev}</td><td class="num">${m.objects}</td>
-  <td class="meta">${esc(when(m.updated))}</td>
-  <td class="links">${actions(m, loggedIn)}</td>
-</tr>`;
+/** One storey in a place's opened list. */
+function storeyRow(m: MapSummary, loggedIn: boolean): string {
+  const floor = m.level ? floorText(m.level.order) : '';
+  return `<div class="lib-storey"><span class="numeral lib-floor">${esc(floor)}</span><a class="lib-storey-name" href="/maps/${encodeURIComponent(m.id)}">${esc(m.level?.name ?? m.name)}</a><code>${esc(m.id)}</code><span class="lib-storey-meta">${m.objects} · ${esc(ago(m.updated))}</span>${menu(m, loggedIn, `Downloads for ${m.level?.name ?? m.name}`)}</div>`;
 }
 
-function placeRows(p: Place, loggedIn: boolean): string {
-  if (p.storeys.length === 1) return `<tbody class="place single">${mapRow(p.storeys[0]!, loggedIn, { category: categoryCell(p, loggedIn) })}</tbody>`;
+function placeCard(p: Place, loggedIn: boolean): string {
   const top = p.storeys[0]!;
   const ground = p.storeys.find((s) => s.level?.order === 0) ?? p.storeys[p.storeys.length - 1]!;
-  const chips = p.storeys.map((s) => `<span class="tag">${esc(s.level?.name ?? s.name)}</span>`).join(' ');
+  const group = p.storeys.length > 1;
   const objects = p.storeys.reduce((n, s) => n + s.objects, 0);
+  const open = `/maps/${encodeURIComponent(ground.id)}`;
   const body = `place-${esc(p.key)}`;
-  return `<tbody class="place group" data-place="${esc(p.key)}">
-<tr class="place-head">
-  <td><button class="place-toggle" type="button" aria-expanded="false" aria-controls="${body}" title="Show or hide the storeys"><span class="chev" aria-hidden="true">▸</span><strong>${esc(p.name)}</strong></button>
-    <span class="tag storeys">${p.storeys.length} storeys</span><br><span class="chips">${chips}</span></td>
-  <td class="cat">${categoryCell(p, loggedIn)}</td>
-  <td class="num"></td><td class="num">${objects}</td>
-  <td class="meta">${esc(when(p.updated))}</td>
-  <td class="links"><a class="button primary" href="/maps/${encodeURIComponent(ground.id)}">Open live view</a>
-    <a class="button" href="/maps/${encodeURIComponent(top.id)}/3d" title="All storeys stacked in 3D">3D view</a></td>
-</tr>
-</tbody>
-<tbody class="place-storeys" id="${body}" hidden>${p.storeys.map((s) => mapRow(s, loggedIn, { storey: true })).join('\n')}</tbody>`;
+  const meta = `${group ? '' : `${objects} object${objects === 1 ? '' : 's'} · `}edited ${esc(ago(p.updated))}`;
+  return `<article class="card map-card elev-sm place ${group ? 'group' : 'single'}"${group ? ` data-place="${esc(p.key)}"` : ''}>
+  <a class="map-card-thumb" href="${open}" tabindex="-1" aria-hidden="true"><img src="${thumbUrl(ground)}" alt="" loading="lazy"></a>
+  <div class="map-card-actions"><a class="btn btn-primary btn-sm" href="${open}">${ICON.play}Open</a>${group ? `<a class="btn btn-secondary btn-sm" href="/maps/${encodeURIComponent(top.id)}/3d" title="All storeys stacked in 3D">3D</a>` : ''}</div>
+  <div class="map-card-body">
+    <div class="lib-title-row"><a class="map-card-title" href="${open}">${esc(p.name)}</a>${group ? '' : menu(ground, loggedIn, `Downloads for ${p.name}`)}</div>
+    <span class="map-card-meta">${group ? `<button class="place-toggle" type="button" aria-expanded="false" aria-controls="${body}" title="Show or hide the storeys">${ICON.chev}<span class="tag storeys">${p.storeys.length} storeys</span></button> · ` : ''}${meta}</span>
+    <div class="lib-cat">${categoryCell(p, loggedIn)}</div>
+  </div>
+  ${group ? `<div class="place-storeys" id="${body}" hidden>${p.storeys.map((s) => storeyRow(s, loggedIn)).join('')}</div>` : ''}
+</article>`;
 }
 
-// the same column widths on every shelf, so the shelves line up
-const HEAD = `<colgroup><col class="c-map"><col class="c-cat"><col class="c-num"><col class="c-num"><col class="c-when"><col></colgroup><thead><tr><th>Map</th><th>Category</th><th class="num">Rev</th><th class="num">Objects</th><th>Updated (UTC)</th><th>Downloads</th></tr></thead>`;
-
-/** The library on the start page: shelves of places, storeys folded up, categories editable when logged in. */
-export function libraryHtml(maps: readonly MapSummary[], loggedIn: boolean): string {
+/** The library on the start page: shelves of map cards, storeys folded up, categories editable when logged in. */
+export function libraryHtml(maps: readonly MapSummary[], loggedIn: boolean, opts: { newTile?: boolean } = {}): string {
+  const tile = opts.newTile ? `<button class="new-tile" type="button" data-new-map><svg class="icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="new-tile-label">New map</span><kbd>N</kbd></button>` : '';
   if (!maps.length) {
-    return `<p class="note">No saved maps yet. Create one with <code>POST /api/v1/maps</code> (see docs/API.md).</p>`;
+    return `<div class="empty lib-empty"><svg class="icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 3 8.8l9 4.8 9-4.8z"/><path d="M3 13.2 12 18l9-4.8"/></svg><span class="empty-title">No maps yet</span><p class="empty-text">${loggedIn ? 'Start from a blank sheet, bring in a Dungeon Scrawl file, or ask Claude to build one.' : 'Log in to make maps, or ask Claude to build one over the API (see docs/API.md).'}</p>${loggedIn ? '<div class="row" style="gap:6px"><button class="btn btn-primary btn-sm" type="button" data-new-map>New map</button></div>' : ''}</div>`;
   }
   const shelves = libraryShelves(maps);
   const named = shelves.some((s) => s.category !== null);
   const shelfHtml = shelves
-    .map((s) => {
+    .map((s, i) => {
       const count = s.places.reduce((n, p) => n + p.storeys.length, 0);
-      const table = `<div class="table"><table class="library">${HEAD}${s.places.map((p) => placeRows(p, loggedIn)).join('\n')}</table></div>`;
-      if (!named) return table;
+      const grid = `<div class="lib-grid">${i === 0 ? tile : ''}${s.places.map((p) => placeCard(p, loggedIn)).join('\n')}</div>`;
+      if (!named) return grid;
       const title = s.category ?? 'No category';
       const key = s.category === null ? '' : s.category.toLocaleLowerCase();
       return `<section class="shelf" data-shelf="${esc(key)}">
-<h3 class="shelf-head"><button class="shelf-toggle" type="button" aria-expanded="true"><span class="chev" aria-hidden="true">▾</span>${esc(title)}</button> <span class="count">${count} map${count === 1 ? '' : 's'}</span></h3>
-<div class="shelf-body">${table}</div>
+<h3 class="shelf-head"><button class="shelf-toggle" type="button" aria-expanded="true">${ICON.chev}${esc(title)}</button> <span class="count">${count} map${count === 1 ? '' : 's'}</span></h3>
+<div class="shelf-body">${grid}</div>
 </section>`;
     })
     .join('\n');
@@ -188,28 +210,25 @@ const LIBRARY_SCRIPT = `
   const save = (k, set) => { try { localStorage.setItem(k, JSON.stringify([...set])); } catch {} };
   const open = read('delve-library-open');
   const folded = read('delve-library-folded');
-  const showPlace = (head, on) => {
-    const btn = head.querySelector('.place-toggle');
+  const showPlace = (card, on) => {
+    const btn = card.querySelector('.place-toggle');
     const body = document.getElementById(btn.getAttribute('aria-controls'));
     btn.setAttribute('aria-expanded', String(on));
-    btn.querySelector('.chev').textContent = on ? '\\u25BE' : '\\u25B8';
     body.hidden = !on;
-    head.classList.toggle('open', on);
+    card.classList.toggle('open', on);
   };
-  document.querySelectorAll('tbody.place.group').forEach((head) => {
-    const key = head.dataset.place;
-    showPlace(head, open.has(key));
-    head.querySelector('.place-toggle').addEventListener('click', () => {
+  document.querySelectorAll('.place.group').forEach((card) => {
+    const key = card.dataset.place;
+    showPlace(card, open.has(key));
+    card.querySelector('.place-toggle').addEventListener('click', () => {
       const on = !open.has(key);
       if (on) open.add(key); else open.delete(key);
       save('delve-library-open', open);
-      showPlace(head, on);
+      showPlace(card, on);
     });
   });
   const showShelf = (shelf, on) => {
-    const btn = shelf.querySelector('.shelf-toggle');
-    btn.setAttribute('aria-expanded', String(on));
-    btn.querySelector('.chev').textContent = on ? '\\u25BE' : '\\u25B8';
+    shelf.querySelector('.shelf-toggle').setAttribute('aria-expanded', String(on));
     shelf.querySelector('.shelf-body').hidden = !on;
   };
   document.querySelectorAll('section.shelf').forEach((shelf) => {
@@ -221,6 +240,10 @@ const LIBRARY_SCRIPT = `
       save('delve-library-folded', folded);
       showShelf(shelf, on);
     });
+  });
+  // one downloads menu open at a time; a click elsewhere closes it
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('details.lib-more[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
   });
 })();
 `;
@@ -253,29 +276,53 @@ document.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('cl
   if (!confirm('Delete "' + b.dataset.name + '"? It disappears from Delve for everyone.')) return;
   const res = await fetch('/api/v1/maps/' + encodeURIComponent(b.dataset.delete), { method: 'DELETE' });
   if (!res.ok) { const body = await res.json().catch(() => ({})); alert('Deleting failed: ' + (body.error || res.status)); return; }
-  location.reload(); // a place's row and counts follow
+  location.reload(); // a place's card and counts follow
 }));
 `;
 
 export const LIBRARY_CSS = `
-  .shelf { margin: 0 0 18px; }
-  .shelf-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; font-size: 1.05rem; }
-  .shelf-toggle, .place-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px; margin: -2px -4px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
-  .shelf-toggle:hover, .place-toggle:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
-  .shelf-toggle:focus-visible, .place-toggle:focus-visible { outline: 2px solid var(--accent, #6FA6D8); outline-offset: 2px; }
-  .chev { display: inline-block; width: 1em; text-align: center; color: var(--muted, #888); }
-  .shelf-head .count { color: var(--muted, #888); font-size: .85rem; font-weight: 400; }
-  table.library { table-layout: fixed; width: 100%; }
-  table.library col.c-map { width: 24%; } table.library col.c-cat { width: 15%; } table.library col.c-num { width: 6%; } table.library col.c-when { width: 10%; }
-  table.library td { overflow-wrap: anywhere; }
-  .cat-input { width: 100%; min-width: 130px; padding: 5px 8px; border: 1px solid var(--line, #888); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: .88rem; }
-  .cat-input:focus-visible { outline: 2px solid var(--accent, #6FA6D8); outline-offset: 0; border-color: transparent; }
+  .library-shelves { display: flex; flex-direction: column; gap: var(--space-8); }
+  .shelf-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 var(--space-4); font-weight: 400; }
+  .shelf-toggle, .place-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 2px 6px; margin: -2px -6px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+  .shelf-toggle { font-family: var(--font-display); font-size: var(--display-sm); }
+  .shelf-toggle:hover, .place-toggle:hover { background: var(--color-hover); }
+  .chev { color: var(--color-text-muted); transition: transform var(--dur-fast) var(--ease); }
+  [aria-expanded="true"] > .chev { transform: rotate(90deg); }
+  .shelf-head .count { color: var(--color-text-muted); font-size: var(--text-sm); }
+  .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: var(--space-4); align-items: start; }
+  .lib-grid .new-tile { min-height: 0; aspect-ratio: 16 / 13.5; }
+  .map-card .map-card-title { text-decoration: none; }
+  .map-card .map-card-title:hover { color: var(--color-accent-text); }
+  .map-card.place { overflow: visible; }
+  .map-card.place .map-card-thumb { border-radius: var(--radius-md) var(--radius-md) 0 0; }
+  .map-card:has(details[open]) { z-index: 20; }
+  .map-card.open { box-shadow: var(--shadow-md), 0 0 0 1px var(--color-accent); }
+  .map-card-thumb img { object-fit: contain; padding: 6px; }
+  .lib-title-row { display: flex; align-items: flex-start; gap: 6px; }
+  .lib-title-row .map-card-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .lib-cat:empty { display: none; }
+  .lib-cat { margin-top: 6px; }
+  .cat-input { width: 100%; min-height: 28px; padding: 3px 8px; font: inherit; font-size: var(--text-sm); color: var(--color-text); background: var(--color-surface-2); border: 1px solid var(--color-control-border); border-radius: var(--radius-md); }
+  .cat-input:hover { border-color: var(--color-text-muted); }
+  .cat-input:focus-visible { border-color: var(--color-accent); outline: 2px solid var(--color-accent); outline-offset: 0; }
+  .cat-input::placeholder { color: var(--color-text-faint); }
   .cat-input:disabled { opacity: .55; }
-  tbody.place.group tr.place-head td { border-bottom: 0; }
-  tbody.place.group.open tr.place-head td { background: color-mix(in srgb, currentColor 4%, transparent); }
-  tbody.place-storeys tr.storey td { background: color-mix(in srgb, currentColor 4%, transparent); }
-  tbody.place-storeys tr.storey td:first-child { padding-left: 34px; }
-  .tag.storeys { margin-left: 6px; }
-  .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; padding-left: 22px; }
-  .chips .tag { margin-left: 0; }
+  .tag { background: var(--tint-neutral-bg); color: var(--tint-neutral-fg); }
+  .tag.storeys { padding: 1px 8px; }
+  .lib-more { position: relative; flex: none; }
+  .lib-more > summary { list-style: none; width: 28px; height: 28px; margin: -3px -4px 0 0; }
+  .lib-more > summary::-webkit-details-marker { display: none; }
+  .lib-more[open] > summary { background: var(--color-press); color: var(--color-text); }
+  .lib-more .menu { position: absolute; right: 0; top: 30px; width: 250px; z-index: 30; }
+  .lib-menu-id { padding: 4px 10px 6px; font-size: var(--text-xs); color: var(--color-text-faint); }
+  .lib-menu-id code { font-size: var(--text-xs); }
+  .menu .lib-delete { color: var(--color-danger); }
+  .place-storeys { display: flex; flex-direction: column; padding: 0 8px 8px; gap: 2px; }
+  .lib-storey { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; grid-template-areas: "floor name more" "floor meta more"; align-items: center; column-gap: 8px; padding: 6px 6px; border-radius: 7px; background: var(--color-surface-2); }
+  .lib-floor { grid-area: floor; text-align: center; font-size: 16px; color: var(--color-text-muted); }
+  .lib-storey-name { grid-area: name; color: var(--color-text); text-decoration: none; font-weight: 500; overflow-wrap: anywhere; }
+  .lib-storey-name:hover { color: var(--color-accent-text); }
+  .lib-storey code { display: none; }
+  .lib-storey-meta { grid-area: meta; font-size: var(--text-xs); color: var(--color-text-muted); }
+  .lib-storey .lib-more { grid-area: more; }
 `;

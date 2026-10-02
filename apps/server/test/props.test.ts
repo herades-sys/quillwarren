@@ -138,7 +138,7 @@ describe('parchment handout', () => {
       expect((await app.inject({ url: `/api/v1/maps/${id}/handout.png?${bad}` })).statusCode).toBe(400);
     }
     const page = (await app.inject({ url: `/maps/${id}/handout` })).body;
-    expect(page).toContain('<h1>Parchment handout</h1>');
+    expect(page).toContain('<span class="crumb-title">Parchment handout</span>');
     expect(page).toContain('Print or save as PDF');
     expect((await app.inject({ url: `/maps/${id}` })).body).toContain(`href="/maps/${id}/handout"`);
     expect((await call('export', { map: id, format: 'handout' })).text).toContain(`/maps/${id}/handout`);
@@ -198,7 +198,7 @@ describe('deleting maps from the start page', () => {
     try {
       await open.inject({ method: 'POST', url: '/api/v1/maps', payload: { name: 'Doomed' } });
       const page = (await open.inject({ url: '/' })).body;
-      expect(page).toMatch(/<button class="button danger" type="button" data-delete="map_[0-9a-f]+" data-name="Doomed">Delete<\/button>/);
+      expect(page).toMatch(/<button class="menu-item has-icon lib-delete" role="menuitem" type="button" data-delete="map_[0-9a-f]+" data-name="Doomed">/);
     } finally {
       await open.close();
     }

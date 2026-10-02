@@ -47,7 +47,7 @@ describe('preview page', () => {
 
   it('shows every style inline, each with its own clip ids', async () => {
     const body = (await app.inject({ url: '/' })).body;
-    expect(body.match(/<svg /g)).toHaveLength(5);
+    expect(body.match(/<svg (?!class="icon")/g)).toHaveLength(5); // the five style pictures (icons aside)
     for (const p of ['classic-hatching', 'clean', 'old-school-blue', 'print', 'parchment']) {
       expect(body).toContain(`id="${p}-clip-floor"`);
       expect(body).toContain(`href="/preview/${p}.png?view=gm"`);

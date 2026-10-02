@@ -5,3 +5,4 @@ export { DARK_TOKENS, FONT_FACES, LIGHT_TOKENS, ROOT_TOKENS, TOKENS_CSS } from '
 export { esc, head, htmlDocument, type DocumentOptions, type HeadOptions } from './head.ts';
 export { ICONS, ICON_GROUPS, icon, type IconName, type IconOptions } from './icons.ts';
 export { THEME_BOOT, THEME_KEY, themeSwitch, type ThemeMode } from './theme.ts';
+export { topBar, type TopBarOptions } from './topbar.ts';

@@ -1,5 +1,5 @@
-// The start page: saved maps with downloads, and the test dungeon in every
-// style with a GM / players' view switch. A stand-in until the editor (phase 4).
+// The start page: the map library (library.ts), new maps and imports, and the test dungeon in every
+// style with a GM / players' view switch, in the shared look (@delve/ui).
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import {
@@ -18,7 +18,7 @@ import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 
 import { editorSession, errorResponse, newMap } from './api.ts';
 import type { AppInfo } from './app.ts';
 import { currentAccount } from './accounts/http.ts';
-import { TOKENS_CSS } from './accounts/pages.ts';
+import { htmlDocument, icon, themeSwitch, topBar } from '@delve/ui';
 import { canLogIn, isLoggedIn, type EditorAuth } from './login.ts';
 import { FONT_FILES } from './png.ts';
 import { asView, exportName, render, RenderQueryError, ROLL20_PPG, sceneFor, sizeInSquares, type RenderQuery } from './render.ts';
@@ -47,39 +47,70 @@ interface Access {
   bootstrap: boolean;
 }
 
-function accountBar(a: Access): string {
-  const logout = `<form method="post" action="/logout" class="inline"><button class="button" type="submit">Log out</button></form>`;
-  if (a.account) {
-    return `<span class="who"><a class="button" href="/account" title="Your account">${esc(a.account.name)}</a> ${logout}</span>`;
-  }
-  if (a.loggedIn) return logout;
-  return a.passwordSet ? `<a class="button" href="/login">Log in to edit</a>` : `<span class="note">Editing: set a password with <code>delve-passwd</code> on the container</span>`;
+/** "AN" for Ana, "MV" for Mara Venn. */
+const initials = (name: string): string => {
+  const w = name.trim().split(/\s+/).filter(Boolean);
+  return (w.length > 1 ? w[0]![0]! + w[1]![0]! : (w[0] ?? '?').slice(0, 2)).toUpperCase();
+};
+
+/** The right end of the top bar: Play, Admin, the theme, and who is logged in. */
+function barEnd(a: Access): string {
+  const play = `<a class="btn btn-primary" href="/play" title="Delve Table: your games, invite players, play">${icon('play', { size: 15 })}Play</a>`;
+  const admin = a.account?.role === 'admin' ? `<a class="btn btn-plain lib-wide" href="/admin" title="Accounts, GMs and logins">${icon('admin', { size: 16 })}Admin</a>` : '';
+  const logout = `<form method="post" action="/logout" class="inline"><button class="btn btn-ghost" type="submit">Log out</button></form>`;
+  let who: string;
+  if (a.account) who = `<a class="lib-account" href="/account" title="Your account"><span class="avatar">${esc(initials(a.account.name))}</span>${esc(a.account.name)}</a>${logout}`;
+  else if (a.loggedIn) who = logout;
+  else who = a.passwordSet ? `<a class="btn btn-secondary" href="/login">${icon('lock', { size: 15 })}Log in to edit</a>` : `<span class="text-muted lib-wide" style="font-size:12px">Editing: set a password with <code>delve-passwd</code> on the container</span>`;
+  return `${play}${admin}<span class="vsep" style="margin:0 4px"></span>${themeSwitch()}${who}`;
 }
 
-const secureBanner = (): string => `<div class="secure" role="note">
+const secureBanner = (): string => `<div class="notice notice-warning lib-secure" role="note">${icon('alert', { size: 16 })}
     <p><strong>Secure your login:</strong> create your admin account. It has its own password and a code from an authenticator app on your phone, and the shared editor password stops working.</p>
-    <a class="button primary" href="/account/setup">Create your admin account</a>
+    <a class="btn btn-primary btn-sm" href="/account/setup">Create your admin account</a>
   </div>`;
 
-function newMapForm(): string {
+/** New map: the dialog (a name, a style, a start), and the imports. */
+function newMapDialog(): string {
   const styles = Object.entries(PRESETS).map(([k, s]) => `<option value="${esc(k)}">${esc(s.name)}</option>`).join('');
   const squares = SQUARE_SIZES.map((u) => `<option value="${esc(u)}"${u === '5 ft' ? ' selected' : ''}>${esc(u)}</option>`).join('');
-  return `<form method="post" action="/maps/new" class="newmap">
-  <label>Name <input name="name" required maxlength="200" placeholder="e.g. Goblin warren"></label>
-  <label>Style <select name="style">${styles}</select></label>
-  <label>Start from <select name="template"><option value="empty">an empty map</option><option value="test-dungeon">the test dungeon</option></select></label>
-  <label>1 square = <select name="unit" title="What one grid square stands for">${squares}</select></label>
-  <button class="button primary" type="submit">New map</button>
-  <span class="or">or</span>
-  <label class="button" for="ds-file">Import Dungeon Scrawl file…</label>
-  <input id="ds-file" type="file" accept=".ds" hidden>
-  <label class="button" for="city-file" title="A city from Watabou's Medieval Fantasy City Generator: Menu → Export as → JSON">Import city (Watabou JSON)…</label>
-  <input id="city-file" type="file" accept=".json,application/json" hidden>
-  <a class="button" href="/import/image" title="A city plan or dungeon picture with flat colours, traced into a map">Trace a map picture (PNG/JPG)…</a>
-  <label title="For the city import: how much of the city one square covers">Import: 1 square = <select id="city-unit"><option value="5 ft">5 ft (true scale)</option><option value="10 ft" selected>10 ft</option><option value="20 ft">20 ft (overview)</option><option value="1.5 m">1.5 m (true scale)</option><option value="3 m">3 m</option><option value="6 m">6 m (overview)</option></select></label>
-  <span id="import-status" class="note" role="status"></span>
-</form>
+  const chev = icon('chevron-down', { size: 14 });
+  return `<div class="dialog-backdrop" id="new-map" hidden><div class="dialog lib-dialog" role="dialog" aria-modal="true" aria-labelledby="new-map-title">
+  <div class="dialog-head"><div class="dialog-title" id="new-map-title">New map</div><button class="btn btn-icon" type="button" data-close aria-label="Close">${icon('x', { size: 17 })}</button></div>
+  <form method="post" action="/maps/new" class="stack" style="gap:12px">
+    <div class="field"><label for="nm-name">Name</label><input class="input input-lg" id="nm-name" name="name" required maxlength="200" placeholder="e.g. Goblin warren"></div>
+    <div class="lib-two">
+      <div class="field"><label for="nm-style">Style</label><div class="select"><select class="input" id="nm-style" name="style">${styles}</select>${chev}</div></div>
+      <div class="field"><label for="nm-template">Start from</label><div class="select"><select class="input" id="nm-template" name="template"><option value="empty">An empty map</option><option value="test-dungeon">The test dungeon</option></select>${chev}</div></div>
+      <div class="field" title="What one grid square stands for"><label for="nm-unit">1 square =</label><div class="select"><select name="unit" class="input" id="nm-unit">${squares}</select>${chev}</div></div>
+    </div>
+    <div class="dialog-actions" style="margin-top:0"><button class="btn btn-secondary" type="button" data-close>Cancel<span class="key">Esc</span></button><button class="btn btn-primary" type="submit">${icon('plus', { size: 15 })}Create map</button></div>
+  </form>
+  <div class="lib-imports">
+    <span class="section-label">Or bring one in</span>
+    <div class="row" style="gap:6px">
+      <label class="btn btn-secondary btn-sm" for="ds-file">${icon('upload', { size: 14 })}Dungeon Scrawl file…</label>
+      <input id="ds-file" type="file" accept=".ds" hidden>
+      <label class="btn btn-secondary btn-sm" for="city-file" title="A city from Watabou's Medieval Fantasy City Generator: Menu → Export as → JSON">${icon('upload', { size: 14 })}Watabou city (JSON)…</label>
+      <input id="city-file" type="file" accept=".json,application/json" hidden>
+      <a class="btn btn-secondary btn-sm" href="/import/image" title="A city plan or dungeon picture with flat colours, traced into a map">${icon('image', { size: 14 })}Trace a picture…</a>
+    </div>
+    <div class="field lib-feet" title="For the city import: how much of the city one square covers"><label for="city-unit">City import: 1 square =</label><div class="select"><select class="input" id="city-unit"><option value="5 ft">5 ft (true scale)</option><option value="10 ft" selected>10 ft</option><option value="20 ft">20 ft (overview)</option><option value="1.5 m">1.5 m (true scale)</option><option value="3 m">3 m</option><option value="6 m">6 m (overview)</option></select>${chev}</div></div>
+    <span id="import-status" class="field-hint" role="status"></span>
+  </div>
+</div></div>
 <script>
+  (() => {
+    const dlg = document.getElementById('new-map');
+    const show = () => { dlg.hidden = false; document.getElementById('nm-name').focus(); };
+    const hide = () => { dlg.hidden = true; };
+    document.querySelectorAll('[data-new-map]').forEach((b) => b.addEventListener('click', show));
+    dlg.addEventListener('click', (e) => { if (e.target === dlg || e.target.closest('[data-close]')) hide(); });
+    addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !dlg.hidden) hide();
+      else if ((e.key === 'n' || e.key === 'N') && dlg.hidden && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest('input, select, textarea')) { e.preventDefault(); show(); }
+    });
+  })();
   document.getElementById('city-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -92,10 +123,8 @@ function newMapForm(): string {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) { status.textContent = 'Import failed: ' + (body.error || res.status); e.target.value = ''; return; }
-    location.href = '/maps/' + encodeURIComponent(body.id) + '?edit=1';
+    location.href = '/maps/' + encodeURIComponent(body.id);
   });
-</script>
-<script>
   document.getElementById('ds-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -107,25 +136,61 @@ function newMapForm(): string {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) { status.textContent = 'Import failed: ' + (body.error || res.status); e.target.value = ''; return; }
-    location.href = '/maps/' + encodeURIComponent(body.id) + '?edit=1';
+    location.href = '/maps/' + encodeURIComponent(body.id);
   });
 </script>`;
 }
 
+const PAGE_CSS = `
+  .lib-page { max-width: 1320px; gap: var(--space-10); }
+  .lib-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+  .lib-head h1 { margin: 2px 0 0; }
+  .lib-head .lead { margin: 8px 0 0; font-size: 14.5px; }
+  .lib-secure { align-items: center; flex-wrap: wrap; }
+  .lib-secure p { margin: 0; flex: 1; min-width: 240px; }
+  .lib-account { display: inline-flex; align-items: center; gap: 8px; margin-left: 6px; color: var(--color-text); text-decoration: none; font-size: var(--text-md); }
+  .lib-account:hover { color: var(--color-accent-text); }
+  form.inline { display: inline; margin: 0; }
+  .lib-dialog { width: min(520px, 100%); gap: 16px; }
+  .lib-imports { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; box-shadow: inset 0 1px 0 var(--color-border); }
+  .lib-feet { max-width: 260px; }
+  .lib-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .lib-styles-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .lib-styles-head p { margin: 6px 0 0; color: var(--color-text-muted); max-width: 70ch; }
+  .lib-seg a.seg-opt { text-decoration: none; }
+  .lib-styles { display: flex; flex-direction: column; gap: var(--space-5); }
+  .lib-style-grid { display: grid; gap: var(--space-5); grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+  .lib-style { padding: 0; gap: 0; overflow: hidden; }
+  .lib-style header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 12px 14px; }
+  .lib-style header h3 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 18px; }
+  .lib-style header code { font-size: var(--text-xs); color: var(--color-text-faint); }
+  .lib-style .map { background: var(--canvas-parchment); }
+  .lib-style .map svg { display: block; width: 100%; height: auto; }
+  .lib-style footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 14px 12px; box-shadow: inset 0 1px 0 var(--color-border); }
+  .lib-style .meta { color: var(--color-text-muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .lib-api summary { cursor: pointer; font-family: var(--font-display); font-size: var(--display-sm); }
+  .lib-api pre { margin: 12px 0 0; padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; border-radius: 10px; background: var(--color-surface-2); box-shadow: inset 0 0 0 1px var(--color-border-strong); }
+  .lib-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--color-text-faint); font-size: var(--text-sm); padding-top: var(--space-5); box-shadow: inset 0 1px 0 var(--color-border); }
+  .lib-foot a { color: var(--color-text-muted); }
+  .lib-foot code { font-size: var(--text-xs); }
+  @media (max-width: 640px) { .lib-wide { display: none !important; } .lib-account { font-size: 0; gap: 0; } .lib-two { grid-template-columns: 1fr; } .topbar .crumb-title, .topbar-brand + .vsep { display: none; } .lib-grid .new-tile { display: none; } }
+`;
+
 function page(info: AppInfo, view: View, store: MapStore, access: Access): string {
   const { loggedIn } = access;
+  const maps = store.list();
   const cards = Object.entries(PRESETS)
     .map(([preset, style]) => {
       const scene = testScene(preset, view);
       const { w, h } = sizeInSquares(scene);
       const svg = sceneToSvg(scene, { ppg: 12, idPrefix: `${preset}-` });
       const q = `?view=${view}`;
-      return `<article class="card">
+      return `<article class="card elev-sm lib-style">
   <header><h3>${esc(style.name)}</h3><code>${esc(preset)}</code></header>
   <div class="map">${svg}</div>
   <footer>
-    <a class="button primary" href="/preview/${preset}.png${q}" download="${esc(exportName(TEST_MAP, preset, view, scene, 'png'))}">PNG for Roll20</a>
-    <a class="button" href="/preview/${preset}.svg${q}" download="${esc(exportName(TEST_MAP, preset, view, scene, 'svg'))}">SVG</a>
+    <a class="btn btn-primary btn-sm" href="/preview/${preset}.png${q}" download="${esc(exportName(TEST_MAP, preset, view, scene, 'png'))}">PNG for Roll20</a>
+    <a class="btn btn-secondary btn-sm" href="/preview/${preset}.svg${q}" download="${esc(exportName(TEST_MAP, preset, view, scene, 'svg'))}">SVG</a>
     <span class="meta">${w}×${h} squares · ${w * ROLL20_PPG}×${h * ROLL20_PPG} px</span>
   </footer>
 </article>`;
@@ -133,124 +198,49 @@ function page(info: AppInfo, view: View, store: MapStore, access: Access): strin
     .join('\n');
 
   const toggle = (['gm', 'players'] as const)
-    .map(
-      (v) =>
-        `<a href="/?view=${v}" class="seg${v === view ? ' on' : ''}"${v === view ? ' aria-current="page"' : ''}>${v === 'gm' ? 'GM view' : 'Players’ view'}</a>`,
-    )
+    .map((v) => `<a href="/?view=${v}" class="seg-opt${v === view ? ' is-on' : ''}"${v === view ? ' aria-current="page"' : ''}>${v === 'gm' ? 'GM view' : 'Players’ view'}</a>`)
     .join('');
+  const count = maps.length;
 
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Delve</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>
-  @font-face { font-family: "IM FELL English"; src: url("/fonts/im-fell-english.ttf") format("truetype"); font-display: swap; }
-  @font-face { font-family: "Marcellus SC"; src: url("/fonts/marcellus-sc.ttf") format("truetype"); font-display: swap; }
-  ${TOKENS_CSS}
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
-  .page { max-width: 1320px; margin: 0 auto; padding: 28px 20px 64px; display: grid; gap: 32px; }
-  .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
-  h1 { font: 400 2.6rem/1 "IM FELL English", Georgia, serif; margin: 0; }
-  h2 { font: 400 1.6rem/1.2 "IM FELL English", Georgia, serif; margin: 0; }
-  h3 { font-size: 1rem; margin: 0; }
-  .status { color: var(--muted); font-size: .88rem; display: flex; flex-wrap: wrap; gap: 6px 14px; }
-  code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
-  code { background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: .85em; }
-  .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-  .bar p { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
-  .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
-  .seg { padding: 7px 14px; color: var(--ink); text-decoration: none; font-weight: 500; }
-  .seg + .seg { border-left: 1px solid var(--line); }
-  .seg.on { background: var(--accent); color: var(--accent-ink); }
-  .seg:focus-visible, .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr auto; }
-  .card header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 12px 14px; }
-  .map svg { display: block; width: 100%; height: auto; }
-  .card footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
-  .button { display: inline-block; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-weight: 500; font-size: .88rem; white-space: nowrap; }
-  .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  .main-nav { display: flex; gap: 8px; align-items: center; }
-  .button.big { padding: 8px 16px; font-size: 1rem; }
-  .button.danger { color: #B03A2E; border-color: color-mix(in srgb, #B03A2E 45%, var(--line)); background: transparent; cursor: pointer; font: inherit; font-weight: 500; font-size: .88rem; }
-  .tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: .78rem; font-weight: 500; vertical-align: 1px; }
-  tr.storey + tr.storey td:first-child { padding-left: 22px; }
-  .meta { color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
-  section { display: grid; gap: 12px; }
-  .table { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
-  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-  tr:last-child td { border-bottom: 0; }
-  th { font-weight: 600; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .links { display: flex; flex-wrap: wrap; gap: 6px; }
-  pre { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: .84rem; line-height: 1.6; }
-  .note { color: var(--muted); font-size: .9rem; margin: 0; }
-  .spacer { flex: 1; }
-  .who { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .secure { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 12px 16px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; background: var(--surface); }
-  .secure p { margin: 0; max-width: 75ch; }
-  form.inline { display: inline; margin: 0; }
-  button.button { font: inherit; cursor: pointer; background: transparent; }
-  button.button.primary { background: var(--accent); }
-  .newmap { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-  .newmap label { display: grid; gap: 4px; font-size: .82rem; color: var(--muted); }
-  .newmap label.button { display: inline-block; color: var(--ink); font-size: .88rem; cursor: pointer; }
-  .newmap .or { color: var(--muted); font-size: .85rem; align-self: center; }
-  .newmap input, .newmap select { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 12rem; }
-  ${LIBRARY_CSS}
-</style>
-</head>
-<body>
-<main class="page">
-  <div class="top">
-    <h1>Delve</h1>
-    <div class="status">
-      <span>Release <code>${esc(info.version)}</code></span>
-      <span>Started ${esc(info.started)}</span>
-      <span><code>${FORMAT} v${FORMAT_VERSION}</code></span>
-      <a href="/health">/health</a> <a href="/api/v1/maps">/api/v1/maps</a>
-    </div>
-    <span class="spacer"></span>
-    <nav class="main-nav" aria-label="Delve">
-      <a class="button primary big" href="/play" title="Delve Table: your games, invite players, play">▶ Play</a>
-      ${access.account?.role === 'admin' ? `<a class="button big" href="/admin" title="Accounts, GMs and logins">Admin</a>` : ''}
-    </nav>
-    ${accountBar(access)}
-  </div>
+  const body = `${topBar({ title: 'Library', end: barEnd(access) })}
+<main class="page lib-page">
   ${access.bootstrap ? secureBanner() : ''}
-
-  <section>
-    <h2>Saved maps</h2>
-    ${loggedIn ? newMapForm() : ''}
-    ${libraryHtml(store.list(), loggedIn)}
-  </section>
-
-  <section>
-    <div class="bar">
-      <div>
-        <h2>Style preview: ${esc(TEST_MAP.name)}</h2>
-        <p>The GM view shows room numbers and secret doors. The players’ view hides both and walls the secret door shut. PNGs come out at Roll20’s 70 px per square with edges on whole squares, so Roll20’s grid lines up.</p>
-      </div>
-      <nav class="segmented" aria-label="View">${toggle}</nav>
+  <section class="stack" style="gap:var(--space-6)">
+    <div class="lib-head">
+      <div><span class="kicker">Delve · ${count} map${count === 1 ? '' : 's'}</span><h1 class="display-xl">Library</h1>
+      <p class="lead">Your dungeons, towers and towns. Open one to edit it live, with Claude if you like; players see only what you reveal.</p></div>
+      ${loggedIn ? `<div class="row"><button class="btn btn-primary btn-lg" type="button" data-new-map>${icon('plus', { size: 16 })}New map<span class="key">N</span></button></div>` : ''}
     </div>
-    <div class="grid">
+    ${libraryHtml(maps, loggedIn, { newTile: loggedIn })}
+  </section>
+  ${loggedIn ? newMapDialog() : ''}
+
+  <section class="lib-styles">
+    <div class="lib-styles-head">
+      <div>
+        <h2 class="display-md">Map styles</h2>
+        <p>${esc(TEST_MAP.name)} in every style. The GM view shows room numbers and secret doors; the players’ view hides both and walls the secret door shut. PNGs come out at Roll20’s 70 px per square with edges on whole squares, so Roll20’s grid lines up.</p>
+      </div>
+      <nav class="seg lib-seg" aria-label="View">${toggle}</nav>
+    </div>
+    <div class="lib-style-grid">
 ${cards}
     </div>
   </section>
 
-  <section>
-    <h2>What the API sees</h2>
+  <details class="panel lib-api">
+    <summary>What the API sees</summary>
     <pre>${esc(describeMap(TEST_MAP))}</pre>
-    <p class="note">The map editor with live updates comes in phases 4–5.</p>
-  </section>
-</main>
-</body>
-</html>`;
+  </details>
+
+  <footer class="lib-foot">
+    <span>Release <code>${esc(info.version)}</code></span>
+    <span>Started ${esc(info.started)}</span>
+    <span><code>${FORMAT} v${FORMAT_VERSION}</code></span>
+    <a href="/health">/health</a><a href="/api/v1/maps">/api/v1/maps</a><a href="/ui">Style guide</a>
+  </footer>
+</main>`;
+  return htmlDocument({ title: 'Delve', body, extra: `<style>${PAGE_CSS}${LIBRARY_CSS}</style>` });
 }
 
 export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth): void {

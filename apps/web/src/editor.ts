@@ -27,6 +27,7 @@ import {
   scatterAlong,
   shapeBounds,
   shapeFromDrag,
+  SQUARE_SIZES,
   updateFog,
   withAttachedDoors,
   type AssetInfo,
@@ -1491,7 +1492,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       if (v === PRESETS[style.preset]?.grid.style) delete next['grid.style'];
       setMap({ style: { preset: style.preset, ...(Object.keys(next).length ? { overrides: next } : {}) } });
     };
-    const units = ['5 ft', '10 ft', '1.5 m', '2 m'];
+    const units = [...SQUARE_SIZES];
     const unit = m.grid.unit ?? '5 ft';
     const fog = m.fog;
     const n = fog?.revealed?.length ?? 0;

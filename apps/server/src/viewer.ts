@@ -10,6 +10,7 @@ import { currentAccount } from './accounts/http.ts';
 import type { AppInfo } from './app.ts';
 import type { ChatConfig } from './chat/route.ts';
 import { editorPage } from './editor-page.ts';
+import { htmlDocument, icon } from '@delve/ui';
 import { canLogIn, isLoggedIn, type EditorAuth } from './login.ts';
 import { asView, sceneFor } from './render.ts';
 import { NotFoundError, type MapStore } from './store.ts';
@@ -52,37 +53,23 @@ export function screenPayload(map: DelveMap, rev: number) {
 
 function screenPage(info: AppInfo, id: string, rev: number, map: DelveMap): string {
   const { svg, ...rest } = screenPayload(map, rev);
-  const bg = rest.background;
-  const initial = JSON.stringify({ id, ...rest }).replace(/</g, '\\u003c');
-  const scene = { svg };
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(map.name)} · Players' screen</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>
-  @font-face { font-family: "IM FELL English"; src: url("/fonts/im-fell-english.ttf") format("truetype"); font-display: swap; }
-  @font-face { font-family: "Marcellus SC"; src: url("/fonts/marcellus-sc.ttf") format("truetype"); font-display: swap; }
+  const initial = JSON.stringify({ id, ...rest }).replace(/</g, '\u003c');
+  // The players' screen is for a TV or a screen share: only the map, on its own paper colour.
+  const css = `<style>
   html, body { height: 100%; margin: 0; overflow: hidden; }
-  body { background: ${bg}; font: 15px/1.4 system-ui, sans-serif; }
+  body { background: ${rest.background}; }
   #stage, #canvas { position: absolute; inset: 0; }
   #canvas svg { width: 100%; height: 100%; display: block; }
-  #full { position: absolute; right: 14px; bottom: 14px; padding: 7px 12px; border: 0; border-radius: 8px; background: rgba(25, 30, 36, .7); color: #fff; font: inherit; cursor: pointer; opacity: 0; transition: opacity .3s; }
+  #full { position: absolute; right: 14px; bottom: 14px; background: var(--color-surface); box-shadow: var(--shadow-md); opacity: 0; transition: opacity .3s; }
   body:hover #full, #full:focus-visible { opacity: 1; }
-  #note { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); color: #5B5348; font: 1.6rem "IM FELL English", Georgia, serif; text-align: center; pointer-events: none; }
-  #note[hidden] { display: none; }
-</style>
-</head>
-<body>
-<div id="stage"><div id="canvas">${scene.svg}</div></div>
+  #note { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); color: #5B5348; font-family: var(--font-display); font-style: italic; font-size: 1.8rem; text-align: center; pointer-events: none; }
+</style>`;
+  const body = `<div id="stage"><div id="canvas">${svg}</div></div>
 <div id="note"${rest.hidden ? '' : ' hidden'}>The map is still hidden.</div>
-<button id="full" type="button" title="Full screen (F)">Full screen</button>
+<button class="btn btn-secondary" id="full" type="button" title="Full screen · F">${icon('fit', { size: 16 })}Full screen</button>
 <script id="delve-initial" type="application/json">${initial}</script>
-<script type="module" src="/assets/screen.js?v=${encodeURIComponent(info.version)}"></script>
-</body>
-</html>`;
+<script type="module" src="/assets/screen.js?v=${encodeURIComponent(info.version)}"></script>`;
+  return htmlDocument({ title: `${map.name} · Players’ screen`, body, extra: css });
 }
 
 export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, chat?: ChatConfig): void {

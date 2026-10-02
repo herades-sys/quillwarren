@@ -5,17 +5,6 @@ import { LINK_MS, MIN_PASSWORD, type Session, type User } from './store.ts';
 
 export { esc };
 
-/** The start page's old colour tokens, light and dark. Only preview.ts still uses them, until it moves to @delve/ui. */
-export const TOKENS_CSS = `:root {
-    --bg: #F2F4F6; --surface: #FFFFFF; --ink: #1B1F24; --muted: #5B6470; --line: #D9DEE4;
-    --accent: #2C6AA0; --accent-ink: #FFFFFF; --code: #EAEEF2; --bad: #B3261E; --ok: #2E7D4F;
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #101317; --surface: #191E24; --ink: #E5E9ED; --muted: #97A1AC; --line: #29303A;
-            --accent: #6FA6D8; --accent-ink: #0C1520; --code: #131820; --bad: #F2B8B5; --ok: #8FD1A8; color-scheme: dark; }
-  }`;
-
 // Only what the account pages need beyond the shared components.
 const CSS = `<style>
   .auth-corner { position: absolute; top: var(--space-4); right: var(--space-4); }

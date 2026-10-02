@@ -83,4 +83,4 @@ The editor's layout sizes are tokens too: `--bar-h` 48, `--rail-w` 52, `--panel-
 ## Where the pages stand
 
 - Built on `@delve/ui`: the login, setup, recovery-code, account and admin pages (`apps/server/src/accounts/pages.ts`) and the style guide (`/ui`, `apps/server/src/ui-guide.ts`).
-- Still on their own styles, to move in stage 2 of the rework: the editor and viewer (to match `Delve Editor.dc.html`), the start page, the 3D view, the handout, tracing, the players' screen, and Delve Table with its lobby and join pages. `preview.ts` still uses the old `TOKENS_CSS` from `accounts/pages.ts` until then.
+- Also on it since stage 2: the map editor and viewer (`editor-page.ts`, `apps/web/src/shell.ts`, `dom.ts`), the start page and library, the 3D view, the handout, tracing, the players' screen, and Delve Table's lobby, join and Discord pages (`table/html.ts`). Still on its own styles: Delve Table's 2D and 3D table pages (stage 2c).

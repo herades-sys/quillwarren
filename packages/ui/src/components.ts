@@ -88,7 +88,9 @@ kbd, .kbd { display: inline-grid; place-items: center; min-width: 18px; height: 
 .seg { font-size: var(--text-md); }
 .seg-opt { color: var(--color-text); }
 .seg-opt.is-hover { background: var(--color-hover); }
-.seg-opt.is-on { color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+.seg-opt.is-on, .seg-opt[aria-pressed="true"] { color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+button.seg-opt { border: 0; background: transparent; font: inherit; }
+button.seg-opt:hover:not([aria-pressed="true"]) { background: var(--color-hover); }
 .seg-opt.is-focus { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .seg-opt:has(input:disabled), .seg-opt.is-disabled { opacity: .45; cursor: not-allowed; }
 .seg-sm .seg-opt { padding: 4px 8px; gap: 4px; }
@@ -326,5 +328,6 @@ textarea.input { min-height: 72px; line-height: var(--leading-ui); }
   .btn { min-height: var(--touch); }
   .btn-sm, .btn-icon, .toast .btn { min-height: 0; }
   .topbar { padding-left: var(--space-4); }
+  .topbar .crumb, .topbar .crumb-sep { display: none; }
 }
 `;

@@ -110,10 +110,10 @@ describe('the library', () => {
     expect(page).toContain('class="shelf"');
     expect(page).toMatch(/<h3 class="shelf-head">.*Towers<\/button> <span class="count">3 maps<\/span>/);
     expect(page).toContain('No category');
-    // one head row for the tower, its storeys folded away below it
-    expect(page.match(/class="place group"/g)).toHaveLength(1);
+    // one card for the tower, its storeys folded away in it
+    expect(page.match(/ place group"/g)).toHaveLength(1);
     expect(page).toContain('<span class="tag storeys">3 storeys</span>');
-    expect(page).toMatch(/<tbody class="place-storeys" id="place-[^"]+" hidden>/);
+    expect(page).toMatch(/<div class="place-storeys" id="place-[^"]+" hidden>/);
     for (const id of [t.ground, t.wizard, t.cellar]) expect(page).toContain(`<code>${id}</code>`);
     expect(page).toContain(`href="/maps/${t.wizard}/3d"`); // the stack, from the top storey
     // read-only visitors see the category, editors get the field (with suggestions)

@@ -1,67 +1,51 @@
 // The small HTML pages around the table: the GM's lobby, the invite name form,
-// and friendly errors. Same look as Delve's start page.
+// and friendly errors, in the shared look (@delve/ui). Their markup keeps the
+// short class names (.button, .card, .note) that the routes here and in
+// discord.ts use; the CSS below draws them as the design's buttons and panels.
+import { htmlDocument, themeSwitch, topBar } from '@delve/ui';
 import type { GameSummary } from './store.ts';
 
 export const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-export function shell(title: string, body: string): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)}</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>
-  @font-face { font-family: "IM FELL English"; src: url("/fonts/im-fell-english.ttf") format("truetype"); font-display: swap; }
-  :root {
-    --bg: #F2F4F6; --surface: #FFFFFF; --ink: #1B1F24; --muted: #5B6470; --line: #D9DEE4;
-    --accent: #2C6AA0; --accent-ink: #FFFFFF; --code: #EAEEF2; --bad: #B3261E;
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #101317; --surface: #191E24; --ink: #E5E9ED; --muted: #97A1AC; --line: #29303A;
-            --accent: #6FA6D8; --accent-ink: #0C1520; --code: #131820; --bad: #F2B8B5; color-scheme: dark; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
-  .page { max-width: 960px; margin: 0 auto; padding: 28px 16px 64px; display: grid; gap: 24px; }
-  .narrow { max-width: 420px; }
-  .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
-  h1 { font: 400 2.6rem/1 "IM FELL English", Georgia, serif; margin: 0; }
-  h2 { font: 400 1.6rem/1.2 "IM FELL English", Georgia, serif; margin: 0; }
-  p { margin: 0; }
-  .note { color: var(--muted); font-size: .9rem; }
-  .error { color: var(--bad); }
-  code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: .85em; }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 12px; }
-  .button { display: inline-block; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font: inherit; font-weight: 500; font-size: .88rem; white-space: nowrap; background: transparent; cursor: pointer; }
-  .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  .button.danger { color: #B03A2E; border-color: color-mix(in srgb, #B03A2E 45%, var(--line)); }
-  .button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  form.row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; }
-  label { display: grid; gap: 4px; font-size: .82rem; color: var(--muted); }
-  input { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; min-width: 14rem; }
-  .table { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
-  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-  tr:last-child td { border-bottom: 0; }
-  th { font-weight: 600; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+const CSS = `<style>
+  .page { max-width: 960px; gap: var(--space-6); }
+  .page.narrow { max-width: 460px; padding-top: max(var(--space-10), 6vh); }
+  .top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 18px; }
+  .page h1 { font-family: var(--font-display); font-weight: 400; font-size: var(--display-lg); line-height: 1.1; margin: 0; letter-spacing: 0; }
+  .page h2 { font-family: var(--font-display); font-weight: 400; font-size: var(--display-sm); margin: 0; }
+  .page p { margin: 0; }
+  .note { color: var(--color-text-muted); font-size: var(--text-md); }
+  .error { padding: 9px 12px; border-radius: 10px; background: var(--tint-danger-bg); color: var(--tint-danger-fg); }
+  code { background: var(--color-surface-2); padding: 1px 6px; border-radius: 4px; font-size: .85em; }
+  .page .card { background: var(--color-surface); border-radius: var(--radius-lg); padding: 22px; display: flex; flex-direction: column; gap: 14px; box-shadow: var(--shadow-sm); }
+  .button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-md); padding: 0 12px; border-radius: var(--radius-md); border: 1px solid var(--color-divider); color: var(--color-text); background: transparent; font: inherit; font-weight: var(--font-heading-weight); font-size: var(--text-md); white-space: nowrap; cursor: pointer; text-decoration: none; }
+  .button:hover { background: var(--color-hover); color: var(--color-text); }
+  .button.primary { color: var(--color-accent); border-color: var(--color-accent); }
+  .button.primary:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); color: var(--color-accent); }
+  .button.danger { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 70%, transparent); }
+  .button.danger:hover { background: color-mix(in srgb, var(--color-danger) 12%, transparent); }
+  .button.discord { height: var(--control-lg); padding: 0 16px; background: #5865F2; border-color: #5865F2; color: #FFFFFF; }
+  .button.discord:hover { background: #4752C4; color: #FFFFFF; }
+  form.row, .page form.row.card { display: flex; flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; }
+  .page label { display: flex; flex-direction: column; gap: 5px; font-size: var(--text-sm); color: color-mix(in srgb, var(--color-text) 70%, transparent); }
+  .page input:not([type="hidden"]) { font: inherit; font-size: 14px; color: var(--color-text); background: var(--color-surface-2); border: 1px solid var(--color-control-border); border-radius: var(--radius-md); padding: 6px 10px; min-height: var(--control-lg); min-width: 14rem; }
+  .page input:hover { border-color: var(--color-text-muted); }
+  .page input:focus-visible { border-color: var(--color-accent); outline: 2px solid var(--color-accent); outline-offset: 0; }
+  .table { overflow-x: auto; background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 4px 8px; }
+  .table td, .table th { padding: 10px 8px; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .links { display: flex; flex-wrap: wrap; gap: 6px; }
   .spacer { flex: 1; }
-  .button.discord { background: #5865F2; border-color: #5865F2; color: #FFFFFF; padding: 8px 14px; font-size: .95rem; }
   form.inline { display: inline; }
-  form.card-part { display: grid; gap: 12px; }
-  .linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
-  .or { color: var(--muted); font-size: .9rem; }
-</style>
-</head>
-<body>
-${body}
-</body>
-</html>`;
+  form.card-part { display: flex; flex-direction: column; gap: 12px; }
+  .linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--color-accent-text); text-decoration: underline; cursor: pointer; }
+  .or { color: var(--color-text-muted); font-size: var(--text-md); }
+  @media (max-width: 640px) { .page input:not([type="hidden"]) { min-width: 0; width: 100%; font-size: var(--text-touch); min-height: var(--touch); } .button { min-height: var(--touch); } }
+</style>`;
+
+export function shell(title: string, body: string): string {
+  return htmlDocument({ title, body: `${topBar({ title: 'Delve Table', end: themeSwitch() })}${body}`, extra: CSS });
 }
 
 /** An inline "Log out" button (a POST, so another site can't log anyone out). */
