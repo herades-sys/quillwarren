@@ -33,6 +33,9 @@ const initials = (name: string): string => {
 
 const ic = (name: IconName, size = 18): string => icon(name, { size });
 
+/** The Claude panel's "Show Claude's plan" toggle: a checklist, drawn like the design's icons (24 grid, 1.7 stroke). */
+const PLAN_ICON = '<svg class="icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5l1.6 1.6L8.5 5.2M4 12.5l1.6 1.6 2.9-2.9M4.8 18.5h3M12 6.7h8M12 12.7h8M12 18.5h8"/></svg>';
+
 export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap, o: EditorPageOpts): string {
   const { view, style } = o;
   const enc = encodeURIComponent(id);
@@ -125,6 +128,7 @@ ${viewSeg('view', '')}
   <div class="ed-panel-head"><span class="ed-panel-title">Claude</span><span class="tag tag-accent tag-sm" id="chat-live" hidden><span class="dot"></span>Editing live</span>
     <div class="select ed-model"><select id="chat-model" class="input" aria-label="Model"></select>${ic('chevron-down', 13)}</div>
     <span class="spacer"></span>
+    <button class="btn btn-icon" type="button" id="chat-plan" aria-pressed="true" aria-label="Show Claude’s plan" title="Show Claude’s plan: its steps, progress and time left">${PLAN_ICON}</button>
     <button class="btn btn-icon" type="button" id="chat-new" aria-label="New conversation" title="Start a new conversation">${ic('plus', 17)}</button>
     <button class="btn btn-icon" type="button" id="chat-close" aria-label="Collapse Claude" title="Collapse · Ctrl .">${icon('chevron-right', { size: 17, className: 'ed-collapse' })}</button></div>
   <div class="ed-chat-log" id="chat-log" role="log" aria-live="polite"></div>
@@ -393,6 +397,47 @@ export const EDITOR_CSS = `
   .ed-chat-hint[data-kind="bad"] { color: var(--color-warning); }
   .ed-chat-hint kbd { height: 16px; font-size: 10px; }
   .ed-chat-foot .btn { height: 30px; padding: 0 12px; }
+
+  /* Claude's plan: the step list at the top of a working reply (chat.ts, plan-progress.ts), as in the design's "working" card */
+  .ed-panel-head > .btn-icon { flex: none; }
+  /* while a reply runs, "Editing live" takes the model picker's place, so the head keeps room for its buttons */
+  #chat-live:not([hidden]) + .ed-model { display: none; }
+  .ed-plan { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--color-surface-2); box-shadow: inset 0 0 0 1px var(--color-border); font-size: 12.5px; }
+  /* the log follows the newest line while Claude works: in a tall enough log the card stays in sight at its top, as long as its reply is on screen */
+  .ed-chat-log { container: chat-log / size; }
+  @container chat-log (min-height: 400px) { .ed-plan[data-state="working"] { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 0 0 1px var(--color-border), var(--shadow-sm); } }
+  .ed-plan-head { display: flex; align-items: baseline; gap: 8px; }
+  .ed-plan-count { flex: 1; color: var(--color-text); font-weight: 500; }
+  .ed-plan-eta { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  .ed-plan-bar { height: 4px; border-radius: 2px; background: var(--color-surface-3); overflow: hidden; }
+  .ed-plan-fill { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--color-accent); }
+  @media (prefers-reduced-motion: no-preference) { .ed-plan-fill { transition: width .9s var(--ease); } }
+  .ed-plan-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .ed-plan-steps[hidden] { display: none; }
+  .ed-plan-step { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; color: var(--color-text); }
+  .ed-plan-mark { width: 14px; height: 1.4em; flex: none; display: flex; align-items: center; justify-content: center; }
+  .ed-plan-title { min-width: 0; overflow-wrap: anywhere; }
+  .ed-plan-step[data-status="done"] .ed-plan-mark { color: var(--color-accent); }
+  .ed-plan-step[data-status="active"] { color: var(--color-text-muted); }
+  .ed-plan-step[data-status="active"] .ed-plan-mark { color: var(--color-accent); }
+  .ed-plan-step[data-status="pending"] { color: var(--color-text-muted); }
+  .ed-plan-step[data-status="skipped"] { color: var(--color-text-faint); }
+  .ed-plan-step[data-status="skipped"] .ed-plan-title { text-decoration: line-through; text-decoration-color: var(--color-text-faint); }
+  .ed-plan-ring { width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--color-text-faint); }
+  .ed-plan-step[data-ended] .ed-plan-ring { background: var(--color-text-muted); box-shadow: none; }
+  .ed-plan-step[data-ended] { color: var(--color-text); }
+  .ed-plan-note { margin: 0; color: var(--color-text-muted); line-height: 1.4; }
+  .ed-plan-note[hidden] { display: none; }
+  .ed-plan:not([data-state="working"]) { padding: 0; background: transparent; box-shadow: inset 0 0 0 1px var(--color-border-strong); gap: 0; }
+  .ed-plan:not([data-state="working"]) .ed-plan-steps, .ed-plan:not([data-state="working"]) .ed-plan-note { padding: 2px 10px 9px 10px; }
+  .ed-plan-sum { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: var(--text-sm); color: var(--color-text); text-align: left; cursor: pointer; }
+  .ed-plan-sum:hover { background: var(--color-hover); }
+  .ed-plan-sum:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+  .ed-plan-sum > .icon { flex: none; color: var(--color-accent); }
+  .ed-plan-sum > .icon:last-child { color: var(--color-text-muted); transition: transform var(--dur-fast) var(--ease); }
+  .ed-plan-sum[aria-expanded="true"] > .icon:last-child { transform: rotate(180deg); }
+  .ed-plan[data-state="stopped"] .ed-plan-sum > .icon:first-child { color: var(--color-text-muted); }
+  .ed-plan[data-state="failed"] .ed-plan-sum > .icon:first-child { color: var(--color-danger); }
 
   /* the marker note */
   .note-pop.ed-note { position: fixed; z-index: 30; }

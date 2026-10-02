@@ -921,6 +921,41 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       }),
   );
 
+  // ---------- plan: Claude's step list in the editor's chat panel ----------
+  // The panel shows it as a checklist with a progress bar and a time estimate.
+  // The chat bridge reads the plan from this call's input while it streams in
+  // (chat/events.ts turns it into `plan` events); the tool itself only says
+  // "ok" and touches no map. Why a Delve tool and not Claude Code's TodoWrite:
+  // the bridge runs Claude with Delve's MCP tools only (`--tools ''`,
+  // `--allowedTools mcp__delve`), and that list should stay that tight.
+  // Statuses: keep in step with PLAN_STATUSES in chat/events.ts.
+  server.registerTool(
+    'plan',
+    {
+      title: 'Show your plan',
+      description:
+        'Show the GM your plan in the editor\'s chat panel: a checklist with a progress bar and a time estimate. ' +
+        'For requests with 3 or more steps: call it first with every step (short titles in the user\'s language, the first "active", the rest "pending"), ' +
+        'then again after each step with the whole list (that step "done", the next "active"). Each call replaces the plan. ' +
+        'It changes nothing on the map and is not an undo step. Outside the chat panel it shows nowhere.',
+      inputSchema: {
+        steps: z
+          .array(
+            z.object({
+              title: z.string().min(1).max(120).describe('Short and concrete, e.g. "Make room 3 an octagon", "Place 6 chairs"'),
+              status: z.enum(['pending', 'active', 'done', 'skipped']),
+            }),
+          )
+          .min(1)
+          .max(30),
+        note: z.string().max(300).optional().describe('Optional one-line note under the plan'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    () => text('ok'),
+  );
+  // ---------- end plan ----------
+
   server.registerTool(
     'apply_ops',
     {

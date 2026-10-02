@@ -472,6 +472,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
 | `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70, `crop?` [x, y, w, h], `around?` ids, `margin?`=1) | A download link for the user; `handout` links the parchment handout page. `crop` / `around` crop png, svg and handout to whole squares (see "Cropped exports") |
 | `focus` (`ids`) | Pans and highlights every open viewer |
+| `plan` (`steps: [{title, status}]` with status `pending` \| `active` \| `done` \| `skipped`, `note?`) | Claude's plan for the editor's chat panel (a checklist with a progress bar and time left; see "Claude's plan"). Each call replaces the whole plan; it says "ok" and changes no map. Elsewhere it shows nowhere |
 | `apply_ops` | Raw ops, one undoable step |
 
 From a shell: `DELVE_API_TOKEN=… npm run mcp -- add_room '{"map":"map_…","rect":[0,0,6,6]}'` (`--list` shows the tools).
@@ -500,6 +501,7 @@ The map page has a **Claude** button for logged-in editors. It opens a chat pane
 | `text {text}` | A piece of the reply; append it |
 | `tool {id, name, input}` | Claude called a tool |
 | `tool_done {id, ok, text}` | That tool finished |
+| `plan {steps: [{title, status}], note?}` | Claude's plan, the whole list each time (see "Claude's plan"). Calls of the `plan` tool come only as these, never as `tool` / `tool_done` |
 | `usage {fiveHour, sevenDay}` | Subscription use, 0 to 1 of each window |
 | `done {ok, turns, ms, error?}` | The reply is complete |
 | `error {error, code?}` | Something failed. `code` `no_session` means start a new conversation |
@@ -507,6 +509,21 @@ The map page has a **Claude** button for logged-in editors. It opens a chat pane
 - **Closing the request stops Claude.** Changes it already made stay, and undo removes them.
 - **Limits:** a run stops after 5 minutes, and at most 2 run at once (`429` otherwise).
 - **Bridge health:** `curl http://127.0.0.1:8792/health` on the CT.
+
+### Claude's plan: steps, progress and time left
+
+For bigger requests the chat panel shows what Claude is working on: a checklist with a progress bar and an estimate of the time left, at the top of its reply.
+
+- **The tool:** for a request with 3 or more steps, the prompt ("Showing your plan" in `chat/prompt.ts`) asks Claude to call MCP `plan` first, with short, concrete step titles in the user's language ("Make room 3 an octagon", "Place 6 chairs") and the first one active, then again after each step with the whole list (that step done, the next active). It may add steps or mark them skipped as things change, and sends every step done or skipped before its answer. Small requests get no plan.
+  - It is a Delve tool, not Claude Code's TodoWrite, because the bridge runs Claude with Delve's MCP tools only (`--tools ''`, `--allowedTools mcp__delve`), and that should stay that tight.
+- **The events** (`chat/events.ts`): each plan call becomes `plan` events and is left out of the tool list. The tool input is parsed while it streams in (`input_json_delta` pieces; `chat/partial-json.ts` keeps only the steps that are complete), so the plan shows while Claude is still writing it. While a later call streams in, its finished steps replace the first ones of the last plan and the rest stay, so the list never shrinks on the way. Repeats aren't sent.
+- **The panel** (`apps/web/src/chat.ts`; the pure part, `plan-progress.ts`, has the timing, bar and estimate):
+  - The card: "Step 2 of 5", the estimate, the bar, and the steps (○ to do, dots for the active one, ✓ done, ‒ skipped and struck through). In a chat log at least 400 px tall it stays at the top of the log while the reply scrolls under it.
+  - **The bar:** done and skipped steps, plus a share of the active step: by its tool calls (each fills 35 % of what is left of it) or by its time against the average step, whichever is more, and at most 90 % of a step, so it never reaches the next step early. It glides between updates (no animation with reduced motion).
+  - **The estimate:** once a step is done, the average time per done step (from the first plan to the latest done step, divided by the done steps) times the steps still to go, less what the active step has used so far (it counts at least a quarter step while it runs). Before the first step is done it says "estimating…", once every step is done or skipped "finishing…". Always rounded and "about": "a few seconds left", "about 15 s left", "about 40 s left", "about 1 min left", "about 2 min left". It updates once a second. Times are as the browser saw the events.
+  - **Afterwards** the reply keeps a summary line: "4 steps · 1 min 12 s" (from sending to the end of the reply), "3 steps · 1 skipped · 50 s", "3 of 4 steps done · 56 s", "Stopped at step 3 of 5 · 48 s" (Stop), "Ended at step 2 of 5 · 17 s" (an error). The checklist folds away after a good run (the line unfolds it) and stays open where a run stopped or failed, with the step it ended on marked. When a reply ends well, a step still marked active counts as done (Claude sometimes skips the last update). The plan is saved with the conversation in the browser.
+  - **"Show Claude's plan":** the checklist button in the panel's header hides all of it (remembered per browser: localStorage `delve-chat-plan`, on by default). While a reply runs, the "Editing live" tag takes the model picker's place in the header, so the buttons keep their room.
+- **Tests:** `apps/server/test/chat-plan.test.ts` (the parser, recorded stream-json with plan calls cut into pieces, the MCP tool, the prompt, and a whole run with a fake `claude` through the bridge and `/chat`) and `apps/web/test/plan-progress.test.ts`.
 
 ## Selecting and resizing in the editor
 

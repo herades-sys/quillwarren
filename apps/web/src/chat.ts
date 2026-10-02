@@ -3,10 +3,14 @@
 // changes arrive over the live socket like any other edit, so they draw and
 // highlight on their own. The conversation is kept per map in this browser.
 // Laid out as in the design: avatars and times, Claude's changes as a list,
-// "working" with a Stop button while a reply runs.
+// "working" with a Stop button while a reply runs. For bigger requests Claude
+// sends a plan (the MCP tool `plan`): a step list with a progress bar and a time
+// estimate at the top of its reply (plan-progress.ts), which a finished reply
+// keeps as a one-line summary. The header's checklist button hides it.
 import type { Bounds } from '@delve/core';
 import type { IconName } from '@delve/ui';
 import { h, iconEl } from './dom.ts';
+import { applyPlan, finishPlan, leftText, planProgress, planSummary, stepText, withTool, type PlanState, type PlanStep } from './plan-progress.ts';
 import type { Shell } from './shell.ts';
 
 export interface ChatHost {
@@ -31,6 +35,8 @@ interface Msg {
   parts?: Part[];
   /** When it was sent (ms); older saved messages have none. */
   at?: number;
+  /** Claude's plan for this reply, if it sent one. */
+  plan?: PlanState;
 }
 interface Saved {
   session?: string;
@@ -41,6 +47,7 @@ type ChatEv =
   | { type: 'text'; text: string }
   | { type: 'tool'; id: string; name: string; input: unknown }
   | { type: 'tool_done'; id: string; ok: boolean; text: string }
+  | { type: 'plan'; steps: PlanStep[]; note?: string }
   | { type: 'usage'; fiveHour?: number; sevenDay?: number; status?: string; resetsAt?: number }
   | { type: 'done'; session: string; ok: boolean; turns: number; ms: number; error?: string }
   | { type: 'error'; error: string; code?: string };
@@ -272,6 +279,20 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
   if (!modelSel.value) modelSel.value = 'sonnet';
   modelSel.addEventListener('change', () => store.set('delve-chat-model', modelSel.value));
 
+  // "Show Claude's plan" (the header's checklist button): remembered per browser, on by default
+  const planBtn = document.getElementById('chat-plan') as HTMLButtonElement | null;
+  let showPlan = store.get<boolean>('delve-chat-plan') !== false;
+  const syncPlanBtn = () => planBtn?.setAttribute('aria-pressed', String(showPlan));
+  syncPlanBtn();
+  planBtn?.addEventListener('click', () => {
+    showPlan = !showPlan;
+    store.set('delve-chat-plan', showPlan);
+    syncPlanBtn();
+    draw();
+  });
+  /** The reply streaming now. */
+  let replying: Msg | null = null;
+
   const save = () => store.set(key, { session, messages: messages.slice(-100) });
 
   function setOpen(on: boolean, focus = on): void {
@@ -284,6 +305,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     phone?.setAttribute('aria-pressed', String(on));
     store.set('delve-chat-open', on);
     host.layout();
+    syncTick();
     if (on) {
       draw();
       if (focus) input.focus();
@@ -325,8 +347,113 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     );
   }
 
+  // ---------- Claude's plan ----------
+
+  const stepMark = (s: PlanStep, live: boolean): Node =>
+    s.status === 'done'
+      ? iconEl('check', 14)
+      : s.status === 'skipped'
+        ? iconEl('minus', 14)
+        : s.status === 'active' && live
+          ? h('span', { class: 'ed-dots' }, h('span'), h('span'), h('span'))
+          : h('span', { class: 'ed-plan-ring' });
+  const STEP_SAYS: Record<PlanStep['status'], string> = { done: 'Done', skipped: 'Skipped', active: 'Now', pending: 'To do' };
+  const stepList = (p: PlanState, live: boolean) =>
+    h(
+      'ol',
+      { class: 'ed-plan-steps' },
+      ...p.steps.map((s) =>
+        h(
+          'li',
+          { class: 'ed-plan-step', 'data-status': s.status, ...(s.status === 'active' && !live ? { 'data-ended': '' } : {}) },
+          h('span', { class: 'ed-plan-mark', 'aria-hidden': 'true' }, stepMark(s, live)),
+          h('span', { class: 'visually-hidden' }, `${s.status === 'active' && !live ? 'Ended here' : STEP_SAYS[s.status]}: `),
+          h('span', { class: 'ed-plan-title' }, s.title),
+        ),
+      ),
+    );
+
+  /** The working reply's card: kept between redraws, so its bar glides and its dots keep their beat. */
+  let card: { el: HTMLElement; count: HTMLElement; eta: HTMLElement; bar: HTMLElement; fill: HTMLElement; list: HTMLElement; note: HTMLElement; sig: string } | null = null;
+
+  function liveCard(p: PlanState): HTMLElement {
+    if (!card) {
+      const count = h('span', { class: 'ed-plan-count' });
+      const eta = h('span', { class: 'ed-plan-eta', title: 'An estimate from the steps so far' });
+      const fill = h('span', { class: 'ed-plan-fill' });
+      const bar = h('div', { class: 'ed-plan-bar', role: 'progressbar', 'aria-label': 'Claude’s progress', 'aria-valuemin': 0, 'aria-valuemax': 100 }, fill);
+      const list = h('div');
+      const note = h('p', { class: 'ed-plan-note' });
+      card = { el: h('div', { class: 'ed-plan', 'data-state': 'working' }, h('div', { class: 'ed-plan-head' }, count, eta), bar, list, note), count, eta, bar, fill, list, note, sig: '' };
+    }
+    updateCard(p);
+    return card.el;
+  }
+
+  function updateCard(p: PlanState): void {
+    if (!card) return;
+    const pr = planProgress(p, Date.now());
+    const pct = Math.round(pr.fraction * 1000) / 10;
+    const left = leftText(pr.left);
+    card.count.textContent = stepText(pr);
+    card.eta.textContent = left;
+    card.fill.style.width = `${pct}%`;
+    card.bar.setAttribute('aria-valuenow', String(Math.round(pct)));
+    card.bar.setAttribute('aria-valuetext', `${pr.done + pr.skipped} of ${pr.total} steps finished, ${left}`);
+    const sig = JSON.stringify([p.steps, p.note ?? '']);
+    if (sig !== card.sig) {
+      card.sig = sig;
+      card.list.replaceChildren(stepList(p, true));
+      card.note.textContent = p.note ?? '';
+      card.note.hidden = !p.note;
+    }
+  }
+
+  /** Finished replies: the summary line, and the checklist under it (folded after a good run, open where it stopped). */
+  const unfolded = new WeakMap<PlanState, boolean>();
+  function doneCard(p: PlanState, m: Msg): HTMLElement {
+    const open = unfolded.get(p) ?? p.outcome !== 'done';
+    const list = stepList(p, false);
+    const note = p.note ? h('p', { class: 'ed-plan-note' }, p.note) : null;
+    list.hidden = !open;
+    if (note) note.hidden = !open;
+    const sum = h(
+      'button',
+      {
+        type: 'button',
+        class: 'ed-plan-sum',
+        'aria-expanded': String(open),
+        title: open ? 'Hide the steps' : 'Show the steps',
+        onclick: () => {
+          const show = Boolean(list.hidden);
+          unfolded.set(p, show);
+          list.hidden = !show;
+          if (note) note.hidden = !show;
+          sum.setAttribute('aria-expanded', String(show));
+          sum.title = show ? 'Hide the steps' : 'Show the steps';
+        },
+      },
+      iconEl(p.outcome === 'done' ? 'check' : p.outcome === 'stopped' ? 'stop' : 'alert', 14),
+      h('span', { class: 'spacer' }, planSummary(p, m.at)),
+      iconEl('chevron-down', 14),
+    );
+    return h('div', { class: 'ed-plan', 'data-state': p.outcome ?? 'failed' }, sum, list, note);
+  }
+
+  let tick: number | undefined;
+  /** The estimate and the bar move on their own between events, once a second. */
+  function syncTick(): void {
+    const want = Boolean(open && showPlan && busy && replying?.plan);
+    if (want && tick === undefined) tick = window.setInterval(() => replying?.plan && updateCard(replying.plan), 1000);
+    else if (!want && tick !== undefined) {
+      clearInterval(tick);
+      tick = undefined;
+    }
+  }
+
   function claudeBody(m: Msg, working: boolean): HTMLElement {
     const body = h('div', { class: 'ed-msg-body' }, meta('Claude', working ? 'working' : clock(m.at)));
+    if (m.plan && showPlan) body.append(busy && m === replying ? liveCard(m.plan) : doneCard(m.plan, m));
     let tools: ToolPart[] = [];
     const flushTools = () => {
       if (tools.length) body.append(changes(tools));
@@ -376,6 +503,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     sendBtn.replaceChildren(iconEl(busy ? 'stop' : 'send', 15), h('span', {}, busy ? 'Stop' : 'Send'));
     sendBtn.title = busy ? 'Stop · Esc' : 'Send · Enter';
     live.hidden = !busy;
+    syncTick();
   }
 
   let drawQueued = false;
@@ -405,9 +533,12 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     const parts = reply.parts!;
     const abort = new AbortController();
     busy = abort;
+    replying = reply;
+    card = null;
     setStatus('Thinking…');
     drawSoon();
     let restart = false;
+    let failed = false;
     try {
       const res = await fetch(`/api/v1/maps/${encodeURIComponent(host.mapId)}/chat`, {
         method: 'POST',
@@ -447,7 +578,12 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
               setStatus('Writing…');
               break;
             }
+            case 'plan':
+              reply.plan = applyPlan(reply.plan, ev.steps, ev.note, Date.now());
+              break;
             case 'tool':
+              if (ev.name === 'plan') break; // the plan card shows it (the server leaves these out anyway)
+              if (reply.plan) reply.plan = withTool(reply.plan);
               parts.push({ kind: 'tool', id: ev.id, name: ev.name, input: (ev.input ?? {}) as Record<string, unknown>, state: 'running' });
               setStatus(`${TOOL_LABEL[ev.name] ?? ev.name}…`);
               break;
@@ -469,12 +605,18 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
               session = ev.session || session;
               if (!ev.ok) {
                 if (!retried && /no conversation found/i.test(ev.error ?? '')) restart = true;
-                else messages.push({ role: 'error', text: ev.error ?? 'Claude stopped with an error.', at: Date.now() });
+                else {
+                  failed = true;
+                  messages.push({ role: 'error', text: ev.error ?? 'Claude stopped with an error.', at: Date.now() });
+                }
               }
               break;
             case 'error':
               if (ev.code === 'no_session' && !retried) restart = true;
-              else messages.push({ role: 'error', text: ev.error, at: Date.now() });
+              else {
+                failed = true;
+                messages.push({ role: 'error', text: ev.error, at: Date.now() });
+              }
               break;
           }
           drawSoon();
@@ -482,10 +624,18 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
       }
     } catch (e) {
       if (abort.signal.aborted) messages.push({ role: 'error', text: 'Stopped. Changes Claude already made are kept (undo removes them).', at: Date.now() });
-      else messages.push({ role: 'error', text: `The chat failed: ${(e as Error).message}`, at: Date.now() });
+      else {
+        failed = true;
+        messages.push({ role: 'error', text: `The chat failed: ${(e as Error).message}`, at: Date.now() });
+      }
     } finally {
       busy = null;
-      if (!parts.length) messages.splice(messages.indexOf(reply), 1); // no empty reply left behind
+      replying = null;
+      card = null;
+      // the plan keeps where it ended
+      if (reply.plan) reply.plan = finishPlan(reply.plan, abort.signal.aborted ? 'stopped' : failed ? 'failed' : 'done', Date.now());
+      const at = messages.indexOf(reply); // -1 when "New conversation" cleared it meanwhile
+      if (!parts.length && !reply.plan && at >= 0) messages.splice(at, 1); // no empty reply left behind
       setStatus('');
       save();
       draw();
