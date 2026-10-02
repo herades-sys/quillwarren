@@ -84,6 +84,7 @@ function moved(o: MapObjectT, dx: number, dy: number): Record<string, unknown> |
     case 'room':
     case 'cutout':
     case 'stairs':
+    case 'opening':
       return { shape: translateShape(o.shape, dx, dy) };
     case 'terrain':
       return { shape: translateShape(o.shape, dx, dy), ...(o.holes ? { holes: o.holes.map((ring) => ring.map(shift)) } : {}) };

@@ -63,11 +63,24 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   ];
   const menuItem = (icn: IconName, idAttr: string, href: string, label: string, sub: string, dl: string, extra = '') =>
     `<a class="menu-item has-icon" role="menuitem"${idAttr ? ` id="${idAttr}"` : ''} href="${esc(href)}"${dl ? ' download' : ''}${extra}>${ic(icn, 17)}<span class="spacer"><span>${esc(label)}</span>${sub ? `<span class="menu-item-sub">${esc(sub)}</span>` : ''}</span></a>`;
-  const exportItems = exports.map((e) => menuItem(...e)).join('');
+  // Crop to selection: shown while something is selected; the editor (apps/web/src/editor.ts) fills in the frame
+  const crops: [string, IconName, string, string, string][] = [
+    ['png-gm', 'download', 'PNG · GM view', 'The selection plus a square, grid-aligned', 'download'],
+    ['png-players', 'download', 'PNG · players', 'What the players see of it', 'download'],
+    ['svg', 'download', 'SVG', 'Vector, in the current view', 'download'],
+    ['handout', 'notes', 'Parchment handout', 'Just this part on the sheet', ''],
+  ];
+  const cropGroup = edit
+    ? `<div class="ed-crop" data-crop-group hidden><span class="section-label ed-menu-label" data-crop-label>Crop to selection</span>${crops
+        .map(([key, icn, label, sub, dl]) => menuItem(icn, '', '#', label, sub, dl, ` data-crop="${key}"`))
+        .join('')}</div>`
+    : '';
+  const exportItems = exports.map((e) => menuItem(...e)).join('') + cropGroup;
   const moreItems = [
     menuItem('3d', '', `/maps/${enc}/3d`, '3D view', 'All storeys stacked', ''),
     menuItem('screen', '', `/maps/${enc}/screen`, 'Players’ screen', 'Opens in a new window', '', ' target="_blank" rel="noopener"'),
     exports.map((e) => menuItem(e[0], '', e[2], e[3], e[4], e[5])).join(''),
+    cropGroup,
     edit ? `<button class="menu-item has-icon" role="menuitem" type="button" data-act="map-settings">${ic('settings', 17)}<span class="spacer">Map settings</span></button>` : '',
     `<button class="menu-item has-icon" role="menuitem" type="button" data-act="shortcuts">${ic('keyboard', 17)}<span class="spacer">Keyboard shortcuts</span><kbd>?</kbd></button>`,
   ].join('');
@@ -188,6 +201,9 @@ export const EDITOR_CSS = `
   .ed-menu .menu-item { padding: 8px 10px; border-radius: 7px; }
   .ed-menu .menu-item > .icon { margin-top: 1px; color: var(--color-text-muted); }
   .ed-menu .menu-item kbd { align-self: center; }
+  .ed-crop { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-top: 6px; box-shadow: inset 0 1px 0 var(--color-border); }
+  .ed-crop[hidden] { display: none; }
+  .ed-menu-label { padding: 4px 10px 2px; }
   .ed-storey-chip { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--color-accent); color: var(--color-accent); font-size: 17px; }
   .ed-avatar { margin-left: 4px; }
 
@@ -195,10 +211,13 @@ export const EDITOR_CSS = `
   .ed-rail { box-shadow: inset -1px 0 0 var(--color-border); position: relative; z-index: 15; overflow-y: auto; scrollbar-width: none; }
   .ed-rail .spacer { flex: 1; min-height: 8px; }
   .ed-rail .tool.is-toggle[aria-pressed="true"] { background: transparent; box-shadow: none; color: var(--color-accent); }
-  #stage { flex: 1; min-width: 0; position: relative; overflow: hidden; touch-action: none; cursor: grab; z-index: 1; }
-  #stage.dragging { cursor: grabbing; }
+  #stage { flex: 1; min-width: 0; position: relative; overflow: hidden; touch-action: none; cursor: grab; z-index: 1; user-select: none; -webkit-user-select: none; }
+  #stage input, #stage textarea { user-select: text; -webkit-user-select: text; }
+  #stage[data-tool="select"] { cursor: default; }
   #stage[data-tool]:not([data-tool=""]):not([data-tool="select"]):not([data-tool="pan"]) { cursor: crosshair; }
-  #stage.panning, #stage[data-tool="pan"] { cursor: grab; }
+  #stage[data-tool="pan"] { cursor: grab; }
+  #stage.panning { cursor: grab !important; }
+  #stage.dragging { cursor: grabbing !important; }
   #stage.on-marker:not(.dragging) { cursor: pointer !important; }
   #canvas { position: absolute; inset: 0; }
   #canvas svg { width: 100%; height: 100%; display: block; }
@@ -388,6 +407,9 @@ export const EDITOR_CSS = `
   .ed .brush-path { fill: none; stroke-dasharray: 2 4; }
   .ed .ghost-prop, .ed .ghost-seg { opacity: .75; }
   .ed .guide { fill: color-mix(in srgb, var(--canvas-select) 5%, transparent); stroke: var(--canvas-select); stroke-opacity: .6; stroke-width: 1.5px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+  .ed .open-area { fill: color-mix(in srgb, var(--canvas-select) 7%, transparent); stroke: var(--canvas-select); stroke-opacity: .85; stroke-width: 1.5px; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .ed .marquee { fill: color-mix(in srgb, var(--canvas-select) 9%, transparent); stroke: var(--canvas-select); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+  .ed .sel-pre { fill: none; stroke: var(--canvas-select); stroke-opacity: .55; stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
   .hl-focus { fill: color-mix(in srgb, var(--marker-discover) 16%, transparent); stroke: var(--marker-discover); stroke-width: 3px; vector-effect: non-scaling-stroke; animation: ed-pulse 1.1s ease-in-out 3; }
   .hl-change { fill: color-mix(in srgb, var(--canvas-select) 12%, transparent); stroke: var(--canvas-select); stroke-width: 2px; vector-effect: non-scaling-stroke; animation: ed-fade 1.6s ease-out forwards; }
   @keyframes ed-pulse { 50% { stroke-opacity: .25; fill-opacity: .05; } }

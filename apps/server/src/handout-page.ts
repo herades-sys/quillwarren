@@ -88,8 +88,12 @@ function page(id: string, name: string, fogOn: boolean): string {
   var base = '/api/v1/maps/' + encodeURIComponent(init.id) + '/handout';
   var sheet = $('sheet'), status = $('status');
   var size = null, timer = 0, current = '';
+  // a cropped handout (the editor's "Crop to selection", MCP export crop): only that part of the map
+  var crop = new URLSearchParams(location.search).get('crop');
+  if (crop) { var cn = document.createElement('span'); cn.className = 'note'; cn.textContent = 'Cropped to squares ' + crop.split(',').join(', ') + '. '; var wa = document.createElement('a'); wa.href = location.pathname; wa.textContent = 'Whole map'; cn.appendChild(wa); document.querySelector('header').appendChild(cn); }
   function query(extra) {
     var q = new URLSearchParams({ paper: $('paper').value, orientation: $('orientation').value });
+    if (crop) q.set('crop', crop);
     var t = $('title').value.trim();
     if (t !== init.name) q.set('title', t);
     ['compass', 'scale', 'frame', 'stains'].forEach(function (k) { if (!$(k).checked) q.set(k, '0'); });

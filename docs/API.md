@@ -141,6 +141,19 @@ Errors come back as `{ "error": "…", "problems"?: ["…"], "rev"?: n }`.
   - The default, `"rock"` (or no `fill`), looks as before: whatever lies around the dungeon (hatching, or a white hole in "clean").
   - Editor: the Pillar tool's Fill choice (like the rock / solid) and the Fill field of a selected cutout. MCP: `add_cutout fill`. Core: `geometry/solid.ts`.
 
+## Open ends and open areas
+
+Hatching and shading (and the classic style's drop shadow) run along the outside of every wall. Two things leave that band out, so an edge reads as open ground instead of solid rock:
+
+- **Outer archways, automatically:** a door of style `archway` on the floor's outer edge (floor on one side of the gap, no floor within the band's reach beyond it) gets an open end. A strip as wide as the gap is left out of the band straight outwards, past the hatching's reach, with softly rounded corners (the same look fog of war gives a revealed edge). The wall stays cut at the gap as before. Archways between two rooms or across a corridor mouth, and every other door style on an outer wall (a normal exit door), keep the band. `describe_map` says "leads outside (an open end…)". Core: `render/open-ends.ts` (`outerArchways`, `archwayEnds`, `openAreas`).
+- **Open areas, drawn by hand:** the `opening` object, `{ type: "opening", id, name?, notes?, shape, walls?: true }`.
+  - Inside its shape there is no hatching, no shading and no drop shadow, in the GM and the players' view. The object itself is never drawn and never exported to Dungeon Scrawl.
+  - `walls: true` also leaves out the wall lines inside the shape, and a wall that runs along its edge with the open area on the outside: a cave mouth, a ledge that drops away, a room edge that is simply open. Walls running along its edge on the floor side stay, so an open area reaching into a room keeps the room's side walls. This also holds for the 3D view and the table's line of sight, which use the same walls (core `computeWalls` / `wallPolylines`).
+  - Ids default to `o1`, `o2`… It moves, resizes, undoes and comes along in segments (with the room it touches) like any shape. `describe_map` lists open areas.
+  - Editor: the **Open area** tool (**N**, the eraser on the rail): shapes 1–7 like the Pillar tool, Shift for a square, and Keep walls / Open walls. All open areas show as dashed outlines while the tool is on, a selected one also with Select; a click with the tool picks one. The inspector has its name, "Open the walls too", the shape and its size.
+  - MCP: `add_opening` (`rect` | `poly` | `circle` | `preset`, `walls?`, `name?`, `id?`); `update {"walls": true}`, `resize` and `delete` change it.
+  - Core: `geometry/openings.ts` (`openingsOf`, `openWallRings`, `cutSegments`), the band in `render/scene.ts`.
+
 ## Fog of war
 
 - **Where it's kept:** `map.fog = { on, revealed?: ids, show?: shapes, hide?: shapes }`, changed with `update_map`, so it is live and undoable.
@@ -270,10 +283,16 @@ Writes need the token or an editor login; reads are public like maps. `segment` 
 
 | Path | Query | Returns |
 |---|---|---|
-| `/maps/:id/render.png` | `ppg` (10–300, default **70**, Roll20's grid), `view` (`gm` or `players`), `style` (preset override), `grid=0`, `background=0`, `fog=1`, `bounds=full` (with fog, keep the unfogged picture size) | PNG. The filename includes the size in squares, e.g. `crypt_classic-hatching_players_26x38.png` |
+| `/maps/:id/render.png` | `ppg` (10–300, default **70**, Roll20's grid), `view` (`gm` or `players`), `style` (preset override), `grid=0`, `background=0`, `fog=1`, `bounds=full` (with fog, keep the unfogged picture size), `frame=x0,y0,x1,y1` (crop: just this part, in squares, widened to whole squares, at most 1000 each way) | PNG. The filename includes the size in squares, e.g. `crypt_classic-hatching_players_26x38.png` |
 | `/maps/:id/render.svg` | same | SVG, scalable, for print |
 | `/maps/:id/describe` | | Plain text: rooms, sizes, connections, doors |
 | `/maps/:id/export.ds` | `view` (`gm` or `players`) | A Dungeon Scrawl save file, e.g. `crypt.ds` or `crypt_players.ds`. Open it in Dungeon Scrawl with File → Open save file |
+
+**Cropped exports:** `frame` draws exactly that part of the map. It is widened to whole squares (`2.5,0,7.2,4` draws `2,0,8,4`), so the picture's edges fall on grid lines and a VTT grid lines up; the PNG is `(x1 − x0) × ppg` by `(y1 − y0) × ppg` pixels and the filename carries the size in squares.
+- **Editor:** with something selected (a box selection, say), the Export menu (and ⋯ on narrow screens) gets **Crop to selection**: PNG · GM view, PNG · players, SVG (in the current view) and the parchment handout, each framed on the selection's bounds plus one square. The label shows the count and the size, e.g. "6 objects · 5 × 20 sq".
+- **MCP `export`:** `crop: [x, y, w, h]` in squares and/or `around: [ids]` (their bounds plus `margin`, default 1); both together cover both. It answers with the link and "Cropped to x 2–6, y -16–4 (4×20 squares)". `ds` exports are always whole and refuse a crop.
+- **Handout:** `crop=x0,y0,x1,y1` on `/api/v1/maps/:id/handout.{png,svg}` and on the page `/maps/:id/handout?crop=…`, which passes it on and says it's cropped. A cropped handout's scene is cut to its frame first (core `cropScene`): resvg panicked (and so killed the server) on a cropped sheet whose map geometry ran far past the page under a stain's blur.
+- **Core:** `crop.ts` (`cropFrame`, `selectionBounds`, `tightBounds`, `wholeSquares`, `cropScene`); server `render.ts` `parseFrame`.
 
 The players' view hides room numbers and draws secret doors as solid wall. Styles are `classic-hatching`, `clean`, `old-school-blue`, `print` and `parchment`. Parchment is brown ink on old paper, with sketched walls; the handout below puts it on a whole parchment sheet.
 
@@ -300,6 +319,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 - **Big maps:** past 1500 squares of wall (a city), the hatching is left out. It would take seconds and only look busy.
 - **Code:** core `render/handout.ts`, server `handout-page.ts`.
 - **Don't use `feDisplacementMap`** in anything resvg renders. It panics on uneven region rounding (e.g. A3 at 60 dpi), and the panic aborts the whole server.
+- **Keep handout geometry on the page:** a cropped sheet with the whole map's geometry running far past the page made resvg panic under a stain's blur filter (geom.rs `unwrap` on `None`), so cropped handouts are cut to their frame first (`cropScene`).
 
 ### Dungeon Scrawl `.ds`
 
@@ -365,6 +385,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `add_room` (`rect` \| `poly` \| `circle` \| `preset`, `name?`, `label?`, `notes?`) | The room number defaults to the next free one. `preset` is `{kind: oval/triangle/hexagon/octagon, box: [x, y, w, h]}` |
 | `connect` (`from`, `to`, `width?`=2, `doors?` none/from/to/both, `door_style?`) | Auto-routed corridor that follows its rooms, with doors across its mouths |
 | `add_cutout` (a shape or `preset`, `fill?` solid/rock), `add_door`, `add_stairs`, `add_label` | Details |
+| `add_opening` (a shape or `preset`, `walls?`, `name?`) | An open area: no hatching, shading or shadow inside; with `walls` no wall lines either (see "Open ends and open areas") |
 | `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_props_along` (`asset`, `path`, `spacing?`, `placement?`, `spread?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
 | `add_marker` (`kind` discover/interact/trap, `at`, `text`) | A GM note badge (GM view only); `update` with `{"done": true}` strikes it through |
 | `list_images`, `add_image` (`src`, `at`, `w?`, `h?`, `rotation?`, `layer?`, `opacity?`, `gm_only?`) | The user's uploaded pictures, placed by `src` |
@@ -374,7 +395,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, roughness 1–10, level_name, floor) | Changes; `add_room` also takes `roughness`. `update {"notes": "…"}` writes GM notes on a room, corridor or terrain (see "GM notes") |
 | `undo`, `redo` | History |
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
-| `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70) | A download link for the user; `handout` links the parchment handout page |
+| `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70, `crop?` [x, y, w, h], `around?` ids, `margin?`=1) | A download link for the user; `handout` links the parchment handout page. `crop` / `around` crop png, svg and handout to whole squares (see "Cropped exports") |
 | `focus` (`ids`) | Pans and highlights every open viewer |
 | `apply_ops` | Raw ops, one undoable step |
 
@@ -411,6 +432,19 @@ The map page has a **Claude** button for logged-in editors. It opens a chat pane
 - **Closing the request stops Claude.** Changes it already made stay, and undo removes them.
 - **Limits:** a run stops after 5 minutes, and at most 2 run at once (`429` otherwise).
 - **Bridge health:** `curl http://127.0.0.1:8792/health` on the CT.
+
+## Selecting and resizing in the editor
+
+- **Box selection (Select, V):** drag on empty ground to draw a box; everything whose bounds lie wholly inside is selected (a door counts by its line, GM markers not in the players' view). Shift or Ctrl adds to the selection, Ctrl-drag draws a box from anywhere (over rooms too), and Esc cancels the box and puts the old selection back. Open areas are invisible until selected, so a drag on one draws a box and a click selects it.
+  - The context bar shows the count ("12 objects"), and the inspector the kinds and the size they span. Dragging any selected object moves them all (a click on one picks just it), and the arrows, Delete, Ctrl D, Q / E (props and pictures each turn), "Save as segment" and Export → Crop to selection all work on the whole set.
+  - Panning: H or Space with the left button, or the middle or right button in any tool (the map has no browser context menu).
+  - Touch: one finger on empty ground pans (a tap clears the selection or picks an open area); the context bar's **One-finger drag: Pan | Box** switch (on touch devices) makes it draw a box instead. A second finger always cancels what the first was drawing and pinches.
+  - Code: `apps/web/src/edit-logic.ts` (`boxSelect`, `mergeSelection`, `clickSelection`, `pressesGround`, `groundDrag`, `cropToSelection`).
+- **Resizing props and pictures:** a selected prop or picture has a handle on each corner (turned with it; a 44 px target on touch).
+  - A prop scales uniformly about its centre, by whichever side the pointer pulls further, in steps that keep both sides of its footprint whole half squares (a 1 × 1 barrel steps 50 %, a 2 × 2 table 25 %); Alt is free (1 %). It stays within 25–400 %, and a chip shows the size while dragging ("3 × 1.5 sq · 150 %"). One `update` of `scale`, so one undo step. Props never stretch.
+  - A picture takes the width and height the pointer gives, about its centre, in half squares (Alt free, Shift keeps its proportions): one `update` of `w` and `h`.
+  - The prop inspector has Width and Height in squares next to the Scale slider; either sets the scale and the other follows.
+  - Code: `edit-logic.ts` (`corners`, `cornerAt`, `scaleStep`, `snapScale`, `scaleFromCorner`, `sizeFromCorner`, `sizeText`).
 
 ## Live viewer: `/maps/:id`
 

@@ -42,7 +42,7 @@ const EPS = 1e-6;
 const MAX_TILES = 2500;
 const DIRS = ['n', 'e', 's', 'w'] as const;
 /** Ids by type, as the tools and the editor pick them. */
-const PREFIX: Record<string, string> = { room: 'r', corridor: 'c', cutout: 'p', door: 'd', stairs: 's', label: 'l', prop: 'i', terrain: 't', marker: 'm' };
+const PREFIX: Record<string, string> = { room: 'r', corridor: 'c', cutout: 'p', door: 'd', stairs: 's', label: 'l', prop: 'i', terrain: 't', marker: 'm', opening: 'o' };
 /** Objects centred on `at` that turn by a `rotation` field. */
 const TURNS_WITH_ROTATION = new Set(['prop', 'image']);
 /** What "around the rooms" means: the built part of the map. */
@@ -226,8 +226,14 @@ function pickIds(map: DelveMap, ids: readonly string[]): MapObject[] {
     const polys = polygonsOf(floor);
     const pts = floor.flat();
     const reach: Bounds = { x0: Math.min(...pts.map((p) => p.x)), y0: Math.min(...pts.map((p) => p.y)), x1: Math.max(...pts.map((p) => p.x)), y1: Math.max(...pts.map((p) => p.y)) };
+    // open areas lie across a picked room's edge (the open end of a corridor): they come along when they touch its floor
+    const touching = inflatePathsD(floor, 0.25, JoinType.Miter, EndType.Polygon, 2, PRECISION);
     for (const o of map.objects) {
-      if (chosen.has(o.id) || o.type === 'room' || o.type === 'corridor') continue;
+      if (o.type !== 'opening' || chosen.has(o.id)) continue;
+      if (intersectD([shapePath(o.shape)], touching, FillRule.NonZero, PRECISION).length) chosen.add(o.id);
+    }
+    for (const o of map.objects) {
+      if (chosen.has(o.id) || o.type === 'room' || o.type === 'corridor' || o.type === 'opening') continue;
       const b = objectBounds(o, map);
       if (!b || !insidePolygons(polys, [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2])) continue;
       // an area must fit the picked floor too: a forest filled around the rooms isn't "in" them
@@ -324,6 +330,7 @@ const NOUNS: Record<string, [string, string]> = {
   terrain: ['terrain area', 'terrain areas'],
   marker: ['GM marker', 'GM markers'],
   image: ['picture', 'pictures'],
+  opening: ['open area', 'open areas'],
 };
 
 /** How many objects of each type. */

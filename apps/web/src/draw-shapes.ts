@@ -18,10 +18,15 @@ export const FILL_CHOICES: [CutoutFill, string][] = [
   ['solid', 'solid'],
 ];
 
-/** The hint under the tools for the Room and Pillar tools, by shape. */
-export function drawHint(kind: DrawShape, what: 'room' | 'pillar'): string {
-  if (kind === 'freehand') return `Hold the button and draw the ${what === 'room' ? "room's" : "pillar's"} outline; let go to close it.`;
-  const base = what === 'room' ? 'Drag to draw a room.' : 'Drag to cut floor away: pillars, pits, wall blocks.';
+/** The hint under the tools for the Room, Pillar and Open area tools, by shape. */
+export function drawHint(kind: DrawShape, what: 'room' | 'pillar' | 'opening'): string {
+  if (kind === 'freehand') return `Hold the button and draw the ${what === 'room' ? "room's" : what === 'pillar' ? "pillar's" : "open area's"} outline; let go to close it.`;
+  const base =
+    what === 'room'
+      ? 'Drag to draw a room.'
+      : what === 'pillar'
+        ? 'Drag to cut floor away: pillars, pits, wall blocks.'
+        : 'Drag over a wall or an edge: no hatching or shading inside it (with Open walls, no wall lines either).';
   return `${base} Shift keeps width and height equal.`;
 }
 

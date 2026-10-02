@@ -67,6 +67,7 @@ See `fixtures/test-map-4p.delve.json` for the test dungeon. The top level looks 
 | `terrain` | `shape`, `asset`, `holes`, `notes` | An area filled with a repeating tile (water, grass, lava…) |
 | `marker` | `kind` (`discover`, `interact`, `trap`), `at`, `text`, `done` | GM note badges ("?", "!", skull), GM view only. Click to read, Shift-click to strike through |
 | `image` | `src` (an uploaded file, `<sha256>.<ext>`), `at` (centre), `w`, `h`, `rotation`, `layer` (`floor` or `props`), `opacity`, `gmOnly` | Your own pictures, uploaded through `/api/v1/images` |
+| `opening` | `shape`, `walls`, `name` | An open area: no hatching, shading or drop shadow inside the shape (both views); `walls: true` leaves the wall lines there out too. Never drawn itself. Outer archways get the same open end by themselves (docs/API.md, "Open ends and open areas") |
 
 ### 2. Operations (the only way to change a map)
 

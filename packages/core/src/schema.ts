@@ -152,9 +152,25 @@ export const MapImage = z.strictObject({
   gmOnly: z.boolean().optional(),
 });
 
-export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker', 'image'] as const;
+/**
+ * An open area, drawn by hand: inside its shape the map has no hatching, no
+ * shading and no drop shadow, so an edge reads as open instead of walled in
+ * (the top of a corridor that leads out of the map). With `walls`, the wall
+ * lines inside the shape are left out too: a cave mouth, a ledge that drops
+ * away. It changes the picture in both views but is never drawn itself (the
+ * editor shows a dashed outline while it is selected or its tool is on).
+ * Archways on the floor's outer edge get an open end like this by themselves.
+ */
+export const Opening = z.strictObject({
+  type: z.literal('opening'),
+  ...common,
+  shape: Shape,
+  walls: z.boolean().optional(),
+});
 
-export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker, MapImage]);
+export const OBJECT_TYPES = ['room', 'corridor', 'cutout', 'door', 'stairs', 'label', 'prop', 'terrain', 'marker', 'image', 'opening'] as const;
+
+export const MapObject = z.discriminatedUnion('type', [Room, Corridor, Cutout, Door, Stairs, Label, Prop, Terrain, Marker, MapImage, Opening]);
 
 /**
  * Fog of war for the players' screen. With it on, players see only the revealed
@@ -214,6 +230,7 @@ export type Marker = z.infer<typeof Marker>;
 export type MarkerKind = (typeof MARKER_KINDS)[number];
 export type CutoutFill = (typeof CUTOUT_FILLS)[number];
 export type MapImage = z.infer<typeof MapImage>;
+export type Opening = z.infer<typeof Opening>;
 export type ImageLayer = (typeof IMAGE_LAYERS)[number];
 export type Level = z.infer<typeof Level>;
 export type Fog = z.infer<typeof Fog>;

@@ -57,6 +57,9 @@ export {
 } from './assets/catalog.ts';
 export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset } from './assets/svg.ts';
 export { objectBounds, insidePolygons, clipPolylines } from './geometry/objects.ts';
+export { openingsOf, openWallRings, cutSegments, floorTest } from './geometry/openings.ts';
+export { outerArchways, archwayEnds, openAreas, type OuterArchway } from './render/open-ends.ts';
+export { tightBounds, selectionBounds, unionOf, wholeSquares, cropFrame, frameQuery, cropScene, clipLinesToBox, MAX_CROP, type CropRequest } from './crop.ts';
 export { roughFloor, drawnFloor, hasRoughness, amplitudeOf, ROUGHNESS_AMPLITUDE } from './geometry/rough.ts';
 export { scatterAlong, type ScatterOptions, type Placement } from './scatter.ts';
 export {

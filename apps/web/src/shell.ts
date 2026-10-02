@@ -37,6 +37,7 @@ export const SHORTCUTS: [string, string][] = [
   ['D', 'Door'],
   ['S', 'Stairs'],
   ['I', 'Pillar / cutout'],
+  ['N', 'Open area: no hatching there'],
   ['P', 'Prop'],
   ['G', 'Terrain'],
   ['T', 'Label'],
@@ -44,6 +45,10 @@ export const SHORTCUTS: [string, string][] = [
   ['F', 'Fog reveal'],
   ['U', 'Image upload'],
   ['B', 'Segment'],
+  ['Drag', 'Box select (Select, on empty ground)'],
+  ['Shift / Ctrl drag', 'Add a box to the selection'],
+  ['Middle / right drag', 'Pan'],
+  ['Corner drag', 'Resize a prop or picture (Alt: free)'],
   ['Q / E', 'Rotate 15° (Shift: 90°)'],
   ['Del', 'Delete selection'],
   ['Ctrl Z', 'Undo · Shift to redo'],
@@ -133,7 +138,7 @@ export function initShell(o: { mapId: string; edit: boolean; view: View; hooks: 
   });
   document.addEventListener('keydown', (e) => {
     if (!openMenu) return;
-    const items = [...openMenu.menu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    const items = [...openMenu.menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].filter((el) => !el.closest('[hidden]'));
     const i = items.indexOf(document.activeElement as HTMLElement);
     if (e.key === 'Escape') {
       const btn = openMenu.btn;
@@ -153,7 +158,7 @@ export function initShell(o: { mapId: string; edit: boolean; view: View; hooks: 
     for (const r of radios()) r.checked = r.value === v;
     if (banner) banner.hidden = v !== 'players';
     // downloads follow the view
-    for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href*="/render.png"], a[href*="/render.svg"]')) {
+    for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href*="/render.png"]:not([data-crop]), a[href*="/render.svg"]:not([data-crop])')) {
       const url = new URL(a.href);
       url.searchParams.set('view', v);
       a.href = url.pathname + url.search;

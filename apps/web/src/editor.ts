@@ -10,6 +10,7 @@ import {
   CATEGORIES,
   computeFloor,
   connectOps,
+  countsText,
   DOOR_STYLES,
   floorText,
   freehandShape,
@@ -25,6 +26,7 @@ import {
   HIDDEN_ASSETS,
   propCentre,
   scatterAlong,
+  segmentCounts,
   shapeBounds,
   shapeFromDrag,
   SQUARE_SIZES,
@@ -48,8 +50,19 @@ import type { ViewerCtx } from './ctx.ts';
 import { btn, checkbox, field, h, iconBtn, iconEl, input, miniRange, range, seg, select, svgEl, textarea, type Kid } from './dom.ts';
 import { drawHint, FILL_CHOICES, SHAPE_CHOICES, shapeGhost } from './draw-shapes.ts';
 import {
+  boxOf,
+  boxSelect,
+  clickSelection,
   closesPolygon,
+  cornerAt,
+  corners,
+  cropToSelection,
   deletionSet,
+  MAX_SCALE,
+  MIN_SCALE,
+  groundDrag,
+  mergeSelection,
+  pressesGround,
   doorFromDrag,
   handleAt,
   handlePoint,
@@ -60,15 +73,19 @@ import {
   rectFromDrag,
   rectOf,
   resizeBounds,
+  scaleFromCorner,
+  sizeFromCorner,
+  sizeText,
   snap,
   snapPoint,
   type Handle,
+  type Turned,
 } from './edit-logic.ts';
 import { initImages } from './images.ts';
 import { objectBounds, pad } from './logic.ts';
 import { initSegments } from './segments.ts';
 
-type Tool = 'select' | 'pan' | 'room' | 'poly' | 'corridor' | 'door' | 'stairs' | 'cutout' | 'prop' | 'terrain' | 'label' | 'marker' | 'reveal' | 'image' | 'segment';
+type Tool = 'select' | 'pan' | 'room' | 'poly' | 'corridor' | 'door' | 'stairs' | 'cutout' | 'opening' | 'prop' | 'terrain' | 'label' | 'marker' | 'reveal' | 'image' | 'segment';
 
 interface ToolInfo {
   id: Tool;
@@ -93,6 +110,7 @@ const TOOL_GROUPS: ToolInfo[][] = [
     { id: 'door', name: 'Door', short: 'Door', key: 'D', icon: 'door' },
     { id: 'stairs', name: 'Stairs', short: 'Stairs', key: 'S', icon: 'stairs' },
     { id: 'cutout', name: 'Pillar / cutout', short: 'Pillar', key: 'I', icon: 'pillar' },
+    { id: 'opening', name: 'Open area', short: 'Open', key: 'N', icon: 'eraser', tip: 'no hatching or shading here' },
   ],
   [
     { id: 'prop', name: 'Prop', short: 'Prop', key: 'P', icon: 'prop', tip: 'Q / E rotate' },
@@ -118,8 +136,10 @@ const thumb = (id: string) => `/assets/props/${encodeURIComponent(id)}.svg`;
 /** Turned by 15° steps, folded into 0…345. */
 const turned = (deg: number) => (((Math.round(deg / 15) * 15) % 360) + 360) % 360;
 const SHAPE_ICON: Record<DrawShape, IconName> = { rect: 'shape-rect', circle: 'shape-circle', oval: 'shape-oval', triangle: 'shape-triangle', hexagon: 'shape-hexagon', octagon: 'shape-octagon', freehand: 'shape-freehand' };
-const TYPE_ICON: Record<MapObject['type'], IconName> = { room: 'room', corridor: 'corridor', cutout: 'pillar', door: 'door', stairs: 'stairs', label: 'label', prop: 'prop', terrain: 'terrain', marker: 'marker', image: 'image' };
-const TYPE_NAME: Record<MapObject['type'], string> = { room: 'Room', corridor: 'Corridor', cutout: 'Pillar / cutout', door: 'Door', stairs: 'Stairs', label: 'Label', prop: 'Prop', terrain: 'Terrain', marker: 'GM marker', image: 'Image' };
+const TYPE_ICON: Record<MapObject['type'], IconName> = { room: 'room', corridor: 'corridor', cutout: 'pillar', door: 'door', stairs: 'stairs', label: 'label', prop: 'prop', terrain: 'terrain', marker: 'marker', image: 'image', opening: 'eraser' };
+const TYPE_NAME: Record<MapObject['type'], string> = { room: 'Room', corridor: 'Corridor', cutout: 'Pillar / cutout', door: 'Door', stairs: 'Stairs', label: 'Label', prop: 'Prop', terrain: 'Terrain', marker: 'GM marker', image: 'Image', opening: 'Open area' };
+/** Can the device be used with a finger? Then the Select tool offers a Box mode for one-finger drags. */
+const coarse = () => typeof matchMedia === 'function' && matchMedia('(any-pointer: coarse)').matches;
 const DOOR_NAME: Record<(typeof DOOR_STYLES)[number], string> = { normal: 'Door', double: 'Double', locked: 'Locked', secret: 'Secret', portcullis: 'Portcullis', archway: 'Archway' };
 const DIRS: ['n' | 'e' | 's' | 'w', string][] = [['n', 'North'], ['e', 'East'], ['s', 'South'], ['w', 'West']];
 const GLYPH = { discover: '?', interact: '!', trap: '' } as const;
@@ -127,7 +147,7 @@ const GLYPH = { discover: '?', interact: '!', trap: '' } as const;
 const roughWord = (v: number) => (v <= 1 ? 'smooth' : v <= 3 ? 'worn' : v <= 5 ? 'rough-hewn' : v <= 7 ? 'rough' : v <= 9 ? 'cave' : 'crumbling');
 
 interface Drag {
-  kind: 'move' | 'resize' | 'create' | 'door';
+  kind: 'move' | 'resize' | 'create' | 'door' | 'box' | 'scale';
   start: Point;
   cur: Point;
   x: number;
@@ -137,11 +157,21 @@ interface Drag {
   bounds?: Bounds;
   /** The click landed on the object that was already selected: a plain click moves on to the next one under it. */
   cycle?: boolean;
-  /** Reveal tool: the unsnapped point (for clicking a room) and whether Shift was held (the other way round). */
+  /** Reveal and Open area tools: the unsnapped point (for clicking a room or an open area); Reveal: whether Shift was held (the other way round). */
   raw?: Point;
   invert?: boolean;
   /** Room and Pillar tools: Shift is down, so the shape keeps width and height equal. */
   regular?: boolean;
+  /** Box selection: Shift or Ctrl was held (adds to the selection), and what a click without dragging picks. */
+  additive?: boolean;
+  clickHit?: string | null;
+  /** The selection before a plain box cleared it, for Esc to put back. */
+  before?: string[];
+  /** Moving a multi-selection: a click without dragging narrows it to this object, the topmost under the pointer. */
+  narrow?: string;
+  /** Resizing a prop or picture: the corner being dragged, and whether Alt (free size) is down. */
+  corner?: number;
+  free?: boolean;
 }
 
 export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): string | null } {
@@ -189,10 +219,21 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     pillarShape: 'rect' as DrawShape,
     pillarFill: 'rock' as CutoutFill,
     fogMode: 'reveal' as 'reveal' | 'hide',
+    openShape: 'rect' as DrawShape,
+    /** Open area tool: leave out the wall lines inside too. */
+    openWalls: false,
+    /** Select tool on touch: one finger drags a box instead of panning. */
+    touchBox: false,
   };
-  /** A freehand outline being drawn with the Room or Pillar tool (unsnapped points). */
+  /** A freehand outline being drawn with the Room, Pillar or Open area tool (unsnapped points). */
   let sketch: Point[] | null = null;
-  const shapeOf = (t: Tool): DrawShape => (t === 'cutout' ? settings.pillarShape : settings.roomShape);
+  /** Fingers on the map: a second one cancels the drag (the viewer pinches). */
+  const touches = new Set<number>();
+  /** A finger on empty ground in the Select tool: it pans; lifted without moving, it was a tap. */
+  let tap: { id: number; x: number; y: number; hit: string | null; moved: boolean } | null = null;
+  const shapeOf = (t: Tool): DrawShape => (t === 'cutout' ? settings.pillarShape : t === 'opening' ? settings.openShape : settings.roomShape);
+  /** Tools that draw a shape from a drag (with the shape chips 1–7). */
+  const drawsShape = (t: Tool) => t === 'room' || t === 'cutout' || t === 'opening';
   const boxShapeOf = (t: Tool): BoxShape => {
     const k = shapeOf(t);
     return k === 'freehand' ? 'rect' : k;
@@ -200,8 +241,36 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
   const map = () => ctx.map();
   const byId = (id: string) => map().objects.find((o) => o.id === id);
+  /** A prop's footprint (at its scale) or a picture, as the rectangle its corner handles sit on. */
+  const turnedOf = (o: MapObject | undefined): Turned | null => {
+    if (o?.type === 'image') return { at: o.at, w: o.w, h: o.h, rotation: o.rotation ?? 0 };
+    if (o?.type !== 'prop') return null;
+    const info = assetInfo(o.asset);
+    const s = o.scale ?? 1;
+    return { at: o.at, w: (info?.w ?? 1) * s, h: (info?.h ?? 1) * s, rotation: o.rotation ?? 0 };
+  };
+  /** What a corner drag to p makes of the selected prop or picture: its new rectangle, the change, and the size chip's text. */
+  const resized = (o: MapObject | undefined, p: Point, free: boolean, keep: boolean): { rect: Turned; op: Op | null; text: string } | null => {
+    if (o?.type === 'prop') {
+      const info = assetInfo(o.asset);
+      const base = { w: info?.w ?? 1, h: info?.h ?? 1 };
+      const s = scaleFromCorner(o, base, p, free);
+      const rect = { at: o.at, w: base.w * s, h: base.h * s, rotation: o.rotation ?? 0 };
+      const op: Op | null = Math.abs(s - (o.scale ?? 1)) < 1e-9 ? null : s === 1 ? { op: 'update', id: o.id, unset: ['scale'] } : { op: 'update', id: o.id, set: { scale: s } };
+      return { rect, op, text: sizeText(rect.w, rect.h, rect.rotation, s) };
+    }
+    if (o?.type === 'image') {
+      const t = turnedOf(o)!;
+      const size = sizeFromCorner(t, p, { free, keep });
+      const op: Op | null = size.w === o.w && size.h === o.h ? null : { op: 'update', id: o.id, set: size };
+      return { rect: { ...t, ...size }, op, text: sizeText(size.w, size.h, t.rotation) };
+    }
+    return null;
+  };
   const step = (e?: { altKey: boolean }) => (e?.altKey ? 0.5 : settings.snap);
   const tol = () => 6 * ctx.squaresPerPx();
+  /** How close a press must be to a resize handle: a 44 px target for a finger. */
+  const handleTol = (e: { pointerType: string }) => (e.pointerType === 'touch' ? 22 * ctx.squaresPerPx() : tol() * 1.3);
   const panning = () => tool === 'pan' || spaceDown;
 
   // Storeys line up: while editing one, the floor of the storey below (the one
@@ -279,6 +348,34 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     selection = ids;
     if (ids.length && tab === 'map') setTab('inspector', false);
     syncLayout();
+    syncCrop();
+    if (tool === 'select') renderTools(); // the count in the context bar
+  }
+
+  // ---------- Export → Crop to selection ----------
+
+  /** The Export (and ⋯) menu's "Crop to selection" links: the selection's bounds plus a square, in whole squares. */
+  function syncCrop(): void {
+    const groups = document.querySelectorAll<HTMLElement>('[data-crop-group]');
+    if (!groups.length) return;
+    const m = map();
+    const live = selection.filter((id) => m.objects.some((o) => o.id === id));
+    const f = cropToSelection(m, live, 1);
+    for (const g of groups) g.hidden = !f;
+    if (!f) return;
+    const frame = `${f.x0},${f.y0},${f.x1},${f.y1}`;
+    const enc = encodeURIComponent(ctx.mapId);
+    const style = new URLSearchParams(location.search).get('style');
+    const st = style ? `&style=${encodeURIComponent(style)}` : '';
+    const href: Record<string, string> = {
+      'png-gm': `/api/v1/maps/${enc}/render.png?view=gm${st}&frame=${frame}`,
+      'png-players': `/api/v1/maps/${enc}/render.png?view=players${st}&frame=${frame}`,
+      svg: `/api/v1/maps/${enc}/render.svg?view=${ctx.view()}${st}&frame=${frame}`,
+      handout: `/maps/${enc}/handout?crop=${frame}`,
+    };
+    for (const a of document.querySelectorAll<HTMLAnchorElement>('a[data-crop]')) a.href = href[a.dataset.crop ?? ''] ?? '#';
+    const n = live.length;
+    for (const l of document.querySelectorAll<HTMLElement>('[data-crop-label]')) l.textContent = `Crop to selection · ${n} object${n === 1 ? '' : 's'} · ${f.x1 - f.x0} × ${f.y1 - f.y0} sq`;
   }
 
   function setTab(t: 'inspector' | 'map', render = true): void {
@@ -315,6 +412,19 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   // ---------- pointer ----------
 
   function onDown(e: PointerEvent): void {
+    if (e.pointerType === 'touch') {
+      touches.add(e.pointerId);
+      if (touches.size > 1) {
+        // a second finger: the viewer pinches and pans, and nothing half-drawn is kept (a box puts the selection back)
+        if (drag?.kind === 'box' && drag.before) setSelection(drag.before);
+        drag = null;
+        tap = null;
+        stroke = null;
+        sketch = null;
+        draw();
+        return;
+      }
+    }
     if (e.button !== 0 || panning()) return;
     const p = ctx.toMap(e.clientX, e.clientY);
     if (!p) return;
@@ -327,32 +437,54 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
     switch (tool) {
       case 'select': {
-        if (selection.length === 1) {
+        const ctrl = e.ctrlKey || e.metaKey;
+        const additive = e.shiftKey || ctrl;
+        if (selection.length === 1 && !additive) {
           const r = rectOf(byId(selection[0]!));
           if (r) {
             const b = { x0: r[0], y0: r[1], x1: r[0] + r[2], y1: r[1] + r[3] };
-            const handle = handleAt(b, p, tol() * 1.3);
+            const handle = handleAt(b, p, handleTol(e));
             if (handle) return start('resize', { handle, bounds: b });
           }
+          // a prop or picture: its corners resize it (a prop uniformly, about its centre)
+          const t = turnedOf(byId(selection[0]!));
+          const corner = t ? cornerAt(t, p, handleTol(e)) : null;
+          if (corner !== null) return start('scale', { corner, free: e.altKey, regular: e.shiftKey }, p);
         }
-        const hits = hitAll(map(), p, tol());
+        const m = map();
+        const hits = hitAll(m, p, tol());
         const hit = hits[0];
-        if (!e.shiftKey && selection.length === 1 && hits.includes(selection[0]!)) {
+        const boxing = groundDrag(e.pointerType, settings.touchBox) === 'box';
+        // Ctrl-drag draws a box from anywhere (dense maps); on empty ground a plain drag does
+        if ((ctrl && boxing) || pressesGround(m, hits, selection)) {
+          if (!boxing) {
+            // one finger on empty ground pans the map (the viewer); a tap without moving selects or clears
+            tap = { id: e.pointerId, x: e.clientX, y: e.clientY, hit: hit ?? null, moved: false };
+            break;
+          }
+          const before = [...selection];
+          if (!additive && selection.length) {
+            setSelection([]);
+            renderPanel();
+          }
+          start('box', { additive, clickHit: hit ?? null, before }, p);
+        } else if (!e.shiftKey && selection.length === 1 && hits.includes(selection[0]!)) {
           // on the selected object (maybe under a prop or terrain): drag it, or click again for the next one down
           start('move', { cycle: true }, p);
+        } else if (!e.shiftKey && selection.length > 1 && hits.some((h) => selection.includes(h))) {
+          // on part of a multi-selection (a box selection): drag them all; a click picks the one on top
+          start('move', { narrow: hit }, p);
         } else if (hit) {
           if (e.shiftKey) setSelection(selection.includes(hit) ? selection.filter((s) => s !== hit) : [...selection, hit]);
           else if (!selection.includes(hit)) setSelection([hit]);
           renderPanel();
           start('move', {}, p);
-        } else if (!e.shiftKey && selection.length) {
-          setSelection([]);
-          renderPanel();
         }
         break;
       }
       case 'room':
       case 'cutout':
+      case 'opening':
         if (shapeOf(tool) === 'freehand') {
           // freehand: collect the outline until the button comes up
           sketch = [p];
@@ -360,7 +492,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           ctx.stage.setPointerCapture(e.pointerId);
           break;
         }
-        start('create', { regular: e.shiftKey });
+        start('create', { regular: e.shiftKey, raw: p });
         break;
       case 'stairs':
       case 'terrain':
@@ -439,9 +571,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 0.05) sketch.push(p);
       ctx.handled.add(e);
     }
+    if (tap && e.pointerId === tap.id && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 6) tap.moved = true;
     if (drag) {
-      drag.cur = drag.kind === 'move' ? p : snapPoint(p, step(e));
+      drag.cur = drag.kind === 'move' || drag.kind === 'box' || drag.kind === 'scale' ? p : snapPoint(p, step(e));
       drag.regular = e.shiftKey;
+      drag.free = e.altKey;
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 3) drag.moved = true;
       ctx.handled.add(e);
     }
@@ -449,6 +583,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   }
 
   function onUp(e: PointerEvent): void {
+    touches.delete(e.pointerId);
+    if (tap && e.pointerId === tap.id) {
+      // a tap on empty ground (touch): pick the open area under it, or clear the selection
+      const t = tap;
+      tap = null;
+      if (!t.moved) {
+        setSelection(clickSelection(selection, t.hit, false));
+        renderPanel();
+        draw();
+      }
+      return;
+    }
     if (stroke) {
       ctx.handled.add(e);
       return finishStroke();
@@ -464,6 +610,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const s = step(e);
     const m = map();
     switch (d.kind) {
+      case 'box': {
+        if (!d.moved) {
+          // a click on empty ground: picks an open area there (they're invisible until selected), or clears
+          setSelection(clickSelection(selection, d.clickHit ?? null, Boolean(d.additive)));
+        } else {
+          const view = ctx.view();
+          const ids = boxSelect(m, boxOf(d.start, d.cur), (o) => view === 'gm' || o.type !== 'marker');
+          setSelection(mergeSelection(selection, ids, Boolean(d.additive)));
+        }
+        renderPanel();
+        break;
+      }
       case 'move': {
         if (!d.moved) {
           if (d.cycle) {
@@ -472,12 +630,21 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
               setSelection([next]);
               renderPanel();
             }
+          } else if (d.narrow && (selection.length > 1 || selection[0] !== d.narrow)) {
+            setSelection([d.narrow]);
+            renderPanel();
           }
           break;
         }
         const dx = snap(d.cur[0] - d.start[0], s);
         const dy = snap(d.cur[1] - d.start[1], s);
         if (dx || dy) void apply([{ op: 'move', ids: withAttachedDoors(m, selection), dx, dy }]);
+        break;
+      }
+      case 'scale': {
+        // one undo step: a prop's new scale, or a picture's new width and height
+        const r = d.moved ? resized(byId(selection[0]!), d.cur, e.altKey, e.shiftKey) : null;
+        if (r?.op) void apply([r.op]);
         break;
       }
       case 'resize': {
@@ -508,13 +675,23 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           break;
         }
         const rect = rectFromDrag(d.start, d.cur, s);
-        // rooms and pillars take the picked shape (Shift: as wide as high)
-        const drawn = tool === 'room' || tool === 'cutout' ? shapeFromDrag(boxShapeOf(tool), d.start, d.cur, { regular: e.shiftKey, min: s }) : null;
+        // rooms, pillars and open areas take the picked shape (Shift: as wide as high)
+        const drawn = drawsShape(tool) ? shapeFromDrag(boxShapeOf(tool), d.start, d.cur, { regular: e.shiftKey, min: s }) : null;
+        if (tool === 'opening' && !d.moved) {
+          // a click with the Open area tool picks an existing one (they only show while the tool is on)
+          const hit = hitAll(m, d.raw ?? d.start, tol()).find((id) => byId(id)?.type === 'opening');
+          if (hit) {
+            setSelection([hit]);
+            renderPanel();
+          }
+          break;
+        }
         if (!rect && !drawn) break;
         const shape: Shape = drawn ?? { rect: rect! };
         let obj: MapObject;
         if (tool === 'room') obj = { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
         else if (tool === 'cutout') obj = { id: nextId(m, 'p'), type: 'cutout', shape, ...(settings.pillarFill === 'solid' ? { fill: 'solid' as const } : {}) };
+        else if (tool === 'opening') obj = { id: nextId(m, 'o'), type: 'opening', shape, ...(settings.openWalls ? { walls: true } : {}) };
         else if (tool === 'terrain') obj = { id: nextId(m, 't'), type: 'terrain', shape, asset: settings.tile };
         else obj = { id: nextId(m, 's'), type: 'stairs', shape, direction: settings.stairsDir };
         void apply([{ op: 'add', object: obj }], [obj.id]);
@@ -555,7 +732,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const obj: MapObject =
       tool === 'cutout'
         ? { id: nextId(m, 'p'), type: 'cutout', shape, ...(settings.pillarFill === 'solid' ? { fill: 'solid' as const } : {}) }
-        : { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
+        : tool === 'opening'
+          ? { id: nextId(m, 'o'), type: 'opening', shape, ...(settings.openWalls ? { walls: true } : {}) }
+          : { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
     void apply([{ op: 'add', object: obj }], [obj.id]);
     draw();
   }
@@ -717,6 +896,17 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   ctx.stage.addEventListener('pointerdown', onDown, { capture: true });
   ctx.stage.addEventListener('pointermove', onMove, { capture: true });
   ctx.stage.addEventListener('pointerup', onUp, { capture: true });
+  // the browser took the pointer over (a system gesture): drop what it was doing
+  ctx.stage.addEventListener(
+    'pointercancel',
+    (e) => {
+      touches.delete(e.pointerId);
+      if (tap?.id === e.pointerId) tap = null;
+      if (drag?.kind === 'box') drag = null;
+      draw();
+    },
+    { capture: true },
+  );
   ctx.stage.addEventListener('pointerleave', () => {
     hover = null;
     hoverRaw = null;
@@ -766,13 +956,17 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     }
     if (e.shiftKey && (key === 'p' || key === 'g')) return; // the viewer's: view and grid
     if (key === 'q' || key === 'e') return turn((key === 'e' ? 1 : -1) * (e.shiftKey ? 90 : 15));
-    if ((tool === 'room' || tool === 'poly' || tool === 'cutout') && /^[1-8]$/.test(e.key)) return pickShape(Number(e.key) - 1);
+    if ((tool === 'room' || tool === 'poly' || tool === 'cutout' || tool === 'opening') && /^[1-8]$/.test(e.key)) return pickShape(Number(e.key) - 1);
     const t = TOOLS.find((x) => x.key.toLowerCase() === key) ?? (key === 'o' ? POLY : undefined);
     if (t && !e.shiftKey) return setTool(t.id);
     if (e.key === 'Escape') {
       if (stroke) stroke = null;
       else if (sketch) sketch = null;
-      else if (drag) drag = null;
+      else if (drag) {
+        // a box being dragged: the selection it cleared comes back
+        if (drag.kind === 'box' && drag.before) setSelection(drag.before);
+        drag = null;
+      }
       else if (poly.length) poly = [];
       else if (corridorFrom) corridorFrom = null;
       else if (segments.cancel(tool === 'segment')) {
@@ -815,6 +1009,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     return svgEl(g.tag, { ...g.attrs, class: cls });
   }
 
+  /** The design's size chip under a box (in squares): "9 × 9 sq". */
+  function sizeChip(text: string, b: Bounds): void {
+    const px = ctx.squaresPerPx();
+    const w = (text.length * 6.4 + 14) * px;
+    const x = (b.x0 + b.x1) / 2 - w / 2;
+    const y = b.y1 + 6 * px;
+    layer.appendChild(svgEl('rect', { x, y, width: w, height: 20 * px, rx: 4 * px, class: 'dim-bg' }));
+    const label = svgEl('text', { x: x + w / 2, y: y + 14 * px, 'font-size': 11 * px, 'text-anchor': 'middle', class: 'dim' });
+    label.textContent = text;
+    layer.appendChild(label);
+  }
+
   function draw(): void {
     layer.replaceChildren();
     if (guide) layer.appendChild(svgEl('path', { d: guide.d, class: 'guide' }));
@@ -822,9 +1028,24 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const px = ctx.squaresPerPx();
     const sel = selection.map(byId).filter((o): o is MapObject => Boolean(o));
 
+    // open areas are never drawn: a dashed outline shows them while selected, or all of them with their tool on
+    for (const o of m.objects) {
+      if (o.type === 'opening' && (tool === 'opening' || selection.includes(o.id))) layer.appendChild(shapeElement(o.shape, 'open-area'));
+    }
     for (const o of sel) {
       const b = objectBounds(o, m);
       if (b) layer.appendChild(rectEl(pad(b, 0.08), 'sel'));
+    }
+    if (drag?.kind === 'box' && drag.moved) {
+      // the marquee, and what it would select
+      const box = boxOf(drag.start, drag.cur);
+      const view = ctx.view();
+      for (const id of boxSelect(m, box, (o) => view === 'gm' || o.type !== 'marker')) {
+        const o = byId(id);
+        const b = o && !selection.includes(id) ? objectBounds(o, m) : null;
+        if (b) layer.appendChild(rectEl(pad(b, 0.08), 'sel-pre'));
+      }
+      layer.appendChild(rectEl(box, 'marquee'));
     }
     if (corridorFrom) {
       const o = byId(corridorFrom);
@@ -843,20 +1064,28 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       layer.appendChild(rectEl(resizeBounds(drag.bounds!, drag.handle!, drag.cur, settings.snap), 'ghost'));
     } else if (drag?.kind === 'create') {
       const [a, c] = [drag.start, drag.cur];
-      // rooms and pillars: a ghost of the exact shape they'll get
-      const exact = tool === 'room' || tool === 'cutout' ? shapeFromDrag(boxShapeOf(tool), a, c, { regular: Boolean(drag.regular), min: 1e-6 }) : null;
+      // rooms, pillars and open areas: a ghost of the exact shape they'll get
+      const exact = drawsShape(tool) ? shapeFromDrag(boxShapeOf(tool), a, c, { regular: Boolean(drag.regular), min: 1e-6 }) : null;
       const b = exact ? shapeBounds(exact) : { x0: Math.min(a[0], c[0]), y0: Math.min(a[1], c[1]), x1: Math.max(a[0], c[0]), y1: Math.max(a[1], c[1]) };
-      layer.appendChild(exact ? shapeElement(exact, 'ghost') : rectEl(b, 'ghost'));
+      layer.appendChild(exact ? shapeElement(exact, tool === 'opening' ? 'ghost open-area' : 'ghost') : rectEl(b, 'ghost'));
       // the size, in the design's selection chip: "9 × 9 sq"
-      const text = `${b.x1 - b.x0} × ${b.y1 - b.y0} sq`;
-      const fs = 11 * px;
-      const w = (text.length * 6.4 + 14) * px;
-      const x = (b.x0 + b.x1) / 2 - w / 2;
-      const y = b.y1 + 6 * px;
-      layer.appendChild(svgEl('rect', { x, y, width: w, height: 20 * px, rx: 4 * px, class: 'dim-bg' }));
-      const label = svgEl('text', { x: x + w / 2, y: y + 14 * px, 'font-size': fs, 'text-anchor': 'middle', class: 'dim' });
-      label.textContent = text;
-      layer.appendChild(label);
+      sizeChip(`${b.x1 - b.x0} × ${b.y1 - b.y0} sq`, b);
+    } else if (drag?.kind === 'scale' && drag.moved) {
+      // the prop or picture at its new size, and the size chip: "2 × 1 sq · 150 %"
+      const r = resized(sel[0], drag.cur, Boolean(drag.free), Boolean(drag.regular));
+      if (r) {
+        const pts = corners(r.rect);
+        layer.appendChild(svgEl('polygon', { points: pts.map((q) => q.join(',')).join(' '), class: 'ghost' }));
+        const o = sel[0];
+        if (o?.type === 'prop' && assetInfo(o.asset)) {
+          const info = assetInfo(o.asset)!;
+          const s = r.rect.w / info.w;
+          layer.appendChild(svgEl('image', { href: thumb(info.id), x: -info.w / 2, y: -info.h / 2, width: info.w, height: info.h, transform: `translate(${o.at[0]} ${o.at[1]}) rotate(${o.rotation ?? 0}) scale(${s})`, class: 'ghost-prop' }));
+        }
+        const xs = pts.map((q) => q[0]);
+        const ys = pts.map((q) => q[1]);
+        sizeChip(r.text, { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) });
+      }
     } else if (drag?.kind === 'door') {
       const d = doorFromDrag(drag.start, drag.cur, 0);
       if (d) {
@@ -867,14 +1096,16 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
     if (!drag && tool === 'select' && sel.length === 1) {
       const r = rectOf(sel[0]);
+      // handles: bigger where a finger has to hit them (the hit target is 44 px either way, see handleTol)
+      const s = (coarse() ? 14 : 8) * px;
+      const handleEl = ([x, y]: Point) => svgEl('rect', { x: x - s / 2, y: y - s / 2, width: s, height: s, class: 'handle' });
       if (r) {
         const b = { x0: r[0], y0: r[1], x1: r[0] + r[2], y1: r[1] + r[3] };
-        const s = 8 * px;
-        for (const hd of HANDLES) {
-          const [x, y] = handlePoint(b, hd);
-          layer.appendChild(svgEl('rect', { x: x - s / 2, y: y - s / 2, width: s, height: s, class: 'handle' }));
-        }
+        for (const hd of HANDLES) layer.appendChild(handleEl(handlePoint(b, hd)));
       }
+      // a prop or picture: its four corners resize it
+      const t = turnedOf(sel[0]);
+      if (t) for (const c of corners(t)) layer.appendChild(handleEl(c));
     }
 
     if (tool === 'poly' && poly.length) {
@@ -1013,9 +1244,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   const ctxLabel = (t: string) => h('span', { class: 'ed-ctx-label' }, t);
 
   function pickShape(i: number): void {
-    if (tool === 'cutout') {
+    if (tool === 'cutout' || tool === 'opening') {
       const s = SHAPE_CHOICES[i];
-      if (s) settings.pillarShape = s[0];
+      if (s) settings[tool === 'cutout' ? 'pillarShape' : 'openShape'] = s[0];
       return renderTools();
     }
     if (i === 7) return setTool('poly');
@@ -1029,15 +1260,24 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   function shapeChips(): HTMLElement {
     const current = tool === 'poly' ? 'polygon' : shapeOf(tool);
     const chips = SHAPE_CHOICES.map(([k, name], i) => chip(null, current === k, () => pickShape(i), { icon: SHAPE_ICON[k], num: String(i + 1), title: `${name[0]!.toUpperCase()}${name.slice(1)} · ${i + 1}` }));
-    if (tool !== 'cutout') chips.push(chip(null, current === 'polygon', () => pickShape(7), { icon: 'polygon', num: '8', title: 'Polygon: click the corners · 8' }));
+    if (tool !== 'cutout' && tool !== 'opening') chips.push(chip(null, current === 'polygon', () => pickShape(7), { icon: 'polygon', num: '8', title: 'Polygon: click the corners · 8' }));
     return group('Shape', ...chips);
   }
 
   function ctxContent(): Kid[] {
     const m = map();
     switch (tool) {
-      case 'select':
-        return [hint('Click to select · Shift-click adds · drag to move'), keyHint('Del', 'delete'), keyHint('Ctrl D', 'duplicate')];
+      case 'select': {
+        const n = selection.length;
+        const out: Kid[] = [];
+        // the design's line; with a selection, its count first ("12 objects")
+        if (n > 0) out.push(h('span', { class: 'ctxbar-opt', 'aria-checked': 'true', style: 'cursor:default', role: 'status' }, iconEl('select', 15), `${n} object${n === 1 ? '' : 's'}`), h('span', { class: 'vsep' }));
+        // on touch, one finger pans; Box makes it draw a box instead
+        if (coarse()) out.push(group('One-finger drag', chip('Pan', !settings.touchBox, () => ((settings.touchBox = false), renderTools()), { icon: 'pan' }), chip('Box', settings.touchBox, () => ((settings.touchBox = true), renderTools()), { icon: 'select' })), h('span', { class: 'vsep' }));
+        out.push(hint('Click to select · Shift-click adds · drag for marquee'), keyHint('Del', 'delete'), keyHint('Ctrl D', 'duplicate'));
+        if (n) out.push(keyHint('Esc', 'deselect'));
+        return out;
+      }
       case 'pan':
         return [hint('Drag to pan · scroll to zoom'), keyHint('Ctrl 0', 'fit'), keyHint('+ −', 'zoom')];
       case 'room':
@@ -1050,6 +1290,19 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           h('span', { class: 'vsep' }),
           group('Fill', ...FILL_CHOICES.map(([k, l]) => chip(k === 'rock' ? 'Rock' : 'Solid', settings.pillarFill === k, () => ((settings.pillarFill = k), renderTools()), { title: l }))),
         ];
+      case 'opening': {
+        const count = m.objects.filter((o) => o.type === 'opening').length;
+        return [
+          shapeChips(),
+          h('span', { class: 'vsep' }),
+          group(
+            'Walls',
+            chip('Keep walls', !settings.openWalls, () => ((settings.openWalls = false), renderTools()), { title: 'Only the hatching and shading go' }),
+            chip('Open walls', settings.openWalls, () => ((settings.openWalls = true), renderTools()), { title: 'The wall lines inside go too: a cave mouth, a ledge' }),
+          ),
+          hint(shapeOf('opening') === 'freehand' ? 'Hold and draw the outline' : `Drag over a wall or an edge${count ? ` · click one to select it (${count} on this map)` : ''}`),
+        ];
+      }
       case 'corridor':
         return [
           hint(corridorFrom ? 'Now click the room to connect it to' : 'Click a room, then another'),
@@ -1112,7 +1365,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const t = infoOf(tool);
     const content = ctxContent().filter((k): k is Node | string => Boolean(k));
     ctxbar.replaceChildren(h('span', { class: 'ctxbar-title' }, iconEl(t.icon, 16), t.name), h('span', { class: 'vsep' }), ...content);
-    if (tool === 'room' || tool === 'cutout') ctxbar.title = drawHint(shapeOf(tool), tool === 'room' ? 'room' : 'pillar');
+    if (drawsShape(tool)) ctxbar.title = drawHint(shapeOf(tool), tool === 'room' ? 'room' : tool === 'cutout' ? 'pillar' : 'opening');
     else ctxbar.removeAttribute('title');
     renderFlyout();
   }
@@ -1370,12 +1623,29 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       case 'prop': {
         const info = assetInfo(o.asset);
         const rot = turned(o.rotation ?? 0);
+        /** A typed width or height: the scale it makes, within 25–400 %, as one update. */
+        const setScale = (raw: number) => {
+          if (!(raw > 0)) return renderPanel(true);
+          const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round(raw * 1000) / 1000));
+          if (Math.abs(s - (o.scale ?? 1)) < 1e-9) return renderPanel(true);
+          if (s === 1) unset('scale');
+          else upd({ scale: s });
+        };
         out.push(
           field('Prop', select(assetOptions(PROPS, o.asset), o.asset, (v) => upd({ asset: v }))),
           h('p', { class: 'hint' }, info ? `${info.w}×${info.h} squares · ${info.blocks === 'none' ? 'walk over it' : info.blocks === 'movement' ? 'blocks movement' : 'blocks sight'}` : `Unknown asset "${o.asset}".`),
           atFields(o, ' (centre)'),
           range('Rotation', { value: rot, min: 0, max: 345, step: 15, show: (v) => `${v}°`, keys: 'Q / E', onChange: (v) => void apply([setRotation(id, v)]) }),
-          range('Scale', { value: Math.round((o.scale ?? 1) * 100), min: 25, max: 400, step: 5, show: (v) => `${v}%`, onChange: (v) => (v === 100 ? unset('scale') : upd({ scale: v / 100 })) }),
+          range('Scale', { value: Math.round((o.scale ?? 1) * 100), min: 25, max: 400, step: 5, show: (v) => `${v}%`, keys: 'or drag a corner', onChange: (v) => (v === 100 ? unset('scale') : upd({ scale: v / 100 })) }),
+          // the footprint in squares: either side sets the scale, the art keeps its proportions
+          ...(info
+            ? [
+                two(
+                  field('Width', number(Math.round(info.w * (o.scale ?? 1) * 100) / 100, 0.01, (v) => setScale(v / info.w)), { unit: 'sq' }),
+                  field('Height', number(Math.round(info.h * (o.scale ?? 1) * 100) / 100, 0.01, (v) => setScale(v / info.h)), { unit: 'sq' }),
+                ),
+              ]
+            : []),
           ...(isConnector(o) ? [stairLabelField(o)] : []),
           // GM symbols are never drawn for players; anything else can be hidden (traps are by default)
           ...(categoryOf(o.asset)?.gmOnly
@@ -1402,6 +1672,15 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         break;
       case 'image':
         out.push(field('Name', text(id, 'name', o.name)), ...images.fields(o));
+        break;
+      case 'opening':
+        out.push(
+          field('Name', text(id, 'name', o.name, { placeholder: 'Cave mouth' })),
+          checkbox('Open the walls too', Boolean(o.walls), (on) => (on ? upd({ walls: true }) : unset('walls'))),
+          h('p', { class: 'hint' }, 'No hatching or shading inside the outline, in both views; with the walls open, no wall lines either (a cave mouth, a ledge). The outline itself is never drawn.'),
+          shapeRow(o),
+          ...shapeFields(o),
+        );
         break;
     }
     const fc = fogCheck(o);
@@ -1433,16 +1712,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         { class: 'ed-empty' },
         iconEl('select', 22),
         h('div', { class: 'ed-empty-title' }, 'Nothing selected'),
-        h('p', { class: 'hint', style: 'margin:0;color:var(--color-text-muted);line-height:1.5' }, 'Click a room, door or prop with Select (V) to edit it here. Shift-click adds to the selection.'),
+        h('p', { class: 'hint', style: 'margin:0;color:var(--color-text-muted);line-height:1.5' }, 'Click a room, door or prop with Select (V) to edit it here. Shift-click adds to the selection; drag on empty ground to box-select.'),
         btn('Map settings', { kind: 'ghost', icon: 'settings', onclick: () => setTab('map'), attrs: { style: 'padding-left:0' } }),
       );
     }
     const kids: HTMLElement[] = [];
     if (sel.length === 1) kids.push(objectHead(sel[0]!), ...objectFields(sel[0]!));
     else {
+      const b = cropToSelection(map(), selection, 0);
       kids.push(
-        h('div', { class: 'ed-obj-head' }, h('span', { class: 'ed-obj-badge numeral' }, String(sel.length)), h('div', {}, h('div', { class: 'ed-obj-kicker' }, 'Selection'), h('div', { class: 'ed-obj-name' }, `${sel.length} things`))),
-        h('p', { class: 'hint' }, sel.map((o) => `${TYPE_NAME[o.type]} ${o.id}`).join(', ')),
+        h('div', { class: 'ed-obj-head' }, h('span', { class: 'ed-obj-badge numeral' }, String(sel.length)), h('div', {}, h('div', { class: 'ed-obj-kicker' }, 'Selection'), h('div', { class: 'ed-obj-name' }, `${sel.length} objects`))),
+        h('p', { class: 'hint' }, `${countsText(segmentCounts(sel))}${b ? `, within ${b.x1 - b.x0} × ${b.y1 - b.y0} squares` : ''}.`),
+        h('p', { class: 'hint' }, 'Drag one of them or use the arrow keys to move them all. Export → Crop to selection exports just this part.'),
       );
     }
     kids.push(
@@ -1614,6 +1895,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       setSelection(wantSelect.ids);
       wantSelect = null;
     }
+    syncCrop(); // the selection may have moved, and the SVG link follows the view
     renderPanel();
     draw();
   });

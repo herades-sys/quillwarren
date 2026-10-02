@@ -1,5 +1,5 @@
 // Shared by the preview page and the map API: query -> scene -> SVG or PNG.
-import { buildScene, handoutSvg, resolveStyle, sceneToSvg, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
+import { buildScene, handoutSvg, MAX_CROP, resolveStyle, sceneToSvg, wholeSquares, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
 import { assets } from './assets.ts';
 import { svgToPng } from './png.ts';
 
@@ -30,15 +30,21 @@ export function parsePpg(v: string | undefined): number {
   return ppg;
 }
 
-/** The frame query as bounds: four numbers, at most 1000 squares each way. */
-export function parseFrame(v: string | undefined): { x0: number; y0: number; x1: number; y1: number } | undefined {
+/**
+ * The frame query as bounds: four numbers, at most 1000 squares each way,
+ * widened out to whole squares so the picture's edges fall on grid lines and a
+ * VTT's grid lines up with it (a crop of 2.5,0,7.2,4 draws 2,0,8,4).
+ */
+export function parseFrame(v: string | undefined, what = 'frame'): { x0: number; y0: number; x1: number; y1: number } | undefined {
   if (v === undefined) return undefined;
   const n = v.split(',').map(Number);
   const [x0, y0, x1, y1] = n;
-  if (n.length !== 4 || n.some((x) => !Number.isFinite(x) || Math.abs(x) > 100_000) || x0 === undefined || y0 === undefined || x1 === undefined || y1 === undefined || x1 <= x0 || y1 <= y0 || x1 - x0 > 1000 || y1 - y0 > 1000) {
-    throw new RenderQueryError('frame must be x0,y0,x1,y1 in squares (at most 1000 squares each way)');
+  if (n.length !== 4 || n.some((x) => !Number.isFinite(x) || Math.abs(x) > 100_000) || x0 === undefined || y0 === undefined || x1 === undefined || y1 === undefined || x1 <= x0 || y1 <= y0) {
+    throw new RenderQueryError(`${what} must be x0,y0,x1,y1 in squares (at most 1000 squares each way)`);
   }
-  return { x0, y0, x1, y1 };
+  const f = wholeSquares({ x0, y0, x1, y1 });
+  if (f.x1 - f.x0 > MAX_CROP || f.y1 - f.y0 > MAX_CROP) throw new RenderQueryError(`${what} must be x0,y0,x1,y1 in squares (at most 1000 squares each way)`);
+  return f;
 }
 
 export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
@@ -92,6 +98,8 @@ export interface HandoutQuery {
   stains?: string;
   /** PNG pixels per inch, 50–400 (default 200, good for printing). */
   dpi?: string;
+  /** "x0,y0,x1,y1" in squares: only this part of the map on the sheet (whole squares, like the render route's frame). */
+  crop?: string;
   /** "1": as an attachment, not shown in the browser. */
   download?: string;
 }
@@ -116,6 +124,7 @@ export function handoutOptions(q: HandoutQuery, ext: 'svg' | 'png'): HandoutOpti
     stains: q.stains !== '0',
     dpi,
     assets: assets.body,
+    ...(q.crop !== undefined ? { crop: parseFrame(q.crop, 'crop') } : {}),
   };
 }
 

@@ -2,6 +2,7 @@
 // a door across an interior opening (a corridor mouth) leaves walls alone.
 import type { DelveMap, Door, Point } from '../schema.ts';
 import { computeFloor } from './floor.ts';
+import { cutSegments, floorTest, openWallRings } from './openings.ts';
 import { EPS, type Polygon } from './shapes.ts';
 
 export type Segment = [Point, Point];
@@ -67,10 +68,14 @@ function subtract(seg: Segment, gaps: readonly Segment[]): Segment[] {
   return forward ? out : out.reverse();
 }
 
-/** Wall segments: the floor boundary with door openings removed. */
+/** Wall segments: the floor boundary with door openings removed, and whatever lies inside an opening with `walls`. */
 export function computeWalls(map: DelveMap, floor: readonly Polygon[] = computeFloor(map)): Segment[] {
   const doors = map.objects.filter((o): o is Door => o.type === 'door').map(doorSegment);
-  return boundarySegments(floor).flatMap((seg) => subtract(seg, doors));
+  return cutSegments(
+    boundarySegments(floor).flatMap((seg) => subtract(seg, doors)),
+    openWallRings(map),
+    floorTest(floor),
+  );
 }
 
 export interface Polyline {
@@ -107,7 +112,8 @@ function chain(segs: readonly Segment[]): Polyline[] {
 /**
  * Walls as polylines for drawing: closed rings where no door interrupts them,
  * open runs between door gaps. `cuts` decides which doors open a gap (the
- * players' view keeps secret doors shut).
+ * players' view keeps secret doors shut). Openings with `walls` leave out the
+ * walls inside them.
  */
 export function wallPolylines(
   map: DelveMap,
@@ -115,12 +121,14 @@ export function wallPolylines(
   cuts: (d: Door) => boolean = () => true,
 ): Polyline[] {
   const gaps = map.objects.filter((o): o is Door => o.type === 'door' && cuts(o)).map(doorSegment);
+  const open = openWallRings(map);
+  const floorAt = floorTest(floor);
   const out: Polyline[] = [];
   for (const poly of floor) {
     for (const ring of [poly.outer, ...poly.holes]) {
       const segs: Segment[] = [];
       for (let i = 0; i < ring.length; i++) segs.push(...subtract([ring[i]!, ring[(i + 1) % ring.length]!], gaps));
-      out.push(...chain(segs));
+      out.push(...chain(open.length ? cutSegments(segs, open, floorAt) : segs));
     }
   }
   return out;

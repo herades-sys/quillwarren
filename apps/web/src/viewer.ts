@@ -251,7 +251,10 @@ stage.addEventListener('pointerdown', (e) => {
     drag = null;
     return;
   }
-  if (handled.has(e) || e.button !== 0) return;
+  // the middle or right button always pans (the editor's Select tool draws a box with the left one)
+  const panButton = e.button === 1 || e.button === 2;
+  if (!panButton && (handled.has(e) || e.button !== 0)) return;
+  if (e.button === 1) e.preventDefault(); // no autoscroll
   const ctm = svg?.getScreenCTM();
   if (!vb || !ctm) return;
   cancelAnimationFrame(anim ?? 0);
@@ -288,6 +291,8 @@ const endDrag = (e: PointerEvent) => {
 };
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
+// right-drag pans, so the map has no browser context menu (saving the picture is in Export)
+stage.addEventListener('contextmenu', (e) => e.preventDefault());
 stage.addEventListener('dblclick', (e) => {
   if (!handled.has(e)) fit();
 });

@@ -9,7 +9,9 @@ import { computeFloor, floorPaths, polygonsOf } from '../geometry/floor.ts';
 import { roughFloor } from '../geometry/rough.ts';
 import { terrainArea, terrainPolygons } from '../geometry/terrain.ts';
 import { solidCutouts } from '../geometry/solid.ts';
+import { cutSegments, floorTest, openWallRings } from '../geometry/openings.ts';
 import { floorNumberLayer, stairTagLayer } from './floor-marks.ts';
+import { openAreas } from './open-ends.ts';
 import { fromPath, PRECISION, shapeBounds, shapePath, toPath, type Bounds, type Polygon, type Ring } from '../geometry/shapes.ts';
 import { doorSegment, wallPolylines, type Polyline } from '../geometry/walls.ts';
 import { markerRadius } from '../markers.ts';
@@ -234,6 +236,11 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const beyond: PathsD = seenPaths
     ? intersectD(round(differenceD(fullFlat, seenPaths, FillRule.NonZero, PRECISION), 0.15), round(seenPaths, reach + 0.5), FillRule.NonZero, PRECISION)
     : [];
+  // Open ends (open-ends.ts): an archway on the outer edge leads out, and an
+  // opening object is open ground, so the band outside the walls (hatching,
+  // shading, the drop shadow) leaves them out too.
+  const opened = openAreas(map, fullFlat, reach);
+  const cutAway: PathsD = opened.length ? [...beyond, ...opened] : beyond;
 
   const layers: Layer[] = [];
   const clips: Record<string, Polygon[]> = { floor };
@@ -298,7 +305,7 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   }
 
   if (style.shading) {
-    layers.push({ name: 'shading', kind: 'fill', polygons: polygonsOf(outsideBand(flat, style.shading.width), beyond), color: style.shading.color });
+    layers.push({ name: 'shading', kind: 'fill', polygons: polygonsOf(outsideBand(flat, style.shading.width), cutAway), color: style.shading.color });
   }
 
   if (style.hatching) {
@@ -308,8 +315,8 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
       [bounds.x1, bounds.y1],
       [bounds.x0, bounds.y1],
     ];
-    clips['outside-floor'] = seenPaths
-      ? polygonsOf([toPath(rect)], [...flat, ...beyond])
+    clips['outside-floor'] = seenPaths || opened.length
+      ? polygonsOf([toPath(rect)], [...flat, ...cutAway])
       : [{ outer: rect, holes: floor.flatMap((p) => [p.outer]) }, ...floor.flatMap((p) => p.holes.map((h) => ({ outer: h, holes: [] })))];
     const strokes = hatchStrokes(outsideBand(flat, style.hatching.width), style.hatching, seed);
     layers.push({
@@ -326,10 +333,11 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
 
   if (style.shadow) {
     const [dx, dy] = style.shadow.offset;
-    const shifted = floor.map((p) => ({
+    let shifted: Polygon[] = floor.map((p) => ({
       outer: p.outer.map(([x, y]) => [x + dx, y + dy] as Point),
       holes: p.holes.map((h) => h.map(([x, y]) => [x + dx, y + dy] as Point)),
     }));
+    if (opened.length) shifted = polygonsOf(shifted.flatMap((p) => [p.outer, ...p.holes].map(toPath)), opened);
     layers.push({ name: 'shadow', kind: 'fill', polygons: shifted, color: style.shadow.color, opacity: style.shadow.opacity });
   }
 
@@ -396,7 +404,8 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   const hidden = (d: Door) => view === 'players' && d.style === 'secret';
   const cut = (lines: Polyline[]) => (seenPolys ? clipPolylines(lines, seenPolys) : lines);
   const wallLines = cut(wallPolylines(map, fullFloor, (d) => !hidden(d)));
-  const shut = cut(doors.filter(hidden).map((d) => open(doorSegment(d))));
+  // (openings with walls leave both out: wallPolylines does it for the walls)
+  const shut = cut(cutSegments(doors.filter(hidden).map(doorSegment), openWallRings(map), floorTest(fullFloor)).map((s) => open(s)));
   // roughness 1 means smooth: no hand wobble either
   const wobble = map.roughness === 1 ? 0 : style.walls.roughness;
   const walls = [...wallLines.map((l) => roughen(l, wobble, seed)), ...shut];

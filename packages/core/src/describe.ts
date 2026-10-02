@@ -8,7 +8,7 @@ import { fogSummary } from './fog.ts';
 import { floorText, isConnector } from './floors.ts';
 import { MARKERS } from './markers.ts';
 import { areaTitle, hasNotes, isNoteArea } from './notes.ts';
-import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Point, Prop, Room, Terrain } from './schema.ts';
+import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Opening, Point, Prop, Room, Terrain } from './schema.ts';
 import { parseSquareUnit } from './units.ts';
 
 const fmt = (n: number): string => String(Math.round(n * 100) / 100);
@@ -31,7 +31,8 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
   const corridors = map.objects.filter((o): o is Corridor => o.type === 'corridor');
   const doors = map.objects.filter((o): o is Door => o.type === 'door');
   const cutouts = map.objects.filter((o): o is Cutout => o.type === 'cutout');
-  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain', 'marker', 'image'].includes(o.type));
+  const others = map.objects.filter((o) => !['room', 'corridor', 'door', 'cutout', 'prop', 'terrain', 'marker', 'image', 'opening'].includes(o.type));
+  const openings = map.objects.filter((o): o is Opening => o.type === 'opening');
   const images = map.objects.filter((o): o is MapImage => o.type === 'image');
   const markers = map.objects.filter((o): o is Marker => o.type === 'marker');
   const props = map.objects.filter((o): o is Prop => o.type === 'prop');
@@ -96,7 +97,7 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
       const touching = rooms.filter((r) => containsPoint(shapeBounds(r.shape), doorMid(d))).map(roomName);
       const outside = edge.some((s) => collinearOverlap(s, doorSegment(d)) > 1e-6);
       const where = touching.length ? touching.join(' ↔ ') : 'no room';
-      lines.push(`  ${doorText(d)}: ${where}${outside ? ', leads outside' : ''}`);
+      lines.push(`  ${doorText(d)}: ${where}${outside ? (d.style === 'archway' ? ', leads outside (an open end: no hatching or shading in front of it)' : ', leads outside') : ''}`);
     }
   }
 
@@ -144,6 +145,20 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
         })
         .join('; ')}`,
     );
+  }
+  if (openings.length) {
+    lines.push('Open areas (no hatching or shading inside; never drawn themselves):');
+    for (const o of openings) {
+      const b = shapeBounds(o.shape);
+      const near = rooms.filter((r) => {
+        const rb = shapeBounds(r.shape);
+        return rb.x0 <= b.x1 && b.x0 <= rb.x1 && rb.y0 <= b.y1 && b.y0 <= rb.y1;
+      });
+      const kind = 'rect' in o.shape ? `${fmt(b.x1 - b.x0)}×${fmt(b.y1 - b.y0)} sq` : 'circle' in o.shape ? `circle, radius ${fmt(o.shape.circle[2])} sq` : `polygon, ${fmt(b.x1 - b.x0)}×${fmt(b.y1 - b.y0)} sq`;
+      lines.push(
+        `  ${o.id}${o.name ? ` "${o.name}"` : ''}: ${kind} at ${fmt(b.x0)},${fmt(b.y0)}${near.length ? `, at ${near.map(roomName).join(', ')}` : ''}${o.walls ? '; the walls inside it are left out too (open edge)' : ''}`,
+      );
+    }
   }
   if (images.length) {
     lines.push('Images (uploaded pictures):');

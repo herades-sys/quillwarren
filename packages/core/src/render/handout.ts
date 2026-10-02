@@ -6,11 +6,12 @@
 // Units are points (1/72 inch), so the sheet prints at its true paper size.
 import type { DelveMap, Room } from '../schema.ts';
 import { computeFloor } from '../geometry/floor.ts';
-import { shapeBounds } from '../geometry/shapes.ts';
+import { shapeBounds, type Bounds } from '../geometry/shapes.ts';
 import { hashString, rng } from './rng.ts';
 import { buildScene, type RenderOptions } from './scene.ts';
 import { resolveStyle } from './style.ts';
 import { sceneToSvg } from './svg.ts';
+import { cropScene } from '../crop.ts';
 import { parseSquareUnit } from '../units.ts';
 
 export type Paper = 'a4' | 'a3' | 'letter' | 'fit';
@@ -37,6 +38,8 @@ export interface HandoutOptions {
   stains?: boolean;
   /** Sets the width/height attributes (the PNG size): pixels per inch, default 96. */
   dpi?: number;
+  /** Only this part of the map, in squares (a cropped handout); default: the whole map. */
+  crop?: Bounds;
   assets?: RenderOptions['assets'];
 }
 
@@ -180,11 +183,13 @@ const HATCH_LIMIT = 1500;
 
 export function handoutSvg(map: DelveMap, o: HandoutOptions = {}): Handout {
   const style = resolveStyle({ style: { preset: 'parchment', ...(wallLength(map) > HATCH_LIMIT ? { overrides: { hatching: null } } : {}) } });
-  const scene = buildScene(
+  const drawn = buildScene(
     map,
-    { view: 'players', grid: false, background: false, margin: 0.5, assets: o.assets, ...(o.revealedOnly ? { fog: 'hide' as const } : {}) },
+    { view: 'players', grid: false, background: false, margin: 0.5, assets: o.assets, ...(o.revealedOnly ? { fog: 'hide' as const } : {}), ...(o.crop ? { frame: o.crop } : {}) },
     style,
   );
+  // cropped: only what the sheet shows (see cropScene)
+  const scene = o.crop ? cropScene(drawn, drawn.bounds) : drawn;
   if (o.names) {
     const fogged = o.revealedOnly && map.fog?.on;
     const items = map.objects

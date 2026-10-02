@@ -11,11 +11,13 @@ import {
   assetInfo,
   CATEGORIES,
   connectOps,
+  cropFrame,
   CUTOUT_FILLS,
   describeMap,
   DOOR_STYLES,
   MARKER_KINDS,
   fogSummary,
+  frameQuery,
   IMAGE_LAYERS,
   imageBounds,
   imageFit,
@@ -61,6 +63,8 @@ Furnish with add_prop (see list_assets for the ids; at is the centre of the foot
 A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.
 Floor numbers: a storey's floor is its level order (0 ground level, -1 one floor below ground, 1 the first floor up; set_map floor changes it). label_stairs gives every stair, ladder and trapdoor its GM label, floor number then flight letter (0A, 1A, 2A up one staircase).
 Room and cutout shapes: rect, circle, poly, or preset {kind: oval|triangle|hexagon|octagon, box: [x, y, w, h]}. Cutouts with fill "solid" draw as solid pillars or wall blocks.
+Open edges: an archway on the floor's outer edge is drawn as an open end (no hatching or shading in front of it). Anywhere else, add_opening marks an open area: no hatching, shading or shadow inside its shape (walls: true leaves out the wall lines there too, for a cave mouth or a ledge).
+Exports can be cropped: export with crop [x, y, w, h] or around [ids] (plus margin, default 1 square), e.g. rooms 4 and 11 only.
 Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
 Wall roughness: set_map roughness 1 (smooth) to 10 (caves); rooms, corridors and cutouts can have their own (update {"roughness": 9}). Rows of props (trees along a road): add_props_along.
 GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.
@@ -276,6 +280,35 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const id = a.id ?? nextId(map, 'p');
         const fill = a.fill === 'solid' ? { fill: 'solid' as const } : {};
         return addObject(a.map, { id, type: 'cutout', shape, ...fill, ...(a.name ? { name: a.name } : {}) }, `Added ${a.fill === 'solid' ? 'solid ' : ''}cutout ${id}: ${where(shape)}.`);
+      }),
+  );
+
+  server.registerTool(
+    'add_opening',
+    {
+      title: 'Add open area',
+      description:
+        'Mark an area where the map stays open: inside the shape there is no hatching, no shading and no drop shadow outside the walls, so an edge reads as a way out instead of solid rock ' +
+        '(e.g. no hatching at the top of a corridor that leads out of the dungeon: a rect over its end, reaching a square or two outwards). ' +
+        'walls true also leaves out the wall lines inside the shape: a cave mouth, a ledge that drops away, a room edge that is simply open. ' +
+        'It shows in both views and is never drawn itself. Give exactly one shape (rect, poly, circle or preset); update {"walls": true} or delete changes it later. ' +
+        'An archway on the outer edge already gets an open end by itself.',
+      inputSchema: {
+        map: mapId,
+        ...shapeArgs,
+        preset: presetArg,
+        walls: z.boolean().optional().describe('Also leave out the wall lines inside the shape (default false: only the hatching and shading go)'),
+        name: z.string().max(200).optional().describe('e.g. "Cave mouth"'),
+        id: z.string().optional().describe('Defaults to the next o<n>'),
+      },
+    },
+    (a) =>
+      guarded(() => {
+        const map = store.get(a.map).map;
+        const shape = shapeOrPreset(a);
+        const id = a.id ?? nextId(map, 'o');
+        const opening: MapObject = { id, type: 'opening', shape, ...(a.walls ? { walls: true } : {}), ...(a.name ? { name: a.name } : {}) };
+        return addObject(a.map, opening, `Added open area ${id}: ${where(shape)}, no hatching or shading inside${a.walls ? ', and no walls' : ''}.`);
       }),
   );
 
@@ -656,7 +689,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'resize',
     {
       title: 'Resize or reshape',
-      description: 'Give a room, cutout, stairs or terrain area a new shape (exactly one of rect, poly, circle or preset).',
+      description: 'Give a room, cutout, stairs, terrain area or open area (add_opening) a new shape (exactly one of rect, poly, circle or preset).',
       inputSchema: { map: mapId, id: z.string(), ...shapeArgs, preset: presetArg },
     },
     (a) =>
@@ -670,7 +703,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'update',
     {
       title: 'Update object',
-      description: 'Set or remove fields of one object, e.g. {"name": "Armoury"}, {"style": "locked"} on a door, or {"notes": "Two ogres; a chest with 40 gp"} on a room, corridor or terrain (GM notes: never drawn, only the GM sees them; unset ["notes"] removes them). id and type can\'t change.',
+      description: 'Set or remove fields of one object, e.g. {"name": "Armoury"}, {"style": "locked"} on a door, {"walls": true} on an open area, or {"notes": "Two ogres; a chest with 40 gp"} on a room, corridor or terrain (GM notes: never drawn, only the GM sees them; unset ["notes"] removes them). id and type can\'t change.',
       inputSchema: { map: mapId, id: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional() },
     },
     (a) => guarded(() => change(a.map, [{ op: 'update', id: a.id, set: a.set, unset: a.unset }], `Updated ${a.id}.`)),
@@ -798,24 +831,35 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       title: 'Export link',
       description:
         'A download link for the user: PNG (default 70 px per square, Roll20\'s grid), SVG, ds (opens in Dungeon Scrawl), ' +
-        'or handout: the players\' map drawn by hand on an old parchment sheet, to print or hand out (the link opens a page with print and download buttons).',
+        'or handout: the players\' map drawn by hand on an old parchment sheet, to print or hand out (the link opens a page with print and download buttons). ' +
+        'PNG, SVG and handout can be cropped to part of the map: crop [x, y, width, height] in squares, and/or around: object ids (e.g. ["r4", "r11"] for rooms 4 and 11 only) ' +
+        'with margin squares around them (default 1). Both together cover both. The crop is widened to whole squares, so a VTT grid lines up.',
       inputSchema: {
         map: mapId,
         format: z.enum(['png', 'svg', 'ds', 'handout']).optional(),
         view: z.enum(['gm', 'players']).optional().describe('default players'),
         style: z.enum(presetNames).optional(),
         ppg: z.number().int().min(10).max(300).optional(),
+        crop: z.tuple([z.number(), z.number(), z.number().positive(), z.number().positive()]).optional().describe('Only this rectangle [x, y, width, height] in squares'),
+        around: z.array(z.string()).min(1).optional().describe('Only the part around these objects (their bounds plus margin)'),
+        margin: z.number().min(0).max(100).optional().describe('Squares around the around objects (default 1)'),
       },
       annotations: { readOnlyHint: true },
     },
     (a) =>
       guarded(() => {
-        store.get(a.map);
+        const { map } = store.get(a.map);
         const view = a.view ?? 'players';
-        if (a.format === 'ds') return text(`${base}/api/v1/maps/${encodeURIComponent(a.map)}/export.ds?view=${view}`);
-        if (a.format === 'handout') return text(`${base}/maps/${encodeURIComponent(a.map)}/handout`);
+        const cropped = a.crop || a.around ? cropFrame(map, { crop: a.crop, around: a.around, margin: a.margin }) : null;
+        if (a.format === 'ds') {
+          if (cropped) throw new ValidationError(['crop and around work for png, svg and handout; a .ds file is always the whole map']);
+          return text(`${base}/api/v1/maps/${encodeURIComponent(a.map)}/export.ds?view=${view}`);
+        }
+        const note = cropped ? `\nCropped to x ${cropped.x0}–${cropped.x1}, y ${cropped.y0}–${cropped.y1} (${cropped.x1 - cropped.x0}×${cropped.y1 - cropped.y0} squares).` : '';
+        if (a.format === 'handout') return text(`${base}/maps/${encodeURIComponent(a.map)}/handout${cropped ? `?crop=${frameQuery(cropped)}` : ''}${note}`);
         const q = new URLSearchParams({ view, ...(a.style ? { style: a.style } : {}), ...(a.ppg ? { ppg: String(a.ppg) } : {}) });
-        return text(`${base}/api/v1/maps/${encodeURIComponent(a.map)}/render.${a.format ?? 'png'}?${q}`);
+        // the frame by hand: URLSearchParams would write its commas as %2C
+        return text(`${base}/api/v1/maps/${encodeURIComponent(a.map)}/render.${a.format ?? 'png'}?${q}${cropped ? `&frame=${frameQuery(cropped)}` : ''}${note}`);
       }),
   );
 
