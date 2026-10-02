@@ -22,6 +22,7 @@ import {
 import testMapJson from '../../../fixtures/test-map-4p.delve.json' with { type: 'json' };
 import { bearer, checkToken, readCookie, sameOrigin, SESSION_COOKIE, type Sessions } from './auth.ts';
 import { addLevel, levelsOf } from './levels.ts';
+import { setCategory } from './library.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
 import { render, renderHandout, RenderQueryError, type HandoutQuery, type RenderQuery } from './render.ts';
 import type { MapService } from './service.ts';
@@ -182,6 +183,18 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
       const ids = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === 'string') : [];
       if (!ids.length) throw new ValidationError(['ids must be a non-empty list of object ids']);
       return { viewers: service.focus(id, ids, byOf(body.by, 'api')) };
+    } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  // The library shelf: files the map and every storey of its place (null or "" takes it off its shelf).
+  app.put('/api/v1/maps/:id/category', { preHandler: writer }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { category?: unknown; by?: unknown };
+    try {
+      if (!('category' in body)) throw new ValidationError(['send {"category": "Dungeons"} (or null to take the map off its shelf)']);
+      return setCategory(service, id, body.category, byOf(body.by, 'library'));
     } catch (e) {
       return fail(reply, e);
     }

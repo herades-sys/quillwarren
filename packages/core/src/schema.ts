@@ -186,6 +186,8 @@ export const MapDoc = z.strictObject({
     .optional(),
   seed: z.number().int().optional(),
   level: Level.optional(),
+  /** The library shelf the map is filed under on the start page ("Dungeons", "Cities"…); storeys of one place share it. */
+  category: z.string().min(1).max(60).optional(),
   fog: Fog.optional(),
   /** Wall roughness for the whole map (rooms, corridors and cutouts can set their own). Unset: the style's own look. */
   roughness: Roughness.optional(),

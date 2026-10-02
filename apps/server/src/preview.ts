@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import {
   describeMap,
-  levelSiblings,
   FORMAT,
   FORMAT_VERSION,
   PRESETS,
@@ -22,7 +21,8 @@ import { TOKENS_CSS } from './accounts/pages.ts';
 import { canLogIn, isLoggedIn, type EditorAuth } from './login.ts';
 import { FONT_FILES } from './png.ts';
 import { asView, exportName, render, RenderQueryError, ROLL20_PPG, sceneFor, sizeInSquares, type RenderQuery } from './render.ts';
-import type { MapStore, MapSummary } from './store.ts';
+import { LIBRARY_CSS, libraryHtml } from './library.ts';
+import type { MapStore } from './store.ts';
 
 const TEST_MAP: DelveMap = validateMap(structuredClone(testMapJson));
 
@@ -35,59 +35,6 @@ function testScene(preset: string, view: View): Scene {
   let s = scenes.get(key);
   if (!s) scenes.set(key, (s = sceneFor(TEST_MAP, { style: preset, view })));
   return s;
-}
-
-/** Newest first, but the storeys of one place stay together, top storey first. */
-function ordered(maps: MapSummary[]): MapSummary[] {
-  const out: MapSummary[] = [];
-  const done = new Set<string>();
-  for (const m of maps) {
-    if (done.has(m.id)) continue;
-    const group = m.level ? levelSiblings(maps, m.id).reverse() : [m];
-    for (const g of group) {
-      done.add(g.id);
-      out.push(g);
-    }
-  }
-  return out;
-}
-
-function savedMaps(store: MapStore, loggedIn: boolean): string {
-  const maps = ordered(store.list());
-  if (!maps.length) {
-    return `<p class="note">No saved maps yet. Create one with <code>POST /api/v1/maps</code> (see docs/API.md).</p>`;
-  }
-  const rows = maps
-    .map((m) => {
-      const base = `/api/v1/maps/${encodeURIComponent(m.id)}`;
-      const storey = m.level ? ` <span class="tag" title="One storey of a multi-storey place">${esc(m.level.name)}</span>` : '';
-      const del = loggedIn ? `\n    <button class="button danger" type="button" data-delete="${esc(m.id)}" data-name="${esc(m.level ? `${m.name} · ${m.level.name}` : m.name)}">Delete</button>` : '';
-      return `<tr${m.level ? ' class="storey"' : ''}>
-  <td><strong>${esc(m.name)}</strong>${storey}<br><code>${esc(m.id)}</code></td>
-  <td class="num">${m.rev}</td><td class="num">${m.objects}</td>
-  <td class="meta">${esc(m.updated.replace('T', ' ').slice(0, 16))}</td>
-  <td class="links"><a class="button primary" href="/maps/${encodeURIComponent(m.id)}">Open live view</a>
-    <a class="button" href="${base}/render.png?view=players">Roll20 PNG · players</a>
-    <a class="button" href="${base}/render.png">PNG · GM</a> <a class="button" href="${base}/render.svg">SVG</a>
-    <a class="button" href="${base}/export.ds" title="Open this map in Dungeon Scrawl">Dungeon Scrawl</a>
-    <a class="button" href="/maps/${encodeURIComponent(m.id)}/handout" title="The players' map on old parchment, to print or hand out">Parchment handout</a>
-    <a class="button" href="${base}/describe">Text</a>${del}</td>
-</tr>`;
-    })
-    .join('\n');
-  const script = loggedIn
-    ? `<script>
-  document.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Delete "' + b.dataset.name + '"? It disappears from Delve for everyone.')) return;
-    const res = await fetch('/api/v1/maps/' + encodeURIComponent(b.dataset.delete), { method: 'DELETE' });
-    if (!res.ok) { const body = await res.json().catch(() => ({})); alert('Deleting failed: ' + (body.error || res.status)); return; }
-    b.closest('tr').remove();
-  }));
-</script>`
-    : '';
-  return `<div class="table"><table>
-<thead><tr><th>Map</th><th class="num">Rev</th><th class="num">Objects</th><th>Updated (UTC)</th><th>Downloads</th></tr></thead>
-<tbody>${rows}</tbody></table></div>${script}`;
 }
 
 interface Access {
@@ -252,6 +199,7 @@ function page(info: AppInfo, view: View, store: MapStore, access: Access): strin
   .newmap label.button { display: inline-block; color: var(--ink); font-size: .88rem; cursor: pointer; }
   .newmap .or { color: var(--muted); font-size: .85rem; align-self: center; }
   .newmap input, .newmap select { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 12rem; }
+  ${LIBRARY_CSS}
 </style>
 </head>
 <body>
@@ -276,7 +224,7 @@ function page(info: AppInfo, view: View, store: MapStore, access: Access): strin
   <section>
     <h2>Saved maps</h2>
     ${loggedIn ? newMapForm() : ''}
-    ${savedMaps(store, loggedIn)}
+    ${libraryHtml(store.list(), loggedIn)}
   </section>
 
   <section>

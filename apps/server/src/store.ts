@@ -48,6 +48,8 @@ export interface MapSummary {
   updated: string;
   /** Set when the map is one storey of a multi-storey place. */
   level?: Level;
+  /** The library shelf on the start page. */
+  category?: string;
 }
 
 type Row = Record<string, unknown>;
@@ -129,6 +131,7 @@ export class MapStore {
         created: String(r.created),
         updated: String(r.updated),
         ...(doc.level ? { level: doc.level } : {}),
+        ...(doc.category ? { category: doc.category } : {}),
       };
     });
   }

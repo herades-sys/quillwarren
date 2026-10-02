@@ -44,6 +44,7 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
       `${cutouts.length} cutouts. 1 square = ${unit.size} ${unit.name}.`,
   );
   if (map.level) lines.push(`Floor ${floorText(map.level.order)} (${map.level.name}) of ${map.level.group}.`);
+  if (map.category) lines.push(`Library category: ${map.category}.`);
 
   if (map.roughness) lines.push(`Walls: roughness ${map.roughness} of 10${map.roughness >= 8 ? ' (cave-like)' : map.roughness === 1 ? ' (smooth)' : ''}.`);
   lines.push('Rooms:');

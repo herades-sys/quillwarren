@@ -121,20 +121,17 @@ export const notedAreas = (map: DelveMap): NoteArea[] => map.objects.filter((o):
 const flatOps = (ops: readonly Op[]): Exclude<Op, { op: 'batch' }>[] => ops.flatMap((o) => (o.op === 'batch' ? flatOps(o.ops) : [o]));
 
 /**
- * Do these ops change nothing but notes? Notes are never drawn, so such a change
- * leaves every picture as it was: the players' screens and table pages need no
- * redraw (only the GM's notes do).
+ * Do these ops change nothing but notes (or the map's library category)? Neither
+ * is ever drawn, so such a change leaves every picture as it was: the players'
+ * screens and table pages need no redraw (only the GM's notes do).
  */
 export function notesOnly(ops: readonly Op[]): boolean {
   const flat = flatOps(ops);
-  return (
-    flat.length > 0 &&
-    flat.every((o) => {
-      if (o.op !== 'update') return false;
-      const keys = [...Object.keys(o.set ?? {}), ...(o.unset ?? [])];
-      return keys.length > 0 && keys.every((k) => k === 'notes');
-    })
-  );
+  const only = (o: { set?: Record<string, unknown>; unset?: string[] }, key: string) => {
+    const keys = [...Object.keys(o.set ?? {}), ...(o.unset ?? [])];
+    return keys.length > 0 && keys.every((k) => k === key);
+  };
+  return flat.length > 0 && flat.every((o) => (o.op === 'update' && only(o, 'notes')) || (o.op === 'update_map' && only(o, 'category')));
 }
 
 /** The ops that set (or, when blank, remove) an object's notes. */

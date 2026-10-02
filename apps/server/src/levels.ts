@@ -41,6 +41,8 @@ export function addLevel(service: MapService, baseId: string, o: AddLevelOptions
     ...(base.style ? { style: base.style } : {}),
     seed: randomInt(1, 2 ** 31),
     level: { group, name, order },
+    // the place's library shelf
+    ...(base.category ? { category: base.category } : {}),
     objects: [],
   };
   const created = service.create(map, o.by);

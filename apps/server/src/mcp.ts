@@ -41,6 +41,7 @@ import { bearer } from './auth.ts';
 import type { ChatTokens } from './chat/tokens.ts';
 import type { ImageLibrary } from './images.ts';
 import { addLevel, levelsOf } from './levels.ts';
+import { setCategory } from './library.ts';
 import { presetArg, shapeOrPreset } from './draw-args.ts';
 import { render } from './render.ts';
 import { registerSegmentTools } from './segments.ts';
@@ -135,7 +136,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const maps = store.list();
         if (!maps.length) return text('No maps yet. Use create_map.');
         const storey = (m: (typeof maps)[number]) => (m.level ? ` · storey "${m.level.name}" (order ${m.level.order}) of group ${m.level.group}` : '');
-        return text(maps.map((m) => `${m.id} · "${m.name}"${storey(m)} · rev ${m.rev} · ${m.objects} objects · updated ${m.updated} · ${viewer(m.id)}`).join('\n'));
+        return text(maps.map((m) => `${m.id} · "${m.name}"${storey(m)}${m.category ? ` · category "${m.category}"` : ''} · rev ${m.rev} · ${m.objects} objects · updated ${m.updated} · ${viewer(m.id)}`).join('\n'));
       }),
   );
 
@@ -681,7 +682,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'set_map',
     {
       title: 'Map settings',
-      description: 'Rename the map, change its style preset, style overrides (e.g. {"walls.width": 0.2}; null clears them), its random seed, or its wall roughness (1 smooth to 10 caves; null goes back to the style). For a storey: its name (level_name) and floor number (floor).',
+      description: 'Rename the map, change its style preset, style overrides (e.g. {"walls.width": 0.2}; null clears them), its random seed, its wall roughness (1 smooth to 10 caves; null goes back to the style), or its library category (the shelf on the start page; a storey files its whole place). For a storey: its name (level_name) and floor number (floor).',
       inputSchema: {
         map: mapId,
         name: z.string().min(1).max(200).optional(),
@@ -691,11 +692,25 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         roughness: z.number().int().min(1).max(10).nullable().optional().describe('Wall roughness for the whole map: 1 smooth, 10 extremely rough (caves); null resets'),
         level_name: z.string().min(1).max(60).optional().describe('Rename this storey (only for maps that are storeys, see add_level)'),
         floor: z.number().int().optional().describe("This storey's floor number: 0 ground level, -1 one floor below ground, 1 the first floor up (only for storeys)"),
+        category: z
+          .string()
+          .max(60)
+          .nullable()
+          .optional()
+          .describe('The library category the start page files the map under, e.g. "Dungeons" or "Cities"; every storey of a place gets it; null or "" takes it off its shelf'),
       },
     },
     (a) =>
       guarded(() => {
         const map = store.get(a.map).map;
+        let filed = '';
+        if (a.category !== undefined) {
+          const r = setCategory(service, a.map, a.category, BY);
+          const all = r.changed.length > 1 ? ` (all ${r.changed.length} storeys)` : '';
+          filed = r.category === null ? `Took the map off its library shelf${all}.` : `Filed under "${r.category}"${all}.`;
+        }
+        const others = ['name', 'style', 'overrides', 'seed', 'roughness', 'level_name', 'floor'] as const;
+        if (filed && others.every((k) => a[k] === undefined)) return text(filed);
         const set: Record<string, unknown> = {};
         let note = '';
         if (a.floor !== undefined) {
@@ -718,8 +733,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           const overrides = a.overrides === undefined ? cur.overrides : (a.overrides ?? undefined);
           set.style = { preset: a.style ?? cur.preset, ...(overrides ? { overrides } : {}) };
         }
-        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, overrides, seed, roughness, level_name or floor']);
-        return change(a.map, [{ op: 'update_map', set, ...(unset.length ? { unset } : {}) }], `Updated map settings (${[...Object.keys(set), ...unset].join(', ')}).${note}`);
+        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, overrides, seed, roughness, level_name, floor or category']);
+        return change(a.map, [{ op: 'update_map', set, ...(unset.length ? { unset } : {}) }], `${filed ? `${filed} ` : ''}Updated map settings (${[...Object.keys(set), ...unset].join(', ')}).${note}`);
       }),
   );
 
