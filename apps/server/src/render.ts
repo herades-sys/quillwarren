@@ -1,5 +1,5 @@
 // Shared by the preview page and the map API: query -> scene -> SVG or PNG.
-import { buildScene, handoutSvg, MAX_CROP, resolveStyle, sceneToSvg, wholeSquares, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
+import { buildScene, cropScene, handoutSvg, MAX_CROP, resolveStyle, sceneToSvg, wholeSquares, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
 import { assets } from './assets.ts';
 import { svgToPng } from './png.ts';
 
@@ -57,7 +57,11 @@ export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
   }
   const view = asView(q.view);
   const fog = q.fog === '1' ? (view === 'players' ? 'hide' : 'dim') : undefined;
-  return buildScene(m, { view, grid: q.grid !== '0', background: q.background !== '0', assets: assets.body, ...(fog ? { fog } : {}), ...(q.bounds === 'full' ? { fullBounds: true } : {}), ...(q.frame !== undefined ? { frame: parseFrame(q.frame) } : {}) }, style);
+  const frame = parseFrame(q.frame);
+  const scene = buildScene(m, { view, grid: q.grid !== '0', background: q.background !== '0', assets: assets.body, ...(fog ? { fog } : {}), ...(q.bounds === 'full' ? { fullBounds: true } : {}), ...(frame ? { frame } : {}) }, style);
+  // a cropped picture holds only what it shows: resvg panics on clipped geometry running far past the
+  // picture (stairs cut by the frame did it), and that kills the whole server (see cropScene)
+  return frame ? cropScene(scene, scene.bounds) : scene;
 }
 
 export function sizeInSquares(scene: Scene): { w: number; h: number } {

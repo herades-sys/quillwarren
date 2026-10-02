@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.ts';
 import { CHAT_SYSTEM_PROMPT, objectLine } from '../src/chat/prompt.ts';
+import { sceneFor } from '../src/render.ts';
 
 const TOKEN = 'test-token';
 let app: FastifyInstance;
@@ -124,5 +125,18 @@ describe('cropped exports', () => {
     expect((await fetch(`${base}/api/v1/maps/${id}/render.png?frame=0,0,2000,1`, { headers: auth })).status).toBe(400);
     expect((await fetch(`${base}/api/v1/maps/${id}/render.png?frame=1,2,3`, { headers: auth })).status).toBe(400);
     expect((await fetch(`${base}/api/v1/maps/${id}/handout.png?crop=5,5,1,1`, { headers: auth })).status).toBe(400);
+  });
+
+  it('cuts a framed render to its frame (resvg panicked on stairs running past it, which took the server down)', async () => {
+    const { map } = (await (await fetch(`${base}/api/v1/maps/${id}`, { headers: auth })).json()) as { map: DelveMap };
+    for (const view of ['gm', 'players']) {
+      const scene = sceneFor(map, { view, frame: '4,2,9,6' });
+      const b = scene.bounds;
+      const far = (p: readonly number[]) => p[0]! < b.x0 - 1 || p[0]! > b.x1 + 1 || p[1]! < b.y0 - 1 || p[1]! > b.y1 + 1;
+      for (const l of scene.layers) {
+        if (l.kind === 'stroke') for (const line of l.lines) expect(line.points.some(far), l.name).toBe(false);
+        if (l.kind === 'fill' || l.kind === 'pattern') for (const poly of l.polygons) for (const ring of [poly.outer, ...poly.holes]) expect(ring.some(far), l.name).toBe(false);
+      }
+    }
   });
 });
