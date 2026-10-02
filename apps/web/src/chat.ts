@@ -78,7 +78,14 @@ const TOOL_LABEL: Record<string, string> = {
   export: 'Making a download link',
   focus: 'Showing you',
   apply_ops: 'Applying changes',
+  prop_rules: 'Reading how props are drawn',
+  create_prop: 'Drawing a new prop',
+  update_prop: 'Redrawing the prop',
+  get_prop: 'Looking at the prop',
+  delete_prop: 'Deleting a prop',
 };
+/** Tools that change the custom prop library: when one succeeds, the Prop picker reloads it. */
+const PROP_TOOLS = new Set(['create_prop', 'update_prop', 'delete_prop']);
 const TOOL_ICON: Record<string, IconName> = {
   add_room: 'room',
   connect: 'corridor',
@@ -112,6 +119,11 @@ const TOOL_ICON: Record<string, IconName> = {
   describe_map: 'search',
   list_maps: 'search',
   create_map: 'plus',
+  prop_rules: 'prop',
+  create_prop: 'brush',
+  update_prop: 'brush',
+  get_prop: 'prop',
+  delete_prop: 'trash',
 };
 
 const SUGGESTIONS_FILLED = [
@@ -442,6 +454,8 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
               if (p) {
                 p.state = ev.ok ? 'ok' : 'failed';
                 p.result = ev.text;
+                // a new or redrawn custom prop: the picker and the map pick it up (custom-props.ts)
+                if (ev.ok && PROP_TOOLS.has(p.name)) window.dispatchEvent(new CustomEvent('delve:props-changed'));
               }
               setStatus('Thinking…');
               break;
@@ -527,6 +541,16 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
       e.preventDefault();
       setOpen(true);
     } else if (e.key === 'Escape' && busy && !t.closest('input, select, textarea')) busy.abort();
+  });
+  // "New prop…" and "Ask Claude to change it" (prop-maker.ts): open the panel with a message to finish
+  window.addEventListener('delve:chat-prefill', (e) => {
+    const { text, pick } = (e as CustomEvent<{ text: string; pick?: string }>).detail;
+    setOpen(true);
+    input.value = text;
+    input.focus();
+    const at = pick ? text.indexOf(pick) : -1;
+    if (at >= 0) input.setSelectionRange(at, at + pick!.length);
+    else input.setSelectionRange(text.length, text.length);
   });
   // phones show Claude as a sheet that only opens on request
   host.shell.onLayout((l) => setOpen(l === 'phone' ? false : open, false));

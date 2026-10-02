@@ -8,6 +8,7 @@ import { registerAssets } from './assets.ts';
 import { Sessions } from './auth.ts';
 import { registerChat, type ChatConfig } from './chat/route.ts';
 import { ChatTokens } from './chat/tokens.ts';
+import { PropLibrary, registerPropRoutes } from './custom-props.ts';
 import { LiveHub } from './live.ts';
 import { isLoggedIn, registerLogin, useAccounts, type EditorAuth } from './login.ts';
 import { publicHostOf, registerPublicGate } from './public.ts';
@@ -73,6 +74,9 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   // Uploaded map pictures: <DELVE_DATA>/images (a temp dir without one); PNG exports read them from here too.
   const images = new ImageLibrary(opts.dataDir ? join(opts.dataDir, 'images') : undefined);
   app.addHook('onClose', async () => images.close());
+  // This Delve's own props, shared by every GM: <DELVE_DATA>/props (a temp dir without one).
+  const props = new PropLibrary(opts.dataDir ? join(opts.dataDir, 'props') : undefined);
+  app.addHook('onClose', async () => props.close());
   const auth: EditorAuth = { sessions: new Sessions(opts.token, opts.openEdit ?? false), passwordHash: opts.passwordHash };
   // Admin and GM accounts: <DELVE_DATA>/accounts.db (in memory without one).
   const accounts = new AccountStore(opts.dataDir ? join(opts.dataDir, 'accounts.db') : ':memory:', opts.token);
@@ -105,7 +109,8 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerSegments(scoped, { service, token: opts.token, sessions: auth.sessions });
     registerAssets(scoped);
     registerImages(scoped, { images, store, token: opts.token, sessions: auth.sessions });
-    registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens, images });
+    registerPropRoutes(scoped, { props, store, token: opts.token, auth });
+    registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens, images, props });
     registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat });
     registerLogin(scoped, auth);
     registerViewer(scoped, info, store, auth, opts.chat);

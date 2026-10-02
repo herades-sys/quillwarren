@@ -194,7 +194,7 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
 
 | Path | Returns |
 |---|---|
-| `GET /api/v1/assets` | `{ categories, assets: [{ id, name, category, kind: prop \| terrain, w, h, tags, blocks, tint?, difficult?, available }] }` |
+| `GET /api/v1/assets` | `{ categories, assets: [{ id, name, category, kind: prop \| terrain, w, h, tags, blocks, tint?, difficult?, available, custom? }] }`: the built-in catalog, then this Delve's custom props (`custom: true`, see "Custom props") |
 | `GET /assets/props/<id>.svg` | The cleaned SVG in its original inks (thumbnails; the viewer loads art from here) |
 | `GET /assets/icons/<name>.svg`, `/assets/brand/<name>.svg`, `/favicon.svg` | Editor icons and the Delve logo |
 
@@ -225,6 +225,54 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
   - The editor's Marker tool (M) places them at square centres (Alt for half squares) and opens the box for typing.
   - The SVG tags each badge `data-marker="<id>" data-kind="<kind>"`, plus `data-done` when done. Code: core `markers.ts`, web `markers.ts`.
 - **Where the art comes from:** `delve-props-design-system/assets`. `npm run assets` rebuilds `packages/core/src/assets/catalog.json` and the full `manifest.json` from the batch generators' metadata, and reports files that are listed but missing. Every SVG goes through a whitelist (`parseAssetSvg`) before it reaches a page or a PNG.
+
+## Custom props (this Delve's own)
+
+A GM asks Claude in the editor's chat for a prop the catalog doesn't have ("a blacksmith's anvil with tongs, 1×1"). Claude draws it in Delve's ink style, looks at a preview, fixes it, and then it is in every GM's Prop picker. There is one shared library for all GMs and admins of the server.
+
+| Method | Path | Body / query | Returns |
+|---|---|---|---|
+| GET | `/props` | | `{ categories, props: [{ id, name, category, w, h, tags, blocks, ink, created, updated, by, custom: true, url, preview }] }`, newest first |
+| GET | `/props/:id` | | The same fields, plus `svg` (the drawing as it was sent, before inking) and `maps: [{ id, name, count }]` (the maps that use it) |
+| GET | `/props/:id/preview.png` | | The preview (see below) |
+| POST | `/props` | `{ name, w, h, svg, category?, tags?, blocks?, ink?, id? }` (token or editor login) | `201 { prop, notes }`, or `400 { error, problems: [...] }` listing everything to fix, or `409` for a taken `id` |
+| PUT | `/props/:id` | Any of `name`, `category`, `w`, `h`, `tags`, `blocks`, `svg`, `ink` (token or editor login) | `200 { prop, notes }`. The id never changes |
+| DELETE | `/props/:id` | `?force=1` (token or editor login) | `204`, or `409 { error, maps: [{ id, name, count }] }` while maps use it |
+| GET | `/assets/props/<id>.svg` | | The cleaned, inked art, served like the built-in props (`no-cache`, `nosniff` and a `default-src 'none'; sandbox` CSP) |
+
+- **Ids** are `my-` plus a slug of the requested `id` or of the name (`my-blacksmiths-anvil`), so they can never clash with built-in ids (core `CUSTOM_PREFIX`, `CUSTOM_ID`).
+  - A name that is already taken gets `-2`, `-3` and so on. An `id` that is already taken is refused with `409`.
+  - Maps place them like any other prop: `{ type: "prop", asset: "my-…" }`.
+- **Category:** `custom` by default (the picker's Custom chip), or any built-in prop category (core `PROP_CATEGORIES`, which leaves out terrain).
+  - The category decides the layer, as for built-in props: `decals` lie under the walls, and `symbols` are GM-only.
+  - `blocks` is `none`, `movement` (the default) or `sight`.
+- **Storage:** `${DELVE_DATA}/props/` holds `<id>.svg` (the art the renderer draws), `<id>.source.svg` (the drawing as sent) and `index.json` (the metadata). A lost index is rebuilt from the files. Without `DELVE_DATA` the library lives in a temp dir. It holds at most 1000 props. Code: server `custom-props.ts`.
+- **Checks on every save** (core `checkPropSvg` in `assets/custom.ts`). Anything else is refused with the full list:
+  - At most 64 KB as sent (192 KB once inked). `w` and `h` from 0.5 to 6 squares, in half squares.
+  - `viewBox="0 0 {w*100} {h*100}"`, and `width` and `height` the same if they are given.
+  - Elements: only `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon` and `g`.
+  - Colours: only the inks `#000000`, `#FFFFFF`, `#999999`, or `none`.
+  - Stroke widths 4, 2 or 1.5. An explicit fill on every shape except lines. `transform` with `translate()` and `rotate()` only.
+  - Never: scripts, event handlers, `<image>`, `href` or other links, `url(…)`, `data:` or `javascript:` URLs, `<use>`, `<foreignObject>`, filters, gradients, masks, clip paths, CSS (`style`, `class`), opacity, text, DOCTYPE or entities.
+  - Every mark inside the footprint, stroke included.
+  - Kept with a note instead of refused: marks inside the 4-unit margin, ids and titles. Missing round caps and joins are added.
+  - The art then goes through `parseAssetSvg` like every built-in file, so only whitelisted shapes ever reach a page or a PNG.
+- **Inking:** with `ink: true` (the default), every shape is redrawn with the built-in art's hand-inked line (core `inkBody`, a port of the design system's Pen). Each shape is resampled, nudged by a slow seeded swell, and written as smooth Béziers.
+  - The seed is the prop id plus the shape's geometry. So a fill and its outline drawn from the same coordinates stay together, and shapes that didn't change keep their line when the prop is redrawn.
+  - Marks under 6 units stay as drawn. `ink: false` keeps all the lines as sent.
+- **A new size without new art** redraws the old drawing at that size (core `scaleBody`: the geometry is scaled, the line weights stay). New art must fit the size it comes with.
+- **The preview** is what `preview.png`, `create_prop`, `update_prop` and `get_prop` return. It shows the prop on a floor of at least 3 × 3 squares at 70 px per square (Roll20's grid), in `classic-hatching`, `print` and `parchment` side by side. Next to them is the prop alone in print, enlarged about 3× (at most 420 px a side). Each panel is labelled.
+- **Deleting a prop that maps use** is refused, with the list of maps. `?force=1` deletes it anyway: those maps keep their props, which then draw as the dashed "unknown asset" outline (1×1) until a prop with that id exists again.
+- **Rendering:** the server registers the library with core (`registerAssets`) at start and after every change.
+  - So `assetInfo`, `propBounds`, `describeMap`, the chat context and every server render (PNG, SVG, handout, Delve Table pages, the 3D view's floors) know custom props.
+  - Their art reaches the renderer through `assets.body` (`addCustomPropSource` in `assets.ts`).
+  - Browsers fetch `/api/v1/props` (web `custom-props.ts`) and register it the same way. The art loader fetches custom art with `?v=<updated>`, so a redrawn prop shows up.
+- **From the internet** (the tunnel): `/api/v1/props` and the previews need a login, like maps, and writes refuse the API token there, like everything else. The art at `/assets/props/<id>.svg` stays open like the built-in props: a GM may drop one on a Delve Table board as a picture, and the players' browsers load it. It shows nothing of any map.
+- **Editor:** the Prop picker (P) lists custom props with the others: search and categories as before, a "custom" badge, and a Custom chip with all of them.
+  - **New prop…** in the picker's foot opens the Claude panel with "Draw a new prop: <describe it>, size 1×1 squares, category …" for the GM to finish and send.
+  - Each custom tile has a ⋯ menu: Rename…, Change category…, Change size… and Change what it blocks… (one dialog, with the preview); Ask Claude to change it… (prefills the chat); and Delete… (names the maps that use it and offers "Delete anyway").
+  - When a chat reply runs `create_prop`, `update_prop` or `delete_prop`, the picker reloads. Code: web `prop-maker.ts`.
+- **MCP:** `prop_rules`, `create_prop`, `update_prop`, `get_prop` and `delete_prop` (see "MCP"). `list_assets` lists custom props, marked "custom". Changes over MCP are recorded with `by: "claude"`; REST ones with the account's name (`api` for the token, `editor` for the shared password).
 
 ## Uploaded images (your own pictures)
 
@@ -389,6 +437,8 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `list_assets` (`category?`, `search?`), `add_prop` (`asset`, `at`, `rotation?`, `scale?`, `notes?`), `add_props_along` (`asset`, `path`, `spacing?`, `placement?`, `spread?`), `add_terrain` (`asset`, one shape) | Furnishing and ground |
 | `add_marker` (`kind` discover/interact/trap, `at`, `text`) | A GM note badge (GM view only); `update` with `{"done": true}` strikes it through |
 | `list_images`, `add_image` (`src`, `at`, `w?`, `h?`, `rotation?`, `layer?`, `opacity?`, `gm_only?`) | The user's uploaded pictures, placed by `src` |
+| `prop_rules` | How to draw a prop: the art rules, condensed, with two clean example SVGs and a built-in one |
+| `create_prop` (`name`, `w`, `h`, `svg`, `category?`, `tags?`, `blocks?`, `ink?`, `id?`), `update_prop` (`id`, any of those), `get_prop` (`id`), `delete_prop` (`id`, `force?`) | This Delve's own props (see "Custom props"). A refused drawing comes back with what to fix, a saved one with the preview picture (an MCP image) and a link to it. `get_prop` also returns the drawing as sent and the maps that use it |
 | `add_level` (`name`, `position?` above/below, `current_name?`) | Adds a storey (a new map in the same group) |
 | `label_stairs` (`map`) | Numbers every stair of the place: 0A, 1A, 2A… (GM view only) |
 | `list_segments`, `save_segment` (`name`, `ids` \| `rect`), `place_segment` (`segment`, `at`, `rotation?`), `fill_with_segment` (`segment`, `rect` \| `around?`=5, `margin?`, `vary?`) | Saved pieces of maps: save, place a renumbered copy, fill the land around the rooms (see "Segments") |

@@ -345,3 +345,13 @@ LOGO:
 - **Terrain:** a new `terrain` object (a shape plus a tile id), drawn under props and clipped to the floor.
 - **MCP and chat:** `add_prop` and `add_terrain`, with the catalogue listed in the chat prompt, so "put a well in the courtyard" works.
 - **Later:** `blocks: sight` and light props feed Roll20 walls and lights (Universal VTT), if the user has Roll20 Pro.
+
+## Custom props: drawn by Claude in the editor
+
+Besides this catalog, each Delve has its own shared library of props that Claude draws on request, in the editor's chat. The API, storage and editor side are in `docs/API.md`, "Custom props".
+
+- **The same rules.** The MCP tool `prop_rules` hands Claude the rules above in short form (footprint and margin, facing south, the three inks and what each means, the three line weights, fills, layering, no letter-like marks), plus two clean example SVGs and the built-in chair as Delve draws it. `create_prop` refuses anything outside them and says what to fix (core `checkPropSvg`).
+- **Clean geometry in, inked line out.** Claude sends plain shapes; Delve redraws each with the hand-inked line of the generators (core `inkBody` in `assets/ink.ts`, a port of the Pen in `assets/tools/*.js`: resampled, a slow seeded swell, smooth Béziers). Closed shapes swell with their size, never their stroke, so a fill-only shape and its outline from the same coordinates stay on top of each other, which is how "fills, then details, then the outline" is drawn. Marks under 6 units (rivets, keyholes) stay exact.
+- **Judged at 70 px.** Every saved drawing comes back as a preview: the prop on a 3 × 3 floor at 70 px per square in classic-hatching, print and parchment, plus an enlargement. Claude fixes what doesn't read and tries again (`update_prop`), a few times at most.
+- **Ids** start with `my-`, and their files live in `${DELVE_DATA}/props`, not in this folder. A good custom prop can be promoted: copy its `<id>.svg` (already inked and cleaned) into `assets/<category>/`, add it to the batch's metadata, and run `npm run assets`.
+- **Proof run (2026-10-02):** a blacksmith's anvil with tongs (3 tries), a wooden signpost (5 tries) and a 2 × 2 corner spider web (2 tries; `web` is one of the 7 missing built-in props).

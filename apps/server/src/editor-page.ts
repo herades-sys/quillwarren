@@ -264,6 +264,21 @@ export const EDITOR_CSS = `
   .ed-flyout-foot { display: flex; align-items: center; gap: 6px; padding: 9px 14px; box-shadow: inset 0 1px 0 var(--color-border); font-size: var(--text-sm); color: var(--color-text-muted); }
   .ed-flyout-body .hint, .ed-flyout-body .field-hint { color: var(--color-text-muted); font-size: var(--text-sm); margin: 0; }
   .ed-flyout-body > * + * { margin-top: 10px; }
+  /* custom props (apps/web/src/prop-maker.ts): the badge and menu on their tiles, the "New prop…" button, the edit dialog */
+  .ed-asset-wrap { position: relative; min-width: 0; display: flex; }
+  .ed-asset-wrap > .ed-asset { flex: 1; }
+  .ed-asset-pic { position: relative; }
+  .ed-asset-badge { position: absolute; left: 3px; bottom: 3px; font-size: 10px; line-height: 14px; padding: 0 5px; pointer-events: none; }
+  .ed-asset-more { position: absolute; top: 2px; right: 2px; width: 24px; height: 24px; min-height: 0; padding: 0; opacity: 0; background: var(--color-surface); box-shadow: var(--shadow-sm); }
+  .ed-asset-wrap:hover .ed-asset-more, .ed-asset-more:focus-visible, .ed-asset-more[aria-expanded="true"] { opacity: 1; }
+  @media (hover: none) { .ed-asset-more { opacity: 1; } }
+  .ed-flyout-foot [data-act="new-prop"] { margin-right: -6px; }
+  .ed-propmenu { position: fixed; z-index: 60; width: 232px; }
+  .ed-propmenu .menu-item { padding: 7px 10px; }
+  .ed-propdlg { z-index: 70; }
+  .ed-propdlg .dialog { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+  .ed-propdlg-preview { border-radius: 8px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--color-border); background: var(--canvas-floor); }
+  .ed-propdlg-preview img { display: block; width: 100%; height: auto; }
 
   .ed-storeys { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; width: 46px; border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-md); z-index: 5; }
   .ed-storeys[hidden], .ed-storeys:empty { display: none; }

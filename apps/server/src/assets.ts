@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { ASSETS, assetInfo, assetSvg, CATEGORIES, parseAssetSvg } from '@delve/core';
+import { ASSETS, assetInfo, assetSvg, CATEGORIES, CUSTOM_CATEGORY, customAssets, isCustomAsset, parseAssetSvg } from '@delve/core';
 
 /** release/assets next to the bundle, or the design system folder in development. DELVE_ASSETS overrides. */
 export function findAssetDir(): string | null {
@@ -26,6 +26,7 @@ export class AssetLibrary {
 
   /** A prop's or tile's cleaned SVG body, or undefined if it isn't in the catalog or has no file. */
   body = (id: string): string | undefined => {
+    if (isCustomAsset(id)) return customBody(id);
     if (!this.bodies.has(id)) {
       const info = assetInfo(id);
       let body: string | null = null;
@@ -60,16 +61,43 @@ export class AssetLibrary {
 /** The library the renderer uses by default. */
 export const assets = new AssetLibrary(findAssetDir());
 
+// ---------- custom props ----------
+// This Delve's own props (custom-props.ts) aren't files in the design system:
+// their library registers itself here, so every render (PNG, SVG, handout,
+// Delve Table pages) draws them through assets.body like built-in ones.
+const customSources = new Set<(id: string) => string | undefined>();
+
+/** Let renders draw custom props (id -> cleaned body). Returns the undo. */
+export function addCustomPropSource(read: (id: string) => string | undefined): () => void {
+  customSources.add(read);
+  return () => customSources.delete(read);
+}
+
+function customBody(id: string): string | undefined {
+  for (const read of customSources) {
+    const body = read(id);
+    if (body !== undefined) return body;
+  }
+  return undefined;
+}
+
 export function registerAssets(app: FastifyInstance, lib: AssetLibrary = assets): void {
+  // the built-in catalog, then this Delve's custom props (custom: true, under their own category or Custom)
   app.get('/api/v1/assets', async () => ({
-    categories: CATEGORIES,
-    assets: ASSETS.map(({ file: _file, ...a }) => ({ ...a, available: lib.body(a.id) !== undefined })),
+    categories: [...CATEGORIES, CUSTOM_CATEGORY],
+    assets: [...ASSETS, ...customAssets()].map(({ file: _file, ...a }) => ({ ...a, available: lib.body(a.id) !== undefined })),
   }));
 
   app.get('/assets/props/:file', async (req, reply) => {
     const { file } = req.params as { file: string };
-    const svg = file.endsWith('.svg') ? lib.svg(file.slice(0, -4)) : undefined;
+    const id = file.endsWith('.svg') ? file.slice(0, -4) : '';
+    const svg = id ? lib.svg(id) : undefined;
     if (!svg) return reply.code(404).type('text/plain').send('no such asset');
+    if (isCustomAsset(id)) {
+      // custom props can be redrawn at any time, so browsers ask again (the editor adds ?v=<updated> too);
+      // the art is whitelisted already, and opened on its own it still can't run or load anything
+      return reply.type('image/svg+xml').header('cache-control', 'no-cache').header('x-content-type-options', 'nosniff').header('content-security-policy', "default-src 'none'; sandbox").send(svg);
+    }
     return reply.type('image/svg+xml').header('cache-control', 'public, max-age=86400').send(svg);
   });
 

@@ -1,7 +1,7 @@
 // What Claude knows in the chat panel: the system prompt (how Delve works, the
 // tools, good dungeon design) and the context block that starts every message
 // (the open map, the user's selection and view, and the map's exact objects).
-import { ASSETS, assetInfo, CATEGORIES, describeMap, DOOR_STYLES, fogSummary, PRESETS, shapeBounds, type Bounds, type DelveMap, type Level, type MapObject, type Shape } from '@delve/core';
+import { ASSETS, assetInfo, CATEGORIES, customAssets, describeMap, DOOR_STYLES, fogSummary, PRESETS, shapeBounds, type Bounds, type DelveMap, type Level, type MapObject, type Shape } from '@delve/core';
 
 const presetList = Object.entries(PRESETS)
   .map(([k, s]) => `\`${k}\` (${s.name})`)
@@ -153,6 +153,12 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - Don't reveal what the players haven't reached, and don't describe unrevealed rooms to the players unless the GM asks.
 - The context block says what is revealed.
 
+# Drawing new props
+- When the GM asks for a prop that neither the catalog below nor the custom props in the context block have ("draw a blacksmith's anvil with tongs, 1×1"), you may draw it: call prop_rules once (how Delve's props are drawn, with examples), then create_prop with an SVG in that style.
+- create_prop either refuses with a list of what to fix, or saves the prop and returns a preview picture (the prop on a small floor at 70 px per square, in three styles). Look at it critically: readable at that size, parts told apart, front facing south, nothing solid black by mistake. Fix it with update_prop (same id); stop after about three tries.
+- Then tell the GM it's in the Prop picker (its id and size), with the preview link from the tool result. Place it on the map only if they asked you to (add_prop with the new id).
+- Custom props (ids my-…) are shared by every GM on this Delve. For "change the anvil" or "make it bigger", get_prop gives the drawing to start from, and update_prop changes it. Delete one (delete_prop) only when asked.
+
 # Good dungeon design (when you invent)
 - **Sizes:** a cell or closet is 2×2 to 3×3, a small room 4×4, a normal room 6×6 to 8×8, a hall 10×10 or more, a lair 12×10 or bigger. Main corridors are 2 wide and side passages 1.
 - **Entrance:** give every dungeon one, a door on the outer edge or stairs. Number rooms roughly in the order the players will reach them.
@@ -220,6 +226,17 @@ export interface ChatContextInput {
 
 /** Bigger maps get the summary only; Claude can call get_map for the rest. */
 const MAX_OBJECT_TEXT = 12_000;
+/** Custom props listed in the context block; past this, Claude asks list_assets. */
+const MAX_CUSTOM_LISTED = 60;
+
+/** This Delve's own props (they change at any time, so they are in the context, not the system prompt). */
+export function customPropsText(): string | null {
+  const list = customAssets();
+  if (!list.length) return null;
+  const shown = list.slice(0, MAX_CUSTOM_LISTED).map((a) => `${a.id} ${a.w}×${a.h}${a.blocks === 'sight' ? ' blocks sight' : a.blocks === 'none' ? ' walk over' : ''} (${a.name}${a.category !== 'custom' ? `, ${a.category}` : ''})`);
+  const more = list.length > MAX_CUSTOM_LISTED ? `, and ${list.length - MAX_CUSTOM_LISTED} more (list_assets category custom)` : '';
+  return `Custom props on this Delve (place them like catalog props): ${shown.join(', ')}${more}.`;
+}
 
 export function chatContext({ map, rev, selection = [], view, levels = [] }: ChatContextInput): string {
   const byId = new Map(map.objects.map((o) => [o.id, o]));
@@ -239,6 +256,8 @@ export function chatContext({ map, rev, selection = [], view, levels = [] }: Cha
   }
   const fog = fogSummary(map);
   if (fog) lines.push(fog);
+  const custom = customPropsText();
+  if (custom) lines.push(custom);
   if (view) {
     const b = view;
     lines.push(`Visible area: x ${n(b.x0)} to ${n(b.x1)}, y ${n(b.y0)} to ${n(b.y1)} (centre ${n((b.x0 + b.x1) / 2)}, ${n((b.y0 + b.y1) / 2)}).`);

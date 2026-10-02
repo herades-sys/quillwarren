@@ -4,10 +4,12 @@
 // live socket; the map on screen only changes when the server's broadcast
 // comes back, so the user and Claude always see the same thing.
 import {
+  allAssets,
   ASSETS,
   assetInfo,
   categoryOf,
   CATEGORIES,
+  CUSTOM_CATEGORY,
   computeFloor,
   connectOps,
   countsText,
@@ -82,6 +84,8 @@ import {
   type Turned,
 } from './edit-logic.ts';
 import { initImages } from './images.ts';
+import { artUrl, loadCustomProps, onCustomProps, refreshCustomProps } from './custom-props.ts';
+import { customTile, newPropButton } from './prop-maker.ts';
 import { objectBounds, pad } from './logic.ts';
 import { initSegments } from './segments.ts';
 
@@ -132,7 +136,9 @@ const infoOf = (t: Tool): ToolInfo => TOOLS.find((x) => x.id === t) ?? POLY;
 
 const PROPS = ASSETS.filter((a) => a.kind === 'prop');
 const TILES = ASSETS.filter((a) => a.kind === 'terrain');
-const thumb = (id: string) => `/assets/props/${encodeURIComponent(id)}.svg`;
+/** Built-in props plus this Delve's custom ones (custom-props.ts), as registered right now. */
+const propList = () => allAssets().filter((a) => a.kind === 'prop');
+const thumb = (id: string) => artUrl(id);
 /** Turned by 15° steps, folded into 0…345. */
 const turned = (deg: number) => (((Math.round(deg / 15) * 15) % 360) + 360) % 360;
 const SHAPE_ICON: Record<DrawShape, IconName> = { rect: 'shape-rect', circle: 'shape-circle', oval: 'shape-oval', triangle: 'shape-triangle', hexagon: 'shape-hexagon', octagon: 'shape-octagon', freehand: 'shape-freehand' };
@@ -1391,20 +1397,37 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     return h('button', { type: 'button', class: 'ed-asset', 'aria-pressed': String(pressed), title, onclick: on }, h('span', { class: 'ed-asset-pic' }, pic), h('span', { class: 'ed-asset-name' }, a.name));
   }
 
+  // custom props (prop-maker.ts): their tiles get a badge and a menu, and the foot a "New prop…" button
+  const propMaker = { toast: ctx.toast, category: () => settings.propCategory };
+  void loadCustomProps();
+  onCustomProps(() => {
+    if (tool === 'prop') renderFlyout();
+  });
+
   function propPicker(): void {
     const grid = h('div', { class: 'ed-grid', role: 'listbox', 'aria-label': 'Props' });
     const count = h('span', { class: 'ed-flyout-count' });
+    const all = propList();
+    refreshCustomProps();
     const fill = () => {
       const words = settings.propSearch.toLowerCase().split(/\s+/).filter(Boolean);
-      const list = PROPS.filter(
+      const list = all.filter(
         (a) =>
-          (words.length ? true : settings.propCategory === 'all' || a.category === settings.propCategory) &&
+          (words.length ? true : settings.propCategory === 'all' || a.category === settings.propCategory || (settings.propCategory === 'custom' && a.custom)) &&
           words.every((w) => a.id.includes(w) || a.name.toLowerCase().includes(w) || a.tags.some((t) => t.includes(w))),
       );
-      count.textContent = `${list.length} of ${PROPS.length}`;
-      grid.replaceChildren(...(list.length ? list.map((a) => assetButton(a, a.id === settings.prop, () => ((settings.prop = a.id), fill(), draw()))) : [h('p', { class: 'hint', style: 'grid-column:1/-1' }, 'Nothing matches.')]));
+      count.textContent = `${list.length} of ${all.length}`;
+      const tile = (a: AssetInfo) => {
+        const b = assetButton(a, a.id === settings.prop, () => ((settings.prop = a.id), fill(), draw()));
+        return a.custom ? customTile(b, a, propMaker) : b;
+      };
+      grid.replaceChildren(...(list.length ? list.map(tile) : [h('p', { class: 'hint', style: 'grid-column:1/-1' }, 'Nothing matches. “New prop…” asks Claude to draw it.')]));
     };
-    const cats = [{ id: 'all', name: 'All' }, ...CATEGORIES.filter((c) => c.id !== 'terrain' && PROPS.some((a) => a.category === c.id))];
+    const cats = [
+      { id: 'all', name: 'All' },
+      ...CATEGORIES.filter((c) => c.id !== 'terrain' && all.some((a) => a.category === c.id)),
+      ...(all.some((a) => a.custom) ? [{ id: 'custom', name: 'Custom' }] : []),
+    ];
     const chips = h(
       'div',
       { class: 'ed-chips', role: 'tablist', 'aria-label': 'Categories' },
@@ -1412,7 +1435,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     );
     const search = input({ type: 'search', placeholder: 'Search props', value: settings.propSearch, 'aria-label': 'Search props', oninput: (e: Event) => ((settings.propSearch = (e.target as HTMLInputElement).value), fill()) });
     fill();
-    flyoutShell('Props', null, [h('div', { class: 'ed-search' }, iconEl('search', 15), search), chips, h('div', { class: 'ed-flyout-body' }, grid)], h('div', { class: 'ed-flyout-foot' }, h('kbd', {}, 'Q'), h('kbd', {}, 'E'), `rotate · now ${settings.propRotation}°`));
+    flyoutShell('Props', null, [h('div', { class: 'ed-search' }, iconEl('search', 15), search), chips, h('div', { class: 'ed-flyout-body' }, grid)], h('div', { class: 'ed-flyout-foot' }, h('kbd', {}, 'Q'), h('kbd', {}, 'E'), `rotate · now ${settings.propRotation}°`, h('span', { class: 'spacer' }), newPropButton(propMaker)));
     flyout.querySelector('.ed-flyout-head')!.insertBefore(count, flyout.querySelector('.ed-flyout-head .spacer'));
   }
 
@@ -1552,7 +1575,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
   /** Options grouped by category, with the current one selected (kept even if it's not in the catalog). */
   function assetOptions(list: readonly AssetInfo[], current: string): HTMLElement[] {
-    const groups = CATEGORIES.map((c) => ({ c, items: list.filter((a) => a.category === c.id) })).filter((g) => g.items.length);
+    const groups = [...CATEGORIES, CUSTOM_CATEGORY].map((c) => ({ c, items: list.filter((a) => a.category === c.id) })).filter((g) => g.items.length);
     const out: HTMLElement[] = groups.map((g) => h('optgroup', { label: g.c.name }, ...g.items.map((a) => h('option', { value: a.id, selected: a.id === current }, a.name))));
     if (!list.some((a) => a.id === current)) out.unshift(h('option', { value: current, selected: true }, current));
     return out;
@@ -1632,7 +1655,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           else upd({ scale: s });
         };
         out.push(
-          field('Prop', select(assetOptions(PROPS, o.asset), o.asset, (v) => upd({ asset: v }))),
+          field('Prop', select(assetOptions(propList(), o.asset), o.asset, (v) => upd({ asset: v }))),
           h('p', { class: 'hint' }, info ? `${info.w}×${info.h} squares · ${info.blocks === 'none' ? 'walk over it' : info.blocks === 'movement' ? 'blocks movement' : 'blocks sight'}` : `Unknown asset "${o.asset}".`),
           atFields(o, ' (centre)'),
           range('Rotation', { value: rot, min: 0, max: 345, step: 15, show: (v) => `${v}°`, keys: 'Q / E', onChange: (v) => void apply([setRotation(id, v)]) }),

@@ -49,6 +49,15 @@ export {
   propHidden,
   HIDDEN_ASSETS,
   propCentre,
+  CUSTOM_CATEGORY,
+  CUSTOM_PREFIX,
+  CUSTOM_ID,
+  PROP_CATEGORIES,
+  isCustomAsset,
+  registerAssets,
+  customAssets,
+  allAssets,
+  customAssetsVersion,
   type AssetInfo,
   type AssetKind,
   type AssetLayer,
@@ -56,6 +65,19 @@ export {
   type Category,
 } from './assets/catalog.ts';
 export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset } from './assets/svg.ts';
+export {
+  checkPropSvg,
+  checkPropSize,
+  scaleBody,
+  MAX_PROP_SVG_BYTES,
+  MAX_PROP_BODY_BYTES,
+  PROP_STROKE_WIDTHS,
+  PROP_MIN_SIZE,
+  PROP_MAX_SIZE,
+  PROP_MARGIN,
+  type PropCheck,
+} from './assets/custom.ts';
+export { inkBody, flattenPath } from './assets/ink.ts';
 export { objectBounds, insidePolygons, clipPolylines } from './geometry/objects.ts';
 export { openingsOf, openWallRings, cutSegments, floorTest } from './geometry/openings.ts';
 export { outerArchways, archwayEnds, openAreas, type OuterArchway } from './render/open-ends.ts';

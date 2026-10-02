@@ -7,7 +7,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
-  ASSETS,
+  allAssets,
   assetInfo,
   CATEGORIES,
   connectOps,
@@ -43,10 +43,12 @@ import {
 import { errorResponse, newMap, tokenGuard } from './api.ts';
 import { bearer } from './auth.ts';
 import type { ChatTokens } from './chat/tokens.ts';
+import type { PropLibrary } from './custom-props.ts';
 import type { ImageLibrary } from './images.ts';
 import { addLevel, levelsOf } from './levels.ts';
 import { renamePlace, setCategory } from './library.ts';
 import { presetArg, shapeOrPreset } from './draw-args.ts';
+import { registerPropTools } from './prop-tools.ts';
 import { render } from './render.ts';
 import { registerSegmentTools } from './segments.ts';
 import type { MapService } from './service.ts';
@@ -70,7 +72,8 @@ Wall roughness: set_map roughness 1 (smooth) to 10 (caves); rooms, corridors and
 GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.
 GM notes: rooms, corridors and terrain carry notes (a description, monsters, loot) for the GM: add_room notes, or update {"notes": "..."} on any of them. They are never drawn or exported; the GM reads them in the editor and on Delve Table, and describe_map lists them.
 Segments: save_segment saves part of a map under a name (rooms 1–5 as "Temple of Efferd", a patch of trees and grass as "Mixed forest"); place_segment adds a renumbered copy anywhere, turned if asked; fill_with_segment tiles one over the land around the rooms, keeping the floor clear. list_segments shows what is saved.
-The user's own pictures (uploaded in the editor): list_images gives their src, and add_image places one by src (a table in the middle of room 3, a rug, a mosaic on the floor).`;
+The user's own pictures (uploaded in the editor): list_images gives their src, and add_image places one by src (a table in the middle of room 3, a rug, a mosaic on the floor).
+New props: when the GM wants a prop the catalog doesn't have, draw it: prop_rules (how), then create_prop (an SVG in Delve's ink style; it returns a preview picture to check), update_prop to fix it. Custom props (ids my-…) are shared by every GM on this Delve and work like built-in ones.`;
 
 const presetNames = Object.keys(PRESETS) as [string, ...string[]];
 
@@ -116,7 +119,7 @@ function oneShape(a: { rect?: [number, number, number, number]; poly?: Point[]; 
 export function assetLine(a: AssetInfo): string {
   if (a.kind === 'terrain') return `${a.id} — ${a.name} (terrain${a.difficult ? ', difficult' : ''})`;
   const blocks = a.blocks === 'none' ? 'walk over' : a.blocks === 'movement' ? 'blocks movement' : 'blocks sight';
-  return `${a.id} — ${a.name}, ${a.w}×${a.h}, ${blocks}, ${a.category}`;
+  return `${a.id} — ${a.name}, ${a.w}×${a.h}, ${blocks}, ${a.category}${a.custom ? ', custom (drawn for this Delve)' : ''}`;
 }
 
 function where(shape: Shape): string {
@@ -124,7 +127,7 @@ function where(shape: Shape): string {
   return `${b.x1 - b.x0}×${b.y1 - b.y0} squares at ${b.x0},${b.y0}`;
 }
 
-export function buildMcpServer(service: MapService, base: string, version: string, images?: ImageLibrary): McpServer {
+export function buildMcpServer(service: MapService, base: string, version: string, images?: ImageLibrary, props?: PropLibrary): McpServer {
   const server = new McpServer({ name: 'delve', title: 'Delve map editor', version }, { instructions: INSTRUCTIONS });
   const { store } = service;
   const viewer = (id: string) => `${base}/maps/${encodeURIComponent(id)}`;
@@ -396,9 +399,9 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'list_assets',
     {
       title: 'List props and terrain',
-      description: 'The props (furniture, statues, trees, GM symbols…) and terrain tiles you can place, with ids, footprints and what they block.',
+      description: 'The props (furniture, statues, trees, GM symbols…) and terrain tiles you can place, with ids, footprints and what they block, including the custom props drawn for this Delve (ids my-…).',
       inputSchema: {
-        category: z.string().optional().describe(`One of ${CATEGORIES.map((c) => c.id).join(', ')}`),
+        category: z.string().optional().describe(`One of ${CATEGORIES.map((c) => c.id).join(', ')}, or custom (every custom prop)`),
         search: z.string().optional().describe('Words to match in names and tags, e.g. "bed" or "water"'),
       },
       annotations: { readOnlyHint: true },
@@ -406,8 +409,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const words = (a.search ?? '').toLowerCase().split(/\s+/).filter(Boolean);
-        const hits = ASSETS.filter(
-          (x) => (!a.category || x.category === a.category) && words.every((w) => x.id.includes(w) || x.name.toLowerCase().includes(w) || x.tags.some((t) => t.includes(w))),
+        const hits = allAssets().filter(
+          (x) => (!a.category || x.category === a.category || (a.category === 'custom' && x.custom)) && words.every((w) => x.id.includes(w) || x.name.toLowerCase().includes(w) || x.tags.some((t) => t.includes(w))),
         );
         if (!hits.length) return text('Nothing matches. Try another word, or no filter at all.');
         return text(hits.map(assetLine).join('\n'));
@@ -888,12 +891,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
   );
 
   registerSegmentTools(server, service, BY);
+  if (props) registerPropTools(server, props, store, base, BY);
   return server;
 }
 
 export function registerMcp(
   app: FastifyInstance,
-  deps: { service: MapService; token: string | undefined; version: string; chatTokens?: ChatTokens; images?: ImageLibrary },
+  deps: { service: MapService; token: string | undefined; version: string; chatTokens?: ChatTokens; images?: ImageLibrary; props?: PropLibrary },
 ): void {
   const tokenOnly = tokenGuard(deps.token);
   // A chat run's short-lived token works too (see chat/tokens.ts).
@@ -906,7 +910,7 @@ export function registerMcp(
   app.post('/mcp', { preHandler: guard }, async (req: FastifyRequest, reply: FastifyReply) => {
     // Chat runs call in over 127.0.0.1, so their links use the address the user's browser used.
     const base = (chatGrant(req)?.base ?? process.env.DELVE_PUBLIC_URL ?? `${req.protocol}://${req.headers.host}`).replace(/\/$/, '');
-    const server = buildMcpServer(deps.service, base, deps.version, deps.images);
+    const server = buildMcpServer(deps.service, base, deps.version, deps.images, deps.props);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     reply.hijack();
     reply.raw.on('close', () => {
