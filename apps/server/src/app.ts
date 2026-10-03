@@ -9,6 +9,9 @@ import { Sessions } from './auth.ts';
 import { registerChat, type ChatConfig } from './chat/route.ts';
 import { ChatTokens } from './chat/tokens.ts';
 import { PropLibrary, registerPropRoutes } from './custom-props.ts';
+import { FeedbackLog, FILE_NAME, SendLimits } from './feedback/log.ts';
+import { requestsSection } from './feedback/page.ts';
+import { registerFeedback } from './feedback/routes.ts';
 import { LiveHub } from './live.ts';
 import { isLoggedIn, registerLogin, useAccounts, type EditorAuth } from './login.ts';
 import { publicHostOf, registerPublicGate } from './public.ts';
@@ -82,6 +85,9 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   const accounts = new AccountStore(opts.dataDir ? join(opts.dataDir, 'accounts.db') : ':memory:', opts.token);
   app.addHook('onClose', async () => accounts.close());
   useAccounts(auth, accounts);
+  // Feature requests from /feedback: <DELVE_DATA>/feature-requests.txt (a temp file without one).
+  const feedback = new FeedbackLog(opts.dataDir ? join(opts.dataDir, FILE_NAME) : undefined);
+  app.addHook('onClose', async () => feedback.close());
   // Through the Cloudflare tunnel: no API token, no MCP, and nothing but the table and the login without logging in.
   registerPublicGate(app, { publicHost: publicHostOf(opts.publicUrl), loggedIn: (req) => isLoggedIn(auth, req) });
   if (opts.openEdit) app.log.warn('DELVE_INSECURE_OPEN_EDIT is on: every browser can edit. Never use this on the live server.');
@@ -112,14 +118,14 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerPropRoutes(scoped, { props, store, token: opts.token, auth });
     registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens, images, props });
     registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat });
-    registerLogin(scoped, auth);
+    registerLogin(scoped, auth, { adminSection: () => requestsSection(feedback.summary()) });
     registerViewer(scoped, info, store, auth, opts.chat);
     registerStack(scoped, info, store);
     registerPreview(scoped, info, store, auth);
     registerTracePage(scoped, info, auth);
     registerHandoutPage(scoped, store, auth, info.version);
     registerUi(scoped, info);
-    registerTable(scoped, {
+    const table = registerTable(scoped, {
       maps: store,
       auth,
       token: opts.token,
@@ -128,6 +134,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
       onMapChange: (cb) => service.onChange(cb),
       ...(opts.discord ? { discord: opts.discord } : {}),
     });
+    registerFeedback(scoped, { auth, log: feedback, limits: new SendLimits(), table });
   });
   return app;
 }

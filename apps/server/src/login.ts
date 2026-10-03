@@ -31,7 +31,8 @@ export const canLogIn = (auth: EditorAuth): boolean => auth.sessions.legacyOff |
 
 const LOCKED = 'Too many failed tries. Wait 15 minutes, then try again.';
 
-export function registerLogin(app: FastifyInstance, auth: EditorAuth): void {
+/** `adminSection`: more of /admin, drawn per request (the feature requests). */
+export function registerLogin(app: FastifyInstance, auth: EditorAuth, o: { adminSection?: () => string } = {}): void {
   app.get('/login', async (req, reply) => {
     const next = safeNext((req.query as { next?: string }).next);
     if (auth.sessions.legacyOff) return sendPage(reply, 200, loginPage({ next }));
@@ -90,5 +91,5 @@ export function registerLogin(app: FastifyInstance, auth: EditorAuth): void {
     passwordSet: canLogIn(auth),
   }));
 
-  if (auth.accounts) registerAccounts(app, auth, auth.accounts);
+  if (auth.accounts) registerAccounts(app, auth, auth.accounts, o);
 }

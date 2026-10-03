@@ -38,7 +38,7 @@ const notice = (q: unknown): string | undefined => {
   return typeof done === 'string' ? NOTICES.get(done) : undefined;
 };
 
-export function registerAccounts(app: FastifyInstance, auth: EditorAuth, accounts: AccountStore): void {
+export function registerAccounts(app: FastifyInstance, auth: EditorAuth, accounts: AccountStore, o: { adminSection?: () => string } = {}): void {
   const loggedIn = (req: FastifyRequest): boolean => auth.sessions.valid(readCookie(req.headers.cookie, SESSION_COOKIE));
   const userAgent = (req: FastifyRequest): string => String(req.headers['user-agent'] ?? '');
   const bootstrapping = (req: FastifyRequest): boolean => !auth.sessions.legacyOff && loggedIn(req);
@@ -196,8 +196,8 @@ export function registerAccounts(app: FastifyInstance, auth: EditorAuth, account
 
   // ---------- admin ----------
 
-  const adminView = (reply: FastifyReply, me: { user: User; session: Session }, o: { newLink?: NewLink; notice?: string; error?: string }, code = 200) =>
-    sendPage(reply, code, adminPage({ me: me.user, session: me.session, users: accounts.users(), sessions: accounts.sessions(), now: Date.now(), ...o }));
+  const adminView = (reply: FastifyReply, me: { user: User; session: Session }, v: { newLink?: NewLink; notice?: string; error?: string }, code = 200) =>
+    sendPage(reply, code, adminPage({ me: me.user, session: me.session, users: accounts.users(), sessions: accounts.sessions(), now: Date.now(), extra: o.adminSection?.(), ...v }));
   const refuseNonAdmin = (reply: FastifyReply) =>
     sendPage(reply, 403, messagePage('Admins only', ['Only admins can open this page.'], [{ href: '/', text: 'Back to Delve' }, { href: '/account', text: 'Your account' }]));
 

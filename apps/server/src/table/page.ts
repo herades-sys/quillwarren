@@ -39,6 +39,7 @@ export function tablePage(o: TablePageOptions): string {
     ${gm ? `<label class="layer" title="The layer you select and move tokens on"><span>Layer</span><select id="layer-select"><option value="map">Map</option><option value="tokens" selected>Tokens</option><option value="gm">GM only</option></select></label><span class="vsep tbl-desk" style="margin:0 4px"></span>` : ''}
     <span class="me" id="me"><span class="dot" id="me-dot"></span><span id="me-name">${esc(o.me.name)}</span><span class="role muted">· ${gm ? 'GM' : 'Player'}</span></span>
     ${account}
+    ${gm ? '' : `<a class="btn btn-plain tbl-desk tbl-ideas" href="/feedback?from=${encodeURIComponent(`/play/${o.gameId}`)}" title="Request a feature: ask for one, or report a problem">${icon('send', { size: 15 })}<span>Request a feature</span></a>`}
     <a class="btn btn-plain" id="to-3d" href="/play/${encodeURIComponent(o.gameId)}/3d" title="The table in 3D (the same game, live)">${icon('3d', { size: 17 })}3D</a>
     <button type="button" class="btn btn-icon" id="side-toggle" aria-pressed="true" aria-controls="side" aria-label="Show or hide the panel" title="Panel">${icon('chat', { size: 18 })}<span class="badge" id="side-badge" hidden></span></button>
   </div>
@@ -81,6 +82,7 @@ export function tablePage(o: TablePageOptions): string {
     title: `${o.gameName} · Delve Table`,
     body,
     bodyClass: gm ? 'role-gm' : 'role-player',
-    extra: `<style>${TABLE_BASE_CSS}${TABLE_2D_CSS}${gm ? NOTES_CSS : ''}</style>`,
+    // players' "Request a feature" link: just its icon where the bar gets tight, and gone where it's tighter
+    extra: `<style>${TABLE_BASE_CSS}${TABLE_2D_CSS}${gm ? NOTES_CSS : '@media (max-width: 1100px) { .tbl-ideas > span { display: none; } } @media (max-width: 780px) { .tbl-ideas { display: none !important; } }'}</style>`,
   });
 }

@@ -57,12 +57,13 @@ const initials = (name: string): string => {
 function barEnd(a: Access): string {
   const play = `<a class="btn btn-primary" href="/play" title="Delve Table: your games, invite players, play">${icon('play', { size: 15 })}Play</a>`;
   const admin = a.account?.role === 'admin' ? `<a class="btn btn-plain lib-wide" href="/admin" title="Accounts, GMs and logins">${icon('admin', { size: 16 })}Admin</a>` : '';
+  const ideas = a.loggedIn ? `<a class="btn btn-plain lib-wide lib-ideas" href="/feedback" title="Request a feature: ask for one, or report a problem">${icon('send', { size: 15 })}<span>Request a feature</span></a>` : '';
   const logout = `<form method="post" action="/logout" class="inline"><button class="btn btn-ghost" type="submit">Log out</button></form>`;
   let who: string;
   if (a.account) who = `<a class="lib-account" href="/account" title="Your account"><span class="avatar">${esc(initials(a.account.name))}</span>${esc(a.account.name)}</a>${logout}`;
   else if (a.loggedIn) who = logout;
   else who = a.passwordSet ? `<a class="btn btn-secondary" href="/login">${icon('lock', { size: 15 })}Log in to edit</a>` : `<span class="text-muted lib-wide" style="font-size:12px">Editing: set a password with <code>delve-passwd</code> on the container</span>`;
-  return `${play}${admin}<span class="vsep" style="margin:0 4px"></span>${themeSwitch()}${who}`;
+  return `${play}${ideas}${admin}<span class="vsep" style="margin:0 4px"></span>${themeSwitch()}${who}`;
 }
 
 const secureBanner = (): string => `<div class="notice notice-warning lib-secure" role="note">${icon('alert', { size: 16 })}
@@ -173,6 +174,7 @@ const PAGE_CSS = `
   .lib-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--color-text-faint); font-size: var(--text-sm); padding-top: var(--space-5); box-shadow: inset 0 1px 0 var(--color-border); }
   .lib-foot a { color: var(--color-text-muted); }
   .lib-foot code { font-size: var(--text-xs); }
+  @media (max-width: 900px) { .lib-ideas > span { display: none; } }
   @media (max-width: 640px) { .lib-wide { display: none !important; } .lib-account { font-size: 0; gap: 0; } .lib-two { grid-template-columns: 1fr; } .topbar .crumb-title, .topbar-brand + .vsep { display: none; } .lib-grid .new-tile { display: none; } }
 `;
 
@@ -237,7 +239,7 @@ ${cards}
     <span>Release <code>${esc(info.version)}</code></span>
     <span>Started ${esc(info.started)}</span>
     <span><code>${FORMAT} v${FORMAT_VERSION}</code></span>
-    <a href="/health">/health</a><a href="/api/v1/maps">/api/v1/maps</a><a href="/ui">Style guide</a>
+    <a href="/health">/health</a><a href="/api/v1/maps">/api/v1/maps</a><a href="/ui">Style guide</a><a href="/feedback">Request a feature</a>
   </footer>
 </main>`;
   return htmlDocument({ title: 'Delve', body, extra: `<style>${PAGE_CSS}${LIBRARY_CSS}</style>` });

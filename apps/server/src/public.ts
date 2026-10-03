@@ -34,10 +34,11 @@ export function clientIp(req: FastifyRequest): string {
   return fromLoopback(req) && typeof cf === 'string' && /^[0-9A-Fa-f:.]{2,45}$/.test(cf) ? cf : req.ip;
 }
 
-/** Open to anyone through the tunnel: the tabletop, logging in, and static files. Everything else needs a login. */
+/** Open to anyone through the tunnel: the tabletop, logging in, the feature request form (it checks players itself), and static files. Everything else needs a login. */
 const OPEN = [
   /^\/health$/,
   /^\/play(\/|$|\?)/,
+  /^\/feedback(\?|$)/,
   /^\/auth\//,
   /^\/(login|logout)(\?|$)/,
   /^\/account\/setup(\?|$)/,

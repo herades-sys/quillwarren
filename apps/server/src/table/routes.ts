@@ -16,9 +16,11 @@ import {
   clearPlayerCookie,
   GAME_ID,
   isGm,
+  isGmAccount,
   memberOf,
   playerCookie,
   playerCookieGames,
+  playerCookieName,
   TableKeys,
   type AccessDeps,
 } from './access.ts';
@@ -45,6 +47,29 @@ export interface TableDeps {
   onMapChange?: (cb: (mapId: string, change?: { notesOnly: boolean }) => void) => void;
   /** Discord login for players (DELVE_DISCORD_CLIENT_ID/SECRET). Without it there's no Discord anywhere. */
   discord?: DiscordConfig;
+}
+
+/** A player's seat in a game, as a request holds it. */
+export interface PlayerSeat {
+  gameId: string;
+  game: string;
+  memberId: string;
+  name: string;
+  /** A player cookie from an invite link, or a seat of the request's Discord login. */
+  via: 'invite' | 'discord';
+  accountId?: string;
+}
+
+/** Who a request is at the tables, for pages outside them (the feature request form). */
+export interface TableIdentity {
+  /** Discord login is set up. */
+  discord: boolean;
+  /** The request's Discord login, if any. */
+  account(req: FastifyRequest): { id: string; name: string } | null;
+  /** The Discord login is GM of every game (DELVE_GM_DISCORD_IDS). */
+  coGm(req: FastifyRequest): boolean;
+  /** Player seats: valid player cookies first, then seats of the Discord login. */
+  seats(req: FastifyRequest): PlayerSeat[];
 }
 
 /** A map edit comes in many small changes (a drag, a reveal): wait this long for them to settle. */
@@ -93,7 +118,7 @@ export function pageFromMap(map: DelveMap, name?: string): Omit<Page, 'id'> {
   };
 }
 
-export function registerTable(app: FastifyInstance, deps: TableDeps): void {
+export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdentity {
   const store = new TableStore(deps.dataDir ? join(deps.dataDir, 'table.db') : ':memory:');
   const assets = new TableAssets(deps.dataDir ? join(deps.dataDir, 'table-assets') : undefined);
   const keys = new TableKeys(deps.token);
@@ -551,4 +576,32 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): void {
         .redirect(`/play/${next.id}`, 303);
     });
   });
+
+  return {
+    discord: Boolean(discord),
+    account: (req) => {
+      const a = accountOf(req);
+      return a ? { id: a.id, name: a.name } : null;
+    },
+    coGm: (req) => isGmAccount(access, req),
+    seats: (req) => {
+      const out: PlayerSeat[] = [];
+      for (const id of playerCookieGames(req.headers.cookie)) {
+        const state = store.get(id);
+        if (!state) continue;
+        const memberId = keys.readPlayer(id, readCookie(req.headers.cookie, playerCookieName(id)), (m) => store.seatNonce(id, m));
+        const m = state.members.find((x) => x.id === memberId && x.role === 'player');
+        if (m) out.push({ gameId: id, game: state.name, memberId: m.id, name: m.name, via: 'invite' });
+      }
+      const account = accountOf(req);
+      if (account) {
+        for (const g of store.list()) {
+          const state = store.get(g.id);
+          const m = state && !out.some((s) => s.gameId === g.id) ? accountSeat(state, account.id) : undefined;
+          if (state && m) out.push({ gameId: state.id, game: state.name, memberId: m.id, name: m.name, via: 'discord', accountId: account.id });
+        }
+      }
+      return out;
+    },
+  };
 }

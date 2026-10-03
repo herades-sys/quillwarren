@@ -85,7 +85,7 @@ export function lobbyPage(games: GameSummary[], account?: { name: string }): str
   return shell(
     'Delve Table',
     `<main class="page">
-  <div class="top"><h1>Delve Table</h1><span class="spacer"></span><a class="button" href="/">Delve maps</a></div>
+  <div class="top"><h1>Delve Table</h1><span class="spacer"></span><a class="button" href="/feedback?from=%2Fplay">Request a feature</a><a class="button" href="/">Delve maps</a></div>
   ${account ? accountLine(account.name, '/play') : ''}
   <form method="post" action="/play/new" class="row card">
     <label>Name <input name="name" required maxlength="80" placeholder="e.g. Curse of the Crypt"></label>
@@ -114,7 +114,8 @@ export interface DiscordLogin {
 /** What a player (or anyone not logged in) sees at /play. */
 export function notGmPage(yours: { id: string; name: string }[], canLogIn: boolean, discord?: DiscordLogin): string {
   const list = yours.length
-    ? `<p>Your games:</p><p class="links">${yours.map((g) => `<a class="button primary" href="/play/${encodeURIComponent(g.id)}">${esc(g.name)}</a>`).join(' ')}</p>`
+    ? `<p>Your games:</p><p class="links">${yours.map((g) => `<a class="button primary" href="/play/${encodeURIComponent(g.id)}">${esc(g.name)}</a>`).join(' ')}</p>
+<p class="note">Missing something at the table, or found a problem? <a href="/feedback?from=%2Fplay">Request a feature</a>.</p>`
     : '';
   const login = canLogIn ? `<p class="note">Are you the GM? <a href="/login?next=/play">Log in</a>.</p>` : '';
   const who = discord?.account

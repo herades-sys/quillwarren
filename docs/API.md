@@ -31,6 +31,7 @@ The browser editor has two kinds of account, **admin** and **GM**. Both can edit
 - **Password only** (GMs with an authenticator): the other way round, without a new link. The GM keeps their password and sessions; their authenticator, recovery codes and any open "new authenticator" link stop working. A GM still setting up keeps their setup link, which then asks for the password only. Admins can't be switched.
 - Make admin / make GM, remove an account, and see and end sessions ("Log out everywhere" per account, or "Log out everyone except me").
 - The last active admin can't be removed, demoted or reset. Admins can't remove, demote or reset themselves here (their own login is on `/account`).
+- **Feature requests:** the count, the newest 5, and the whole file to view or download (see "Feature requests: `/feedback`").
 
 **Account page `/account`.**
 - Change your password (needs the current password and a code; your other devices are logged out).
@@ -83,7 +84,7 @@ The browser editor has two kinds of account, **admin** and **GM**. Both can edit
 `https://delve.example.com` reaches Delve through the tunnel "delve". cloudflared runs on the container (`cloudflared-delve.service`) and connects from loopback. Code: `apps/server/src/public.ts`.
 - **How a tunnel request is recognised:** the host of `DELVE_PUBLIC_URL`, or Cloudflare's `CF-Connecting-IP` or `CF-Ray` header. Claiming either only ever takes rights away.
 - **Home only:** `/mcp` answers 404 and the API token (`Authorization` or `?token=`) gets 403. The one exception is a GM's setup link, `/account/setup?token=`.
-- **Open without a login:** `/play/*`, `/api/v1/games/*` (the table's own membership checks), `/auth/*`, `/login`, `/logout`, `/account/setup`, `/api/v1/session`, `/health`, and static files (`/assets/*`, `/fonts/*`, `/favicon.svg`).
+- **Open without a login:** `/play/*`, `/api/v1/games/*` (the table's own membership checks), `/feedback` (the form checks for a login or a player seat itself; see "Feature requests"), `/auth/*`, `/login`, `/logout`, `/account/setup`, `/api/v1/session`, `/health`, and static files (`/assets/*`, `/fonts/*`, `/favicon.svg`).
   - **Everything else needs an editor login** (admin or GM account). Pages redirect to `/login?next=…`; the API answers 401.
   - **Players' map pictures** come from `GET /api/v1/games/:id/pages/:pageId/background.png?view=players|gm`. It is for members only: players get only their own page in the players' view, and only the GM may ask for `view=gm`. On a page with dynamic vision, the players' picture is cut to what the party has explored, black elsewhere (TABLE.md, "Vision and light").
   - **The 3D table** (`/play/:id/3d`) and its scene, `GET /api/v1/games/:id/pages/:pageId/scene3d.json?view=players|gm`, follow the same rules; the players' scene holds only the walls, doors and stairs they have seen (docs/TABLE.md, "3D table view").
@@ -640,6 +641,29 @@ A read-only page:
 - **Controls:** drag to pan; wheel, `+` and `-` to zoom; double-click or `F` to fit. It follows `focus` with a short animation and an orange highlight.
 - **Options:** GM or players' view, style preview, a Roll20 PNG button.
 - **Connection:** it reconnects by itself (for example across a release) and resyncs if it missed a revision.
+
+## Feature requests: `/feedback`
+
+"Request a feature": a form where people ask for features or report problems. Every request is appended to a text file that only admins read. Code: `apps/server/src/feedback/` (`log.ts` the file and the limits, `routes.ts`, `page.ts`).
+- **The form** (`GET /feedback?from=<path>`): kind (Feature idea, Problem / bug, Other), a title (required, ≤ 120 characters), a description (required, ≤ 4000), optionally the map or page it is about (prefilled from `from`, ≤ 200) and a name (prefilled from the login, ≤ 60). After sending it shows a thank-you and an empty form.
+- **Who may send:** admin and GM accounts, the shared editor login while it still counts, Delve Table players (a valid player cookie from an invite link, or a Discord login with a seat in a game) and the Discord co-GMs. Everyone else, public visitors through the tunnel included, gets a short note with the login links (`/login`, and `/auth/discord` when Discord is set up) instead of the form; their posts get 401. `/feedback` is open through the tunnel so players reach it; the form checks the login itself.
+- **Who sent it** comes from the login: the account's name and role, the player's seat name and game (and whether it came from an invite link or Discord), "GM at the table" for co-GMs, or "shared editor login" / "open dev server". A typed name is only ever recorded next to that (`… as "Tim"`).
+- **Abuse limits:**
+  - posts must come from Delve's own origin (403 otherwise), like the other forms;
+  - a hidden honeypot field (`website`): if it is filled in, the answer looks like a success but nothing is kept;
+  - at most 5 requests per person in any hour and 50 from everyone in any 24 hours (429, the text stays in the form). The counts are kept in memory, so a restart starts afresh;
+  - the length limits above, a 64 KB body limit, and typed text cleaned: control characters and bidi marks stripped, one-line fields on one line, line breaks in the description kept as typed (at most one empty line in a row).
+- **The file:** `${DELVE_DATA}/feature-requests.txt` (UTF-8, made on the first request; a temp file without `DELVE_DATA`). The form only appends to it; it is never served to anyone but admins. One block per request, numbered in order (the next number is the highest in the file plus one, so hand edits are fine):
+  ```
+  ==== #12 · 2026-10-03 21:40 · Feature idea · from Robin (GM) · about /maps/map_x
+  Title: Legend on the 3D view
+  <the description, line breaks as typed>
+
+  ```
+  The time is the server's local time. Player names, game names and typed names are in quotes. A description line that starts with `====` gets a space in front, so it can't pass for a header. Each block is written with one append and fsync; a write that fails halfway is cut off again, and a file edited by hand without a final line break gets one before the next block.
+- **Reading them (admins only):** `/admin` has a "Feature requests" section with the count, the newest 5, and links to `GET /admin/feature-requests.txt` (the whole file, `text/plain; charset=utf-8`, `no-store`, `nosniff`) and `?download=1` (the same as an attachment). GMs get 403 there (they can send but not read), players and strangers the login redirect (through the tunnel: 303 for pages, 401 otherwise). Before the first admin account exists nobody can read the file in the browser; it is on the container.
+- **Links to the form:** the start page's top bar ("Request a feature", wide screens) and footer, the editor's ⋯ menu and the keyboard shortcuts dialog (both with `from=/maps/<id>`), the players' `/play` page and the GM's table lobby, and the players' table top bar (wide screens, `from=/play/<id>`).
+- **Tests:** `apps/server/test/feedback.test.ts`.
 
 ## Example
 

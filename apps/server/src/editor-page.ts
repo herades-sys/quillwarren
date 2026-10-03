@@ -56,6 +56,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   }).replace(/</g, '\\u003c');
   const q = `view=${view}${style ? `&style=${encodeURIComponent(style)}` : ''}`;
   const loginHref = `/login?next=${encodeURIComponent(`/maps/${id}`)}`;
+  const feedbackHref = `/feedback?from=${encodeURIComponent(`/maps/${id}`)}`;
 
   // Export: the same links in the Export menu and, on narrow screens, the ⋯ menu.
   const exports: [IconName, string, string, string, string, string][] = [
@@ -86,6 +87,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
     cropGroup,
     edit ? `<button class="menu-item has-icon" role="menuitem" type="button" data-act="map-settings">${ic('settings', 17)}<span class="spacer">Map settings</span></button>` : '',
     `<button class="menu-item has-icon" role="menuitem" type="button" data-act="shortcuts">${ic('keyboard', 17)}<span class="spacer">Keyboard shortcuts</span><kbd>?</kbd></button>`,
+    menuItem('send', '', feedbackHref, 'Request a feature', 'Or report a problem', ''),
   ].join('');
 
   const viewSeg = (name: string, cls = '') =>
@@ -179,7 +181,8 @@ ${viewSeg('view', '')}
 ${editorParts.phonebar}
 <div class="dialog-backdrop" id="shortcuts" hidden><div class="dialog ed-shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
   <div class="dialog-head"><div class="dialog-title" id="shortcuts-title">Keyboard shortcuts</div><button class="btn btn-icon" type="button" data-close aria-label="Close">${ic('x', 17)}</button></div>
-  <div class="ed-keys" id="shortcuts-list"></div></div></div>
+  <div class="ed-keys" id="shortcuts-list"></div>
+  <p class="field-hint" style="margin:0">Missing a feature, or found a problem? <a href="${esc(feedbackHref)}">Request a feature</a></p></div></div>
 <script id="delve-initial" type="application/json">${initial}</script>
 <script type="module" src="/assets/viewer.js?v=${encodeURIComponent(info.version)}"></script>`;
 

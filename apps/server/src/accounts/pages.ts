@@ -333,7 +333,8 @@ export interface NewLink {
   passwordOnly?: boolean;
 }
 
-export function adminPage(o: { me: User; session: Session; users: User[]; sessions: Session[]; now: number; newLink?: NewLink; notice?: string; error?: string }): string {
+/** `extra`: more sections at the end (the feature requests, feedback/page.ts). */
+export function adminPage(o: { me: User; session: Session; users: User[]; sessions: Session[]; now: number; newLink?: NewLink; notice?: string; error?: string; extra?: string }): string {
   const link = o.newLink
     ? `<section class="panel"><h2 class="panel-title">Setup link for ${esc(o.newLink.name)}</h2>
 <p>Send this link to ${esc(o.newLink.name)}, for example in a private message. It works once, until ${esc(when(o.newLink.expires))}. With it they choose their own password${o.newLink.passwordOnly ? '' : ' and set up their authenticator app'}.${o.newLink.reset ? ' Their old login no longer works.' : ''}</p>
@@ -361,6 +362,7 @@ ${check('Password only (GMs, no authenticator app)', 'password_only')}
 ${sessionRows(o.sessions, o.session.id, '/admin', true)}
 ${o.sessions.length > 1 ? `<form class="form" method="post" action="/admin" data-confirm="Log out everyone except you?"><input type="hidden" name="action" value="end-all"><button class="btn btn-secondary" type="submit">Log out everyone except me</button></form>` : ''}
 </section>
+${o.extra ?? ''}
 </main>
 <script>
   document.querySelectorAll('form[data-confirm]').forEach((f) => f.addEventListener('submit', (e) => { if (!confirm(f.dataset.confirm)) e.preventDefault(); }));
