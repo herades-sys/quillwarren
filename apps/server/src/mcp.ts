@@ -1010,7 +1010,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     {
       title: 'Show your plan',
       description:
-        'Show the GM your plan in the editor\'s chat panel: a checklist with a progress bar and a time estimate. ' +
+        'ALWAYS call this first for any request that takes 3 or more steps, before any other tool. It shows the GM your plan in the editor\'s chat panel: a checklist with a progress bar and a time estimate. ' +
         'For requests with 3 or more steps: call it first with every step (short titles in the user\'s language, the first "active", the rest "pending"), ' +
         'then again after each step with the whole list (that step "done", the next "active"). Each call replaces the plan. ' +
         'It changes nothing on the map and is not an undo step. Outside the chat panel it shows nowhere.',

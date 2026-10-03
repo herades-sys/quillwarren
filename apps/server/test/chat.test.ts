@@ -218,6 +218,8 @@ describe('what Claude is told', () => {
     expect(ctx).toContain('Visible area: x 0 to 20, y 0 to 30 (centre 10, 15)');
     expect(ctx).toContain('Objects (exact, in squares):');
     expect(ctx).toMatch(/d\d+ door at \[/);
+    // the plan reminder comes last, right before the user's words (the system prompt alone was ignored)
+    expect(ctx).toMatch(/Plan: if this request takes 3 or more steps, call plan first[^\n]*\n\[End of Delve context\]$/);
     expect(chatPrompt({ map: testMap, rev: 7 }, '  make it bigger ')).toMatch(/\[End of Delve context\]\n\nmake it bigger$/);
   });
 

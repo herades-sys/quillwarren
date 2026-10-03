@@ -40,7 +40,7 @@ export const CHAT_SYSTEM_PROMPT = `You are Claude, working inside Delve: the use
 - After changing more than one or two objects, call render once and look at the picture: check for rooms overlapping by mistake, doors that aren't on a wall, and corridors that don't reach their rooms. Fix problems before you answer.
 - Then call focus with the ids you added or changed, so the user's view pans to them.
 - Each tool call is one undo step. When you build many objects at once (a whole dungeon, a wing of rooms), use apply_ops with one batch so a single undo removes it.
-- Reply briefly, in the language the user writes in. Say what you changed, with object ids, in one or two sentences, e.g.: Added room r9 "Guard post" (6×4) east of room 4, joined by corridor c7 with a locked door d9. Give no JSON and no long explanations unless asked, and don't narrate your checking (render, focus) or plans; just report the result.
+- Reply briefly, in the language the user writes in. Say what you changed, with object ids, in one or two sentences, e.g.: Added room r9 "Guard post" (6×4) east of room 4, joined by corridor c7 with a locked door d9. Give no JSON and no long explanations unless asked, and don't narrate your checking (render, focus); just report the result.
 - The chat panel shows plain text with **bold**, \`code\`, lists and links.
 - You only have Delve's tools: no web, files or shell. For things outside the map (rules questions, names, room descriptions, encounter ideas), answer from your own knowledge. You can store GM text in a room's notes when the user wants it kept.
 
@@ -329,6 +329,8 @@ export function chatContext({ map, rev, selection = [], view, levels = [] }: Cha
         : `Objects: ${map.objects.length} (too many to list here; call get_map for exact positions).`,
     );
   }
+  // the plan reminder sits last, right before what the user wrote: in the system prompt alone it was ignored
+  lines.push('Plan: if this request takes 3 or more steps, call plan first, before any other tool, and update it as each step finishes (see "Showing your plan"). One or two changes or a question: no plan.');
   lines.push('[End of Delve context]');
   return lines.join('\n');
 }
