@@ -134,6 +134,28 @@ function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewe
   // the legend: legend=0 in the page's address starts without it, legend=1 keeps it even for a single entry (MCP export)
   var legendQ = new URLSearchParams(location.search).get('legend');
   if (legendQ === '0') $('legend').checked = false;
+  // the sheet's options are remembered in this browser, the title per map; legend= in the address still wins
+  var KEY = 'delve-handout-options', TITLE_KEY = 'delve-handout-title:' + init.id;
+  var SAVED = ['paper', 'orientation', 'compass', 'scale', 'frame', 'legend', 'stains', 'names', 'revealed'];
+  var readSaved = function () { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } };
+  (function () {
+    var saved = readSaved();
+    SAVED.forEach(function (k) {
+      var el = $(k);
+      if (!el || !(k in saved) || el.disabled || (k === 'legend' && legendQ)) return;
+      if (el.type === 'checkbox') el.checked = Boolean(saved[k]);
+      else if ([].some.call(el.options, function (o) { return o.value === saved[k]; })) el.value = saved[k];
+    });
+    try { var t = localStorage.getItem(TITLE_KEY); if (t !== null) $('title').value = t; } catch (e) {}
+  })();
+  function remember() {
+    var saved = readSaved();
+    SAVED.forEach(function (k) { var el = $(k); if (el && !el.disabled) saved[k] = el.type === 'checkbox' ? el.checked : el.value; });
+    try {
+      localStorage.setItem(KEY, JSON.stringify(saved));
+      if ($('title').value === init.name) localStorage.removeItem(TITLE_KEY); else localStorage.setItem(TITLE_KEY, $('title').value);
+    } catch (e) {}
+  }
   function query(extra) {
     var q = new URLSearchParams({ paper: $('paper').value, orientation: $('orientation').value });
     if (crop) q.set('crop', crop);
@@ -188,7 +210,7 @@ function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewe
   };
   document.querySelectorAll('aside select, aside input').forEach(function (el) {
     if (el.closest('#notes-panel')) return;
-    el.addEventListener(el.type === 'text' ? 'input' : 'change', function () { clearTimeout(timer); timer = setTimeout(update, el.type === 'text' ? 500 : 0); });
+    el.addEventListener(el.type === 'text' ? 'input' : 'change', function () { remember(); clearTimeout(timer); timer = setTimeout(update, el.type === 'text' ? 500 : 0); });
   });
   $('print').addEventListener('click', function () {
     var img = $('print-sheet');

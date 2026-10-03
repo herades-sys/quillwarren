@@ -107,6 +107,9 @@ describe('the handout legend on the page and over MCP', () => {
     expect(page).toMatch(/id="frame" type="checkbox" checked>.*?<\/label>\s*<label class="check"[^>]*><input id="legend" type="checkbox" checked>/s);
     expect(page).toContain("['compass', 'scale', 'frame', 'stains', 'legend']");
     expect(page).toContain("if (legendQ === '0') $('legend').checked = false;");
+    // the options are remembered in this browser, the title per map
+    expect(page).toContain("var KEY = 'delve-handout-options', TITLE_KEY = 'delve-handout-title:' + init.id;");
+    expect(page).toContain("function () { remember(); clearTimeout(timer);");
   });
 
   it('takes legend in the handout export', async () => {
