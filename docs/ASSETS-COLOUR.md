@@ -4,13 +4,39 @@ Coloured top-down props for Delve: lots of trees, carpets and rugs, trapdoors an
 
 The black-and-white rules in `docs/ASSETS.md` stay for the existing ink props. These colour props are a second library next to them.
 
-## Before they can go into Delve
+## In Delve
 
-Today Delve accepts exactly three prop colours (ink, paper, shade), because every map style recolours those three. Colour props need a small addition in Delve (not part of these prompts):
-- **The palette below**, exact hex values only, checked like the three inks today.
-- **Per style:** classic and clean show the colours as drawn. Parchment tones them toward sepia. Old-school blue and print map each colour to their own ramp by lightness, so a colour prop still reads on a blue or black-and-white map.
-- **GM hints:** hidden props may use `stroke-dasharray` for their dashed red-light GM outline.
-- **Manifest extras:** `"palette": "colour"`, `"layer": "floor"` (rugs, trapdoors, leaf piles: drawn under other props), `"hidden": true` (GM only, like today's pressure plates), `"group"` (variants of one thing, e.g. `oak`, so the prop brush can mix them).
+Colour props are a second built-in library beside the ink props (since 2026-10-03). Maps place them like any prop: `{ type: "prop", asset: "c-oak-a", at, rotation?, scale? }`.
+
+- **Ids:** the art's id behind the prefix `c-` (core `COLOUR_PREFIX`): `oak-a` is `c-oak-a`, and colour `rocks/stalagmites` is `c-stalagmites` beside the ink `stalagmites`. Ink ids never start with `c-` (`npm run assets` drops one that does) and custom props start with `my-`, so the three libraries can't clash. The art's ids are unique across all batches (the checker and the import both refuse a repeat), so the category is not part of the id; map files keep these ids for good, so an id is never reused for different art.
+- **Files:** the art as drawn in `delve-props-design-system/assets/colour/<category>/<id>.svg`, every imported manifest entry (plus its `batch`) in `assets/colour/manifest.json`, and the catalog in `packages/core/src/assets/catalog-colour.json`: one compact row per asset (`[id, name, category, w, h, "tags,comma,separated", blocks, layer, group, "hidden modular tile difficult"]`), because every browser bundle carries it. The art itself loads per prop, like the ink art.
+- **The palette** is checked exactly: core `COLOUR_PALETTE` (`assets/colour.ts`) must equal Prompt 0 above (a test compares them). `parseAssetSvg` keeps palette colours only for colour props and snaps anything else to the nearest palette colour; ink props keep the three inks. Hidden colour props may use `stroke-dasharray` (their GM outline), and the root `<g fill="none" stroke-linecap="round" stroke-linejoin="round">` is kept with its inherited attributes.
+- **Per style** (`Style.colours`, worked out once per style by core `colourMap`):
+  - classic-hatching and clean: as drawn.
+  - parchment (and the handout): the style's sepia ramp (its prop ink → shade → paper) at each colour's lightness, plus 45 % of the colour's own hue, so props sit on the paper and stay apart.
+  - old-school blue and print: each colour by its lightness onto the style's ramp from ink through shade to paper, in 6 tones (`rampLevels`), monotone in lightness. Ink stays the style's ink, `#999999` lands exactly on its shade and white on its paper, so colour props match the ink props.
+  - Every picture uses this: server PNG and SVG, the editor and viewer, the players' screen, the handout, the 3D floors and Delve Table pages.
+- **Manifest fields:**
+  - `layer: "floor"` props (rugs, trapdoors, leaf piles, fields) draw in the decals layer, under the walls and the other props, so a table stands on a rug.
+  - `hidden: true` props are GM-only until the GM shows them (`gmOnly: false`), like the ink pressure plates, spike traps and floor runes, which now carry `hidden` in catalog.json too (core `hiddenByDefault`).
+  - `group` names the variants of one thing. The prop brush (Shift-drag, editor context bar "Mix <group>", on by default) and MCP `add_props_along` (`mix`, default on) mix them at random, seeded per stroke.
+  - Ruin walls and foundations (category `ruins`, groups `ruin-wall…` and `ruin-foundation`) are marked `modular` in the catalog: the editor places and moves them on whole squares and MCP `add_prop` snaps them there, so the wall's centre line runs through square centres and open ends meet.
+- **Terrain textures** (`"tile": true`: floors, ground and the water textures of EXTRA-SET2.md, batches 28–30) are colour terrain, not props: the catalog has them as `kind: "terrain"` with `palette: "colour"`, and a terrain object names one by id like an ink tile: `{ type: "terrain", asset: "c-floor-planks-oak", shape }` (the schema is unchanged, and ink tile ids work as before). They repeat at their own size (2×2 or 3×3 squares) from the grid origin, so areas of one texture join without a seam, in their own colours as the style shows them, with no tint under them. Tagged `swim` or `difficult terrain` makes them `difficult`. The Terrain tool (G) lists them by category (Ink tiles, Water, Floors, Ground), and MCP `add_terrain` takes their ids. Follow-up, not built: a room or corridor floor filled with a texture would reuse the same pattern layer, clipped to the room.
+- **Editor:** the Prop picker has an All / Ink / Colour switch (kept in localStorage `delve-prop-palette`), the colour categories as chips, and search by name, tags and group.
+- **Claude:** `list_assets` takes `palette` (ink, colour, all) and `category`; without filters it lists the ink catalog as before plus one line per colour category. The chat prompt sums the colour props up by category with a few ids and has a recipe for a forest of mixed trees.
+
+### Importing new batches
+
+The batches are drawn on the dev container in `~/colour-props` (`batch-NN/manifest.json` and `batch-NN/colour/<category>/<id>.svg`); a batch is finished when `batch-NN/DONE` exists.
+
+```sh
+npm run colour-props -- ~/colour-props
+```
+
+- It takes every finished batch (any `batch-00` … `batch-99` with a `DONE` file), skips the rest, ignores drawings that aren't in a manifest, and checks each prop with the art's rules (the same as `~/colour-props/tools/props.mjs`: manifest fields, size, elements and attributes, palette colours, dashes only on hidden props, translate/rotate only, the viewBox matching `w × h`) with the palette read from this file, then with `parseAssetSvg`, which must neither drop nor snap anything. A prop that fails is left out and listed, and the command exits with 1.
+- It rebuilds `assets/colour/`, its manifest and `catalog-colour.json` from scratch each time, so run it again whenever more batches are finished; props taken out of a batch go too.
+- New categories get a picker name (the table in `scripts/colour-props-lib.ts`, otherwise the id in words) and come after the known ones.
+- Then run the tests (`packages/core/test/colour-props.test.ts` parses every imported file) and look at the new props in the picker.
 
 ## How to run it
 

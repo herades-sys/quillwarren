@@ -251,6 +251,7 @@ export const EDITOR_CSS = `
   .ed-search .icon { position: absolute; left: 22px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); pointer-events: none; }
   .ed-search .input { min-height: 32px; padding-left: 32px; background: var(--color-surface-2); }
   .ed-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 12px; }
+  .ed-palette { padding: 10px 12px 0; }
   .ed-chip { height: 26px; padding: 0 10px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: var(--text-sm); background: var(--color-surface-2); color: var(--color-text-muted); box-shadow: inset 0 0 0 1px var(--color-border); }
   .ed-chip:hover { color: var(--color-text); }
   .ed-chip[aria-selected="true"] { background: var(--tint-accent-bg); color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent); }

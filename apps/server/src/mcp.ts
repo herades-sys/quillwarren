@@ -10,6 +10,10 @@ import {
   allAssets,
   assetInfo,
   CATEGORIES,
+  COLOUR_ASSETS,
+  COLOUR_CATEGORIES,
+  groupVariants,
+  modularAt,
   connectOps,
   cropFrame,
   CUTOUT_FILLS,
@@ -72,6 +76,7 @@ Typical flow: create_map, then add_room (rect [x, y, width, height]) for each ro
 Each tool call is one undoable step. Check your work with render (returns a picture) or describe_map (text). Use focus to point the user's viewer at what you just did.
 Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.
 Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
+Colour props (ids c-…: trees, plants, rocks, rugs, trapdoors, hidden traps, ruin walls…) are a second library in full colour, placed the same way; list_assets palette "colour" lists them by category. Floor ones (rugs, trapdoors) lie under the other props, and add_props_along mixes a group's variants (a forest of different oaks).
 A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.
 Floor numbers: a storey's floor is its level order (0 ground level, -1 one floor below ground, 1 the first floor up; set_map floor changes it). label_stairs gives every stair, ladder and trapdoor its GM label, floor number then flight letter (0A, 1A, 2A up one staircase).
 Room and cutout shapes: rect, circle, poly, or preset {kind: oval|triangle|hexagon|octagon, box: [x, y, w, h]}. Cutouts with fill "solid" draw as solid pillars or wall blocks.
@@ -128,12 +133,26 @@ function oneShape(a: { rect?: [number, number, number, number]; poly?: Point[]; 
   return given[0]!;
 }
 
-/** One catalog line for Claude: id, name, footprint, what it blocks. */
+/** One catalog line for Claude: id, name, footprint, what it blocks; for colour props also where they lie and their group. */
 export function assetLine(a: AssetInfo): string {
-  if (a.kind === 'terrain') return `${a.id} — ${a.name} (terrain${a.difficult ? ', difficult' : ''})`;
+  if (a.kind === 'terrain') return `${a.id} — ${a.name} (terrain${a.palette === 'colour' ? `, colour texture ${a.w}×${a.h}${a.group ? `, group ${a.group}` : ''}` : ''}${a.difficult ? ', difficult' : ''})`;
   const blocks = a.blocks === 'none' ? 'walk over' : a.blocks === 'movement' ? 'blocks movement' : 'blocks sight';
-  return `${a.id} — ${a.name}, ${a.w}×${a.h}, ${blocks}, ${a.category}${a.custom ? ', custom (drawn for this Delve)' : ''}`;
+  const colour = a.palette === 'colour' ? `, colour${a.layer === 'floor' ? ', on the floor' : ''}${a.group ? `, group ${a.group}` : ''}${a.modular ? ', modular' : ''}` : '';
+  return `${a.id} — ${a.name}, ${a.w}×${a.h}, ${blocks}, ${a.category}${colour}${a.hidden ? ', hidden from players' : ''}${a.custom ? ', custom (drawn for this Delve)' : ''}`;
 }
+
+/** The colour props in a few lines: each category with its count and first ids, for when they aren't listed one by one. */
+export function colourSummary(): string {
+  return COLOUR_CATEGORIES.map((c) => {
+    const items = COLOUR_ASSETS.filter((a) => a.category === c.id);
+    const tex = items.filter((a) => a.kind === 'terrain').length;
+    const count = tex === items.length ? `${tex} terrain textures` : tex ? `${items.length - tex} props, ${tex} terrain textures` : String(items.length);
+    return `- ${c.name} (${c.id}, ${count}): ${items.slice(0, 4).map((a) => a.id).join(', ')}${items.length > 4 ? ', …' : ''}`;
+  }).join('\n');
+}
+
+/** At most this many lines from list_assets; narrower filters list the rest. */
+const LIST_MAX = 200;
 
 function where(shape: Shape): string {
   const b = shapeBounds(shape);
@@ -467,21 +486,34 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'list_assets',
     {
       title: 'List props and terrain',
-      description: 'The props (furniture, statues, trees, GM symbols…) and terrain tiles you can place, with ids, footprints and what they block, including the custom props drawn for this Delve (ids my-…).',
+      description:
+        'The props (furniture, statues, trees, GM symbols…) and terrain tiles you can place, with ids, footprints and what they block, including the custom props drawn for this Delve (ids my-…). ' +
+        'Without filters: the ink props and terrain, plus a summary of the colour props (ids c-…, in the Delve palette); list those by palette "colour" with a category or search.',
       inputSchema: {
-        category: z.string().optional().describe(`One of ${CATEGORIES.map((c) => c.id).join(', ')}, or custom (every custom prop)`),
-        search: z.string().optional().describe('Words to match in names and tags, e.g. "bed" or "water"'),
+        category: z.string().optional().describe(`One of ${CATEGORIES.map((c) => c.id).join(', ')}; colour props: ${COLOUR_CATEGORIES.map((c) => c.id).join(', ')}; or custom (every custom prop)`),
+        palette: z.enum(['ink', 'colour', 'all']).optional().describe('ink (black-and-white props, the default without category or search), colour (colour props, ids c-…) or all'),
+        search: z.string().optional().describe('Words to match in names, tags and groups, e.g. "bed", "water" or "oak"'),
       },
       annotations: { readOnlyHint: true },
     },
     (a) =>
       guarded(() => {
         const words = (a.search ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+        const palette = a.palette ?? (a.category || words.length ? 'all' : 'ink');
         const hits = allAssets().filter(
-          (x) => (!a.category || x.category === a.category || (a.category === 'custom' && x.custom)) && words.every((w) => x.id.includes(w) || x.name.toLowerCase().includes(w) || x.tags.some((t) => t.includes(w))),
+          (x) =>
+            (palette === 'all' || (palette === 'colour') === (x.palette === 'colour')) &&
+            (!a.category || x.category === a.category || (a.category === 'custom' && x.custom)) &&
+            words.every((w) => x.id.includes(w) || x.name.toLowerCase().includes(w) || x.tags.some((t) => t.includes(w)) || Boolean(x.group?.includes(w))),
         );
+        const colourHint = `Colour props and terrain textures (palette "colour", ids c-…; floor props lie under other props, groups mix with add_props_along, textures go in add_terrain):\n${colourSummary()}\nList one category with list_assets palette "colour" and category, or search.`;
+        // the colour props on their own, unfiltered: by category, not one by one
+        if (palette === 'colour' && !a.category && !words.length) return text(colourHint);
         if (!hits.length) return text('Nothing matches. Try another word, or no filter at all.');
-        return text(hits.map(assetLine).join('\n'));
+        const lines = hits.slice(0, LIST_MAX).map(assetLine);
+        if (hits.length > LIST_MAX) lines.push(`… and ${hits.length - LIST_MAX} more: narrow it with category, palette or search.`);
+        if (!a.palette && !a.category && !words.length) lines.push('', colourHint);
+        return text(lines.join('\n'));
       }),
   );
 
@@ -503,7 +535,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         hidden: z
           .boolean()
           .optional()
-          .describe('Hidden from players (GM view only), e.g. a trap they have not found. Default: pressure plates, spike traps and floor runes are hidden, everything else is shown; false shows a hidden trap'),
+          .describe('Hidden from players (GM view only), e.g. a trap they have not found. Default: pressure plates, spike traps, floor runes and the colour props marked hidden (hidden traps) are hidden, everything else is shown; false shows a hidden trap'),
         id: z.string().optional().describe('Defaults to the next i<n>'),
       },
     },
@@ -512,11 +544,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const info = assetInfo(a.asset);
         if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets; terrain goes in add_terrain)`]);
         const map = store.get(a.map).map;
+        // modular pieces (ruin walls, seamless textures) go onto whole squares, so they meet the next piece
+        const at = modularAt({ asset: a.asset, at: a.at, rotation: a.rotation, scale: a.scale });
         const prop: MapObject = {
           id: a.id ?? nextId(map, 'i'),
           type: 'prop',
           asset: a.asset,
-          at: a.at,
+          at,
           ...(a.rotation ? { rotation: a.rotation } : {}),
           ...(a.scale && a.scale !== 1 ? { scale: a.scale } : {}),
           ...(a.name ? { name: a.name } : {}),
@@ -525,7 +559,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         };
         const b = propBounds(prop);
         const hidden = propHidden(prop as { asset: string; gmOnly?: boolean }) ? ' It is hidden from players (GM view only).' : '';
-        return addObject(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.${hidden}`);
+        const snapped = at[0] !== a.at[0] || at[1] !== a.at[1] ? ` Moved onto whole squares (at [${at.join(', ')}]) so it meets the next piece.` : '';
+        return addObject(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.${hidden}${snapped}`);
       }),
   );
 
@@ -536,15 +571,17 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       description:
         'Place copies of one prop along a path, like painting with a brush: trees along a road, rocks along a cave wall, pillars down a hall. ' +
         'placement "regular" puts one exactly every `spacing` squares (the first at the path\'s start); "irregular" varies the gaps, strays up to `spread` squares to either side, and turns and sizes each copy a little. ' +
-        'Spots within 0.6 × spacing of the same prop already on the map are skipped. One undo step.',
+        'A colour prop with a group (oaks, pines, boulders…) mixes the group\'s variants at random unless mix is false, so a forest is not one tree repeated. ' +
+        'Spots within 0.6 × spacing of the same prop (or its group) already on the map are skipped. One undo step.',
       inputSchema: {
         map: mapId,
-        asset: z.string().describe('Prop id, e.g. "tree-oak" (see list_assets)'),
+        asset: z.string().describe('Prop id, e.g. "tree" or "c-oak-a" (see list_assets)'),
         path: z.array(point).min(1).max(200).describe('Points the brush passes through, [[x, y], ...]'),
         spacing: z.number().min(0.5).max(20).optional().describe('Squares between copies (default 3)'),
         placement: z.enum(['regular', 'irregular']).optional().describe('default regular'),
         spread: z.number().min(0).max(10).optional().describe('Irregular: how far copies stray to the sides, in squares (default a third of the spacing)'),
         rotation: z.number().optional().describe('Regular: the rotation of every copy'),
+        mix: z.boolean().optional().describe("Mix the variants of the prop's group (default true when it has one, see list_assets)"),
       },
     },
     (a) =>
@@ -552,7 +589,9 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const info = assetInfo(a.asset);
         if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets)`]);
         const map = store.get(a.map).map;
-        const avoid = map.objects.flatMap((o) => (o.type === 'prop' && o.asset === a.asset ? [o.at] : []));
+        const variants = a.mix === false ? [a.asset] : groupVariants(a.asset);
+        const kin = new Set(variants);
+        const avoid = map.objects.flatMap((o) => (o.type === 'prop' && kin.has(o.asset) ? [o.at] : []));
         const spots = scatterAlong(a.path, {
           spacing: a.spacing ?? 3,
           placement: a.placement ?? 'regular',
@@ -560,13 +599,17 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           ...(a.rotation ? { rotation: a.rotation } : {}),
           seed: randomInt(1, 2 ** 31),
           avoid,
+          ...(variants.length > 1 ? { variants } : {}),
         }).slice(0, 500);
         if (!spots.length) return text('Nothing placed: every spot along the path already has one nearby.');
-        const ops = spots.map((s, k) => ({
-          op: 'add' as const,
-          object: { id: nextId(map, 'i', k), type: 'prop' as const, asset: a.asset, at: s.at, ...(s.rotation ? { rotation: s.rotation } : {}), ...(s.scale !== 1 ? { scale: s.scale } : {}) },
-        }));
-        return change(a.map, ops, `Added ${spots.length} × ${info.name} (${ops[0]!.object.id}–${ops.at(-1)!.object.id}) along the path.`);
+        const ops = spots.map((s, k) => {
+          const asset = s.asset ?? a.asset;
+          const at = modularAt({ asset, at: s.at, rotation: s.rotation, scale: s.scale });
+          return { op: 'add' as const, object: { id: nextId(map, 'i', k), type: 'prop' as const, asset, at, ...(s.rotation ? { rotation: s.rotation } : {}), ...(s.scale !== 1 ? { scale: s.scale } : {}) } };
+        });
+        const used = [...new Set(ops.map((o) => o.object.asset))];
+        const what = used.length > 1 ? `props of group ${info.group} (${used.map((u) => assetInfo(u)?.name ?? u).join('; ')})` : info.name;
+        return change(a.map, ops, `Added ${spots.length} × ${what} (${ops[0]!.object.id}–${ops.at(-1)!.object.id}) along the path.`);
       }),
   );
 
@@ -574,8 +617,10 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'add_terrain',
     {
       title: 'Add terrain',
-      description: 'Fill an area with a terrain tile (water, grass, lava, rubble… see list_assets category terrain). Give exactly one shape; it may cover a whole room or open ground outside rooms.',
-      inputSchema: { map: mapId, asset: z.string().describe('Terrain id, e.g. "water-shallow"'), ...shapeArgs, name: z.string().max(200).optional(), id: z.string().optional() },
+      description:
+        'Fill an area with a terrain tile (water, grass, lava, rubble… see list_assets category terrain) or a colour terrain texture (ids c-…: floorboards, flagstones, grass, sand, water… see list_assets palette colour, categories floors, ground and water). ' +
+        'Give exactly one shape; it may cover a whole room or open ground outside rooms. Tiles repeat on the map grid, so neighbouring areas of one texture join without a seam.',
+      inputSchema: { map: mapId, asset: z.string().describe('Terrain id, e.g. "water-shallow" or "c-floor-planks-oak"'), ...shapeArgs, name: z.string().max(200).optional(), id: z.string().optional() },
     },
     (a) =>
       guarded(() => {

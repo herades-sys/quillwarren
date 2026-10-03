@@ -50,7 +50,7 @@ export function artLoader(onLoaded: () => void): ArtLoader {
         void fetch(artUrl(id))
           .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
           .then((svg) => {
-            bodies.set(id, parseAssetSvg(svg).body);
+            bodies.set(id, parseAssetSvg(svg, assetInfo(id)).body); // colour props keep their palette
             onLoaded();
           })
           .catch(() => {});

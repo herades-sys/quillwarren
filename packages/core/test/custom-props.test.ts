@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   allAssets,
   ASSETS,
+  COLOUR_ASSETS,
   assetInfo,
   buildScene,
   categoryOf,
@@ -36,7 +37,7 @@ describe('the custom prop registry', () => {
     registerAssets([custom('my-anvil', { w: 2, h: 1, category: 'workshop' }), custom('my-web', { category: 'symbols' })]);
     expect(customAssetsVersion()).toBe(v + 1);
     expect(assetInfo('my-anvil')).toMatchObject({ w: 2, h: 1, custom: true, category: 'workshop' });
-    expect(allAssets().length).toBe(ASSETS.length + 2);
+    expect(allAssets().length).toBe(ASSETS.length + COLOUR_ASSETS.length + 2);
     expect(categoryOf('my-anvil')?.id).toBe('workshop');
     expect(propBounds({ asset: 'my-anvil', at: [3, 3.5] })).toEqual({ x0: 2, y0: 3, x1: 4, y1: 4 });
     // filed under GM symbols: GM view only, like the built-in ones

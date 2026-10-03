@@ -1,11 +1,22 @@
 // Asset SVGs (props and terrain tiles from delve-props-design-system) end up
 // inline in map pictures, so they are rebuilt from a whitelist: plain shapes
 // only, safe attributes only, and only the three inks, which the renderer then
-// swaps per map style. Metadata, text, scripts, event handlers and links are
-// dropped. Pure string work: runs in the browser and on the server.
+// swaps per map style. Colour props may use the Delve palette's exact colours
+// instead (assets/colour.ts), and hidden ones a dash pattern for their GM
+// outline. Metadata, text, scripts, event handlers and links are dropped. Pure
+// string work: runs in the browser and on the server.
+import { COLOUR_HEX, nearestPaletteColour } from './colour.ts';
 
 /** The literal colours an asset may use. */
 export const INKS = { ink: '#000000', paper: '#FFFFFF', shade: '#999999' } as const;
+
+/** What the whitelist allows beyond the ink rules: the asset's catalog entry decides (assetInfo). */
+export interface ParseOptions {
+  /** 'colour': the Delve palette instead of the three inks. */
+  palette?: 'colour';
+  /** A hidden colour prop: stroke-dasharray is allowed (its GM outline). */
+  hidden?: boolean;
+}
 
 export interface Palette {
   ink: string;
@@ -49,6 +60,25 @@ function colour(v: string, problems: string[]): string | null {
   return snapped;
 }
 
+/** A colour prop's colours: the palette's exact values, anything else snapped to the nearest palette colour. */
+function paletteColour(v: string, problems: string[]): string | null {
+  const s = v.trim();
+  if (s === 'none') return 'none';
+  const m = /^#([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(s);
+  if (!m) {
+    problems.push(`colour ${JSON.stringify(s)} replaced by ink`);
+    return INKS.ink;
+  }
+  const hex = `#${m[1]!.length === 3 ? [...m[1]!].map((c) => c + c).join('') : m[1]!}`.toUpperCase();
+  if (COLOUR_HEX.has(hex)) return hex;
+  const snapped = nearestPaletteColour(hex);
+  problems.push(`colour ${s} snapped to ${snapped}`);
+  return snapped;
+}
+
+/** A dash pattern: a few plain numbers. */
+const dashes = (v: string) => (/^\s*(\d+\.?\d*|\.\d+)([\s,]+(\d+\.?\d*|\.\d+)){0,7}\s*$/.test(v) ? v.trim().replace(/[\s,]+/g, ' ') : null);
+
 const ATTRS: Record<string, (v: string, problems: string[]) => string | null> = {
   d: (v) => (/^[MmLlHhVvCcSsQqTtAaZz0-9eE.,\s+-]*$/.test(v) ? v.trim() : null),
   points: (v) => (/^[0-9eE.,\s+-]*$/.test(v) ? v.trim() : null),
@@ -82,7 +112,12 @@ function attributes(raw: string): Map<string, string> {
   return out;
 }
 
-export function parseAssetSvg(text: string): ParsedAsset {
+/** Colour props: the same checks, with palette colours, and dash patterns on hidden ones. */
+const COLOUR_ATTRS: Record<string, (v: string, problems: string[]) => string | null> = { ...ATTRS, fill: paletteColour, stroke: paletteColour, 'stroke-miterlimit': numeric };
+const HIDDEN_ATTRS: Record<string, (v: string, problems: string[]) => string | null> = { ...COLOUR_ATTRS, 'stroke-dasharray': dashes };
+
+export function parseAssetSvg(text: string, opts: ParseOptions = {}): ParsedAsset {
+  const allowed = opts.palette === 'colour' ? (opts.hidden ? HIDDEN_ATTRS : COLOUR_ATTRS) : ATTRS;
   const problems: string[] = [];
   let src = text.replace(/<!--[\s\S]*?-->/g, '').replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '').replace(/<\?[\s\S]*?\?>/g, '');
   for (const tag of DROP_WITH_CONTENT) {
@@ -131,7 +166,7 @@ export function parseAssetSvg(text: string): ParsedAsset {
     } else if (closing) continue; // shapes are always written self-closing
     const kept: string[] = [];
     for (const [k, v] of attributes(raw!)) {
-      const check = ATTRS[k];
+      const check = allowed[k];
       if (!check) {
         if (!k.startsWith('xmlns')) problems.push(`${tag} ${k}= dropped`);
         continue;

@@ -1,9 +1,12 @@
 // What Delve knows about each asset (props and terrain tiles), from catalog.json,
-// which `npm run assets` builds from delve-props-design-system/assets. The SVG
-// bodies themselves are loaded separately (server: from disk; browser: on demand).
+// which `npm run assets` builds from delve-props-design-system/assets, and the
+// colour props from catalog-colour.json, which `npm run colour-props` builds.
+// The SVG bodies themselves are loaded separately (server: from disk; browser:
+// on demand).
 import type { Bounds } from '../geometry/shapes.ts';
-import type { Prop } from '../schema.ts';
+import type { Point, Prop } from '../schema.ts';
 import catalog from './catalog.json' with { type: 'json' };
+import colourCatalog from './catalog-colour.json' with { type: 'json' };
 
 export type AssetKind = 'prop' | 'terrain';
 export type Blocks = 'none' | 'movement' | 'sight';
@@ -25,6 +28,16 @@ export interface AssetInfo {
   difficult?: boolean;
   /** Path inside the assets folder. */
   file: string;
+  /** Hidden from players unless a prop says otherwise (gmOnly: false): traps and other secrets. */
+  hidden?: boolean;
+  /** 'colour': a colour prop, drawn in the Delve palette (assets/colour.ts) instead of the three inks. */
+  palette?: 'colour';
+  /** Colour props: 'floor' ones (rugs, trapdoors, leaf piles) lie with the decals, under the other props. */
+  layer?: 'floor' | 'props';
+  /** Colour props: the family of variants (all oaks are "oak"), which the prop brush mixes. */
+  group?: string;
+  /** Modular pieces (ruin walls): placed on whole squares, so their open ends meet. */
+  modular?: boolean;
   /** A prop from this Delve's own library (see "Custom props" below), not the built-in catalog. */
   custom?: boolean;
   /** Custom props: who made it and when (ISO times). */
@@ -63,27 +76,93 @@ export const CATEGORIES: readonly Category[] = [
 /** Where custom props go unless their maker picks a built-in category. Not in CATEGORIES, which lists the built-in catalog's. */
 export const CUSTOM_CATEGORY: Category = { id: 'custom', name: 'Custom', layer: 'props' };
 
+/** The ink catalog: props and terrain tiles in the three inks. */
 export const ASSETS: readonly AssetInfo[] = catalog as AssetInfo[];
 
+// ---------- colour props and textures ----------
+// A second built-in library in the Delve palette (docs/ASSETS-COLOUR.md).
+// catalog-colour.json keeps one compact row per asset, because every browser
+// bundle carries it: [id, name, category, w, h, "tags,with,commas", blocks,
+// layer, group or "", "hidden modular tile difficult" flags or nothing]. The
+// art's file is colour/<category>/<id without the prefix>.svg in the assets
+// folder. Ids are the art's ids behind COLOUR_PREFIX, so they never clash with
+// the ink catalog's (ink stalagmites, colour c-stalagmites; ink water-shallow,
+// colour texture c-water-shallow) or with custom props (my-…).
+// Seamless textures (flag tile) are terrain: a terrain object's asset may be one,
+// and it repeats at its own size (w × h squares) in its own colours, no tint.
+
+export const COLOUR_PREFIX = 'c-';
+export const isColourAsset = (id: string): boolean => id.startsWith(COLOUR_PREFIX);
+
+type ColourRow = [id: string, name: string, category: string, w: number, h: number, tags: string, blocks: Blocks, layer: 'floor' | 'props', group?: string, flags?: string];
+
+export const COLOUR_ASSETS: readonly AssetInfo[] = (colourCatalog.assets as unknown as ColourRow[]).map(([id, name, category, w, h, tags, blocks, layer, group, flags]) => {
+  const f = (flags ?? '').split(' ');
+  return {
+    id,
+    name,
+    category,
+    kind: f.includes('tile') ? ('terrain' as const) : ('prop' as const),
+    w,
+    h,
+    tags: tags ? tags.split(',') : [],
+    blocks,
+    ...(f.includes('difficult') ? { difficult: true } : {}),
+    file: `colour/${category}/${id.slice(COLOUR_PREFIX.length)}.svg`,
+    palette: 'colour' as const,
+    layer,
+    ...(group ? { group } : {}),
+    ...(f.includes('hidden') ? { hidden: true } : {}),
+    ...(f.includes('modular') ? { modular: true } : {}),
+  };
+});
+
+/** The colour props' and textures' categories in picker order (some share an id, and a picker chip, with an ink category: nature, water). */
+export const COLOUR_CATEGORIES: readonly Category[] = (colourCatalog.categories as [string, string][]).map(([id, name]) => ({
+  id,
+  name,
+  // a category of textures only (floors, ground) is terrain, like the ink tiles'
+  layer: COLOUR_ASSETS.every((a) => a.category !== id || a.kind === 'terrain') ? ('terrain' as const) : ('props' as const),
+}));
+
 /**
- * Props that are secrets until found: hidden from players unless a prop says
- * otherwise (gmOnly: false). Kept here rather than in catalog.json, which
- * `npm run assets` writes from the art's metadata.
+ * The ink catalog's props that are secrets until found (catalog.json `hidden`,
+ * from build-assets.ts): hidden from players unless a prop says otherwise
+ * (gmOnly: false). Colour props say so in their manifest; hiddenByDefault
+ * covers both.
  */
-export const HIDDEN_ASSETS: ReadonlySet<string> = new Set(['pressure-plate', 'spike-trap', 'rune']);
+export const HIDDEN_ASSETS: ReadonlySet<string> = new Set(ASSETS.filter((a) => a.hidden).map((a) => a.id));
+
+/** Is this asset hidden from players unless a prop says otherwise? */
+export const hiddenByDefault = (id: string): boolean => assetInfo(id)?.hidden === true;
 
 /** Is this prop left out of the players' view? GM symbols always are; otherwise the prop's own gmOnly, or the asset's default. */
 export function propHidden(p: { asset: string; gmOnly?: boolean }): boolean {
   if (categoryOf(p.asset)?.gmOnly) return true;
-  return p.gmOnly ?? HIDDEN_ASSETS.has(p.asset);
+  return p.gmOnly ?? hiddenByDefault(p.asset);
 }
 
-const byId = new Map(ASSETS.map((a) => [a.id, a]));
-const categoryById = new Map([...CATEGORIES, CUSTOM_CATEGORY].map((c) => [c.id, c]));
+const byId = new Map([...ASSETS, ...COLOUR_ASSETS].map((a) => [a.id, a]));
+const categoryById = new Map([...CATEGORIES, CUSTOM_CATEGORY, ...COLOUR_CATEGORIES].reverse().map((c) => [c.id, c])); // reversed: an ink category wins a shared id
+const byGroup = new Map<string, string[]>();
+for (const a of COLOUR_ASSETS) if (a.group && a.kind === 'prop') byGroup.set(a.group, [...(byGroup.get(a.group) ?? []), a.id]);
 
 /** A built-in asset, or a custom prop registered with registerAssets. */
 export const assetInfo = (id: string): AssetInfo | undefined => byId.get(id) ?? customById.get(id);
 export const categoryOf = (id: string): Category | undefined => categoryById.get(assetInfo(id)?.category ?? '');
+
+/** Where a prop draws: by its category, except colour props, which say it themselves (floor ones lie with the decals, under the other props). */
+export function propLayer(asset: string): AssetLayer {
+  const info = assetInfo(asset);
+  if (info?.palette === 'colour') return info.layer === 'floor' ? 'decals' : 'props';
+  return categoryOf(asset)?.layer ?? 'props';
+}
+
+/** The variants the prop brush mixes for a prop: every prop of its group in catalog order (itself included), or only itself. */
+export function groupVariants(asset: string): string[] {
+  const g = assetInfo(asset)?.group;
+  return (g && byGroup.get(g)) || [asset];
+}
 
 /** Rotation folded into 0..360. */
 const turn = (deg: number | undefined): number => (((deg ?? 0) % 360) + 360) % 360;
@@ -107,6 +186,18 @@ export function propBounds(p: Pick<Prop, 'asset' | 'at' | 'rotation' | 'scale'>)
 export function propCentre(asset: string, corner: [number, number], rotation = 0, scale = 1): [number, number] {
   const b = propBounds({ asset, at: [0, 0], rotation, scale });
   return [corner[0] - b.x0, corner[1] - b.y0];
+}
+
+/**
+ * Where a modular piece (a ruin wall, a seamless texture) goes near `at`: its turned footprint on
+ * whole squares, so a wall's centre line runs through square centres and
+ * neighbouring pieces meet edge to edge. Other props keep `at`.
+ */
+export function modularAt(p: Pick<Prop, 'asset' | 'at' | 'rotation' | 'scale'>): Point {
+  if (!assetInfo(p.asset)?.modular) return p.at;
+  const b = propBounds(p);
+  const r = (v: number) => Math.round(v * 1e6) / 1e6;
+  return [r(p.at[0] + Math.round(b.x0) - b.x0), r(p.at[1] + Math.round(b.y0) - b.y0)];
 }
 
 // ---------- custom props ----------
@@ -137,8 +228,8 @@ export function registerAssets(list: readonly AssetInfo[]): void {
 
 /** The registered custom props, in registration order. */
 export const customAssets = (): AssetInfo[] => [...customById.values()];
-/** Built-in catalog plus custom props. */
-export const allAssets = (): AssetInfo[] => [...ASSETS, ...customById.values()];
+/** Built-in catalogs (ink, then colour) plus custom props. */
+export const allAssets = (): AssetInfo[] => [...ASSETS, ...COLOUR_ASSETS, ...customById.values()];
 /** Goes up on every registerAssets call, so caches of custom art know when to look again. */
 export const customAssetsVersion = (): number => customVersion;
 /** The categories a prop can be filed under: the built-in prop categories plus Custom (terrain is for tiles). */

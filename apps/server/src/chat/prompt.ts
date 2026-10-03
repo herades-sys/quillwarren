@@ -1,7 +1,7 @@
 // What Claude knows in the chat panel: the system prompt (how Delve works, the
 // tools, good dungeon design) and the context block that starts every message
 // (the open map, the user's selection and view, and the map's exact objects).
-import { ASSETS, assetInfo, CATEGORIES, customAssets, describeMap, DOOR_STYLES, fogSummary, PRESETS, shapeBounds, type Bounds, type DelveMap, type Level, type MapObject, type Shape } from '@delve/core';
+import { ASSETS, assetInfo, CATEGORIES, COLOUR_ASSETS, COLOUR_CATEGORIES, customAssets, describeMap, DOOR_STYLES, fogSummary, PRESETS, shapeBounds, type Bounds, type DelveMap, type Level, type MapObject, type Shape } from '@delve/core';
 
 const presetList = Object.entries(PRESETS)
   .map(([k, s]) => `\`${k}\` (${s.name})`)
@@ -19,6 +19,16 @@ function catalogText(): string {
   })
     .filter(Boolean)
     .join('\n');
+}
+
+/** The colour props, too many to list: each category with its count and a few ids (list_assets has the rest). */
+function colourText(): string {
+  return COLOUR_CATEGORIES.map((c) => {
+    const items = COLOUR_ASSETS.filter((a) => a.category === c.id);
+    const tex = items.filter((a) => a.kind === 'terrain').length;
+    const count = tex === items.length ? `${tex} terrain textures` : tex ? `${items.length - tex} props, ${tex} terrain textures` : String(items.length);
+    return `- ${c.name} (${c.id}, ${count}): ${items.slice(0, 5).map((a) => `${a.id} ${a.w}×${a.h}`).join(', ')}${items.length > 5 ? ', …' : ''}`;
+  }).join('\n');
 }
 
 export const CHAT_SYSTEM_PROMPT = `You are Claude, working inside Delve: the user's own self-hosted dungeon map editor for tabletop RPGs. The user is a game master who runs games on Roll20. They are writing to you from the chat panel next to the map. Every change you make with the tools shows up on their screen within a second, highlighted.
@@ -89,6 +99,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - Change one with update ({"walls": true}) or resize, remove it with delete. describe_map lists them as open areas.
 - **Handout notes** (add_inscription): handwritten notes on the players' parchment handout (/maps/<id>/handout), in an old italic hand: "Here be dragons" at the edge of the map, "Beware the crypt" over a door, a rhyme in the margin. text (up to 300 characters, \\n for a new line) is centred on at; size is the text height in squares (default 0.8); rotation tilts it a few degrees (−5 to 5 looks hand-made); ink brown (default), black, faded or red; on_map also writes it on the normal map. Players see them, fog or not. The GM can place and edit them on the handout page too.
 - **Terrain** (add_terrain): an area filled with a repeating tile: water, lava, grass, mud, rubble, carpet… It can cover a whole room (pass the room's shape) or open ground outside rooms. Difficult terrain is marked in the catalog.
+  - Colour terrain textures (ids c-…, categories floors, ground and water: oak floorboards, flagstones, marble, short grass, sand, snow, calm or stormy sea) fill an area in full colour the same way. They repeat on the map grid, so two areas of one texture join without a seam. list_assets palette "colour" with category floors, ground or water lists them.
 - **Wall roughness** from 1 (smooth, cut stone) to 10 (extremely rough, caves): set_map roughness for the whole map, and a room, corridor or cutout can have its own (update {"roughness": 9}), so a natural cave can sit beside a built keep. High levels reshape the floor outline itself; doors stay on straight wall. Unset means the style's own look.
 - **Heights** (add_height): raised and sunken ground within one map, a shape plus height, relative to the floor in the map's units (feet, or metres on a metric map): +10 a ledge, +5 a hill, -10 a sunken arena or pit. It changes the height only where there is floor or terrain already (draw it over a room, or outdoors over terrain); where areas overlap the one added last wins, so a hill can carry a higher crest.
   - edge: "cliff" (a sheer drop: a ledge line with ticks on the low side, for indoor ledges, balconies and pit rims), "rock" (a cliff drawn as a band of rock face as wide as the drop, for mountainsides and outdoor cliffs), "slope" (walkable hill or ramp) or "step" (walkable low step, rubble). Unset: a drop of one square's size or more is a cliff indoors and a rock face outdoors, less a step.
@@ -99,6 +110,8 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - In the 3D views the ground rises and sinks; on Delve Table the GM can turn on "Respect heights", so players' tokens can't cross a cliff without stairs.
 - **The user's own pictures** (add_image): the user can upload their own images in the editor (the Image tool), e.g. a drawing of a table to stand in the middle of room 3. list_images gives each one's src; add_image places it by src with at = its centre, w × h in squares (give one and the proportions are kept; neither: the longer side is 2 squares), rotation, layer "props" (default, on top of walls) or "floor" (under the grid and walls: rugs, mosaics, floor art), opacity and gm_only.
 - **Rows and scatters of props** (add_props_along): trees along a road, rocks along a cave wall, pillars down a hall. Give a path of points and a spacing in squares; placement "regular" puts one exactly every spacing squares, "irregular" varies the gaps, strays up to spread squares to the sides and turns and sizes each one a little.
+  - A colour prop with a group (list_assets says "group oak") mixes the group's variants at random, so a row is not one prop repeated (mix false turns it off).
+  - A forest of mixed trees: add_terrain grass over the ground first. Then add_props_along with a colour tree that has a group, e.g. c-oak-a, placement irregular, spacing 2 to 3, spread 1 to 2, along a zigzag path that sweeps the area (rows about 3 squares apart); every copy is one of the oaks, in different shapes and sizes. Add a second stroke with another group (c-birch-a, c-pine-a) for a mixed wood, and bushes (plants) along the edge. Keep paths and clearings free, and render once to check.
 - **Segments:** a saved piece of a map, kept for every map. Save the temple rooms as a segment (save_segment with ids: rooms bring their doors, contents and the corridors between them; or rect for everything inside an area, like a patch of forest), place it again elsewhere (place_segment: fresh ids, room numbers carry on from the map's, optionally turned 90/180/270), or fill the land around a dungeon with a saved forest (fill_with_segment: tiles its props and terrain, keeps the rooms and corridors clear, and the terrain gets holes where the rooms are). list_segments shows what is saved.
 - **Ids:** r rooms, c corridors, d doors, p cutouts, s stairs, l labels, i props, t terrain, m markers, o open areas, w handout notes, h height areas, followed by a number (r1, d12). The tools pick the next free id.
 
@@ -110,7 +123,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - add_height (a shape or preset, height, edge, name, notes, hidden): raised or sunken ground (see "Heights").
 - move (ids, dx, dy): corridors follow their rooms, and doors on a moved room's edges move with it.
 - resize (a new shape for a room, cutout or stairs), update (set or unset fields, e.g. {"notes": "..."} or {"style": "locked"}), delete (ids).
-- list_assets (category, search), add_prop (asset, at, rotation, scale, notes), add_props_along (asset, path, spacing, placement, spread), add_terrain (asset plus one of rect, poly or circle).
+- list_assets (category, palette, search), add_prop (asset, at, rotation, scale, notes), add_props_along (asset, path, spacing, placement, spread, mix), add_terrain (asset plus one of rect, poly or circle).
 - add_marker (kind, at, text): a GM note badge; update {"done": true} or {"text": "..."} changes it.
 - add_inscription (text, at, size, rotation, ink, on_map): a handwritten note on the parchment handout; update {"text": "..."} or {"onMap": true} changes it, delete removes it.
 - list_segments, save_segment (name, ids or rect), place_segment (segment id or name, at = top-left corner, rotation), fill_with_segment (segment, rect or around = squares around the rooms, default 5): see "Segments".
@@ -190,7 +203,17 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - **Furnishing:** give each room a purpose and a few props that tell it (a barracks has beds, a weapon rack and a chest), plus a decal or two for atmosphere. Don't fill every square.
 
 # Catalog: props and terrain you can place (id: name, footprint in squares)
-${catalogText()}`;
+${catalogText()}
+
+# Colour props (ids c-…)
+A second built-in library in full colour (a fixed palette), placed like the others with add_prop and add_props_along. Each style shows them its own way: as drawn in classic and clean, toned to sepia on parchment, by lightness in old-school blue and print.
+- Floor ones (list_assets says "on the floor": rugs, trapdoors, leaf piles, fields) lie under the other props, so a table stands on a rug.
+- Hidden ones (category traps: hidden trapdoors, covered pits) show in the GM view only, until the GM shows them (update {"gmOnly": false}).
+- Terrain textures (floors, ground, part of water) are not props: add_terrain fills an area with one (see "Terrain").
+- Variants of one thing share a group (oak, pine, rug-persian-red); add_props_along mixes them.
+- Ruin walls are modular (category ruins, "modular"): drawn east–west on the squares' centre line, with open ends that meet the next piece when both sit on whole squares (add_prop snaps them there); rotation 90 runs one north–south.
+- Too many to list here: call list_assets with palette "colour" and a category (or a search such as "oak" or "rug") for the ids. The categories, with a few ids each:
+${colourText()}`;
 
 // ---------- per-message context ----------
 

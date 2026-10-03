@@ -2,7 +2,9 @@
 // add_props_along. Regular placement drops a copy exactly every `spacing`
 // squares; irregular varies the gaps, strays to the sides and turns and sizes
 // each copy a little, so a row of trees reads as a wood rather than a hedge.
-import { rng } from './render/rng.ts';
+// With variants (a colour prop's group, catalog groupVariants) each copy is one
+// of them at random, so a painted forest isn't one tree repeated.
+import { hashInts, rng } from './render/rng.ts';
 import type { Point } from './schema.ts';
 
 export interface ScatterOptions {
@@ -17,12 +19,16 @@ export interface ScatterOptions {
   rotation?: number;
   /** Spots already taken (e.g. props of the same kind): no copy lands nearer than 0.6 × spacing to one. */
   avoid?: readonly Point[];
+  /** Props to mix, picked at random per copy (never the same twice running when there are two or more): each placement's `asset`. */
+  variants?: readonly string[];
 }
 
 export interface Placement {
   at: Point;
   rotation: number;
   scale: number;
+  /** With variants: which one goes here. */
+  asset?: string;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -36,6 +42,17 @@ export function scatterAlong(path: readonly Point[], o: ScatterOptions): Placeme
   const keepOff = spacing * 0.6;
   const taken: Point[] = [...(o.avoid ?? [])];
   const out: Placement[] = [];
+  // variants come from a stream of their own, so the spots are the same with or without them
+  const variants = o.variants?.length ? o.variants : null;
+  const pick = rng(hashInts(o.seed, 0x7a51));
+  let last = -1;
+  const variant = (): { asset?: string } => {
+    if (!variants) return {};
+    let k = Math.floor(pick() * variants.length);
+    if (variants.length > 1 && k === last) k = (k + 1 + Math.floor(pick() * (variants.length - 1))) % variants.length;
+    last = k;
+    return { asset: variants[k]! };
+  };
   const place = (p: Point, nx: number, ny: number) => {
     const off = irregular ? (rand() - 0.5) * 2 * spread : 0;
     const rotation = irregular ? Math.round(rand() * 360) % 360 : (o.rotation ?? 0);
@@ -43,7 +60,7 @@ export function scatterAlong(path: readonly Point[], o: ScatterOptions): Placeme
     const at: Point = [r2(p[0] + nx * off), r2(p[1] + ny * off)];
     if (taken.some((t) => Math.hypot(t[0] - at[0], t[1] - at[1]) < keepOff)) return;
     taken.push(at);
-    out.push({ at, rotation, scale });
+    out.push({ at, rotation, scale, ...variant() });
   };
 
   place(path[0]!, 0, 0);

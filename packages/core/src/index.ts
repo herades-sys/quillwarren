@@ -93,13 +93,22 @@ export {
   customAssets,
   allAssets,
   customAssetsVersion,
+  COLOUR_ASSETS,
+  COLOUR_CATEGORIES,
+  COLOUR_PREFIX,
+  isColourAsset,
+  hiddenByDefault,
+  propLayer,
+  groupVariants,
+  modularAt,
   type AssetInfo,
   type AssetKind,
   type AssetLayer,
   type Blocks,
   type Category,
 } from './assets/catalog.ts';
-export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset } from './assets/svg.ts';
+export { parseAssetSvg, recolor, assetSvg, INKS, type Palette, type ParsedAsset, type ParseOptions } from './assets/svg.ts';
+export { COLOUR_PALETTE, COLOUR_HEX, colourMap, recolour, styleColour, rampLevels, lightness, nearestPaletteColour, type ColourMode, type ColourMap } from './assets/colour.ts';
 export {
   checkPropSvg,
   checkPropSize,

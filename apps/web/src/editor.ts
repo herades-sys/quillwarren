@@ -29,7 +29,10 @@ import {
   PRESETS,
   propBounds,
   propHidden,
-  HIDDEN_ASSETS,
+  hiddenByDefault,
+  groupVariants,
+  COLOUR_CATEGORIES,
+  COLOUR_ASSETS,
   propCentre,
   scatterAlong,
   segmentCounts,
@@ -152,9 +155,31 @@ const POLY: ToolInfo = { id: 'poly', name: 'Room', short: 'Room', key: 'O', icon
 const infoOf = (t: Tool): ToolInfo => TOOLS.find((x) => x.id === t) ?? POLY;
 
 const PROPS = ASSETS.filter((a) => a.kind === 'prop');
-const TILES = ASSETS.filter((a) => a.kind === 'terrain');
+/** Terrain: the ink tiles, then the colour textures (floors, ground, water). */
+const TILES = [...ASSETS, ...COLOUR_ASSETS].filter((a) => a.kind === 'terrain');
 /** Built-in props plus this Delve's custom ones (custom-props.ts), as registered right now. */
 const propList = () => allAssets().filter((a) => a.kind === 'prop');
+/** The Prop picker's palette filter: the ink props (and custom ones, which are ink too), the colour props, or both. */
+type PaletteFilter = 'all' | 'ink' | 'colour';
+const PALETTE_KEY = 'delve-prop-palette';
+function loadPalette(): PaletteFilter {
+  try {
+    const v = localStorage.getItem(PALETTE_KEY);
+    return v === 'ink' || v === 'colour' ? v : 'all';
+  } catch {
+    return 'all';
+  }
+}
+function savePalette(v: PaletteFilter): void {
+  try {
+    localStorage.setItem(PALETTE_KEY, v);
+  } catch {
+    /* private window: the choice just isn't kept */
+  }
+}
+const inPalette = (a: AssetInfo, p: PaletteFilter) => p === 'all' || (p === 'colour') === (a.palette === 'colour');
+/** Under a terrain thumbnail: an ink tile's tint; a colour texture covers its tile itself. */
+const tintOf = (a: AssetInfo) => (a.palette === 'colour' ? 'transparent' : (a.tint ?? '#ccc'));
 const thumb = (id: string) => artUrl(id);
 /** Turned by 15° steps, folded into 0…345. */
 const turned = (deg: number) => (((Math.round(deg / 15) * 15) % 360) + 360) % 360;
@@ -239,10 +264,15 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     propSearch: '',
     tile: TILES[0]?.id ?? '',
     tileSearch: '',
+    tileCategory: 'all',
     markerKind: 'discover' as (typeof MARKER_KINDS)[number],
     brush: false,
     brushSpacing: 3,
     brushScatter: 0,
+    /** The brush mixes the variants of the picked prop's group (colour props), at random but seeded per stroke. */
+    brushMix: true,
+    /** The Prop picker's Ink / Colour / All filter, remembered in localStorage. */
+    propPalette: loadPalette(),
     roomShape: 'rect' as DrawShape,
     pillarShape: 'rect' as DrawShape,
     pillarFill: 'rock' as CutoutFill,
@@ -707,8 +737,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           }
           break;
         }
-        const dx = snap(d.cur[0] - d.start[0], s);
-        const dy = snap(d.cur[1] - d.start[1], s);
+        // modular pieces (ruin walls) move by whole squares, so they stay on the grid their open ends meet on
+        const ms = selection.map(byId).some((o) => o?.type === 'prop' && Boolean(assetInfo(o.asset)?.modular)) ? Math.max(1, Math.round(s)) : s;
+        const dx = snap(d.cur[0] - d.start[0], ms);
+        const dy = snap(d.cur[1] - d.start[1], ms);
         if (dx || dy) void apply([{ op: 'move', ids: withAttachedDoors(m, selection), dx, dy }]);
         break;
       }
@@ -875,11 +907,15 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     }
   }
 
-  /** Where the prop tool would put the chosen prop for pointer p: its footprint snapped to the grid around p. */
-  function propAt(p: Point, s: number): Point {
-    const b = propBounds({ asset: settings.prop, at: [0, 0], rotation: settings.propRotation });
-    const corner: Point = [snap(p[0] - (b.x1 - b.x0) / 2, s), snap(p[1] - (b.y1 - b.y0) / 2, s)];
-    return propCentre(settings.prop, corner, settings.propRotation);
+  /**
+   * Where the prop tool would put the chosen prop (or a brush variant) for pointer p: its footprint snapped to the grid around p.
+   * Modular pieces (ruin walls) always go onto whole squares, so the wall's centre line runs through square centres and open ends meet.
+   */
+  function propAt(p: Point, s: number, asset = settings.prop): Point {
+    const st = assetInfo(asset)?.modular ? Math.max(1, Math.round(s)) : s;
+    const b = propBounds({ asset, at: [0, 0], rotation: settings.propRotation });
+    const corner: Point = [snap(p[0] - (b.x1 - b.x0) / 2, st), snap(p[1] - (b.y1 - b.y0) / 2, st)];
+    return propCentre(asset, corner, settings.propRotation);
   }
 
   function placeProp(p: Point, s: number): void {
@@ -896,7 +932,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
    */
   function brushSpots(): Placement[] {
     if (!stroke) return [];
-    const avoid = map().objects.flatMap((o) => (o.type === 'prop' && o.asset === settings.prop ? [o.at] : []));
+    const variants = brushVariants();
+    const kin = new Set(variants);
+    const avoid = map().objects.flatMap((o) => (o.type === 'prop' && kin.has(o.asset) ? [o.at] : []));
     const regular = settings.brushScatter === 0;
     const spots = scatterAlong(stroke.path, {
       spacing: settings.brushSpacing,
@@ -905,12 +943,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       seed: stroke.seed,
       rotation: settings.propRotation,
       avoid,
+      ...(variants.length > 1 ? { variants } : {}),
     });
     const seen = new Set(avoid.map((a) => a.join(',')));
     return spots
-      .map((s) => (regular ? { ...s, at: propAt(s.at, stroke!.step) } : s))
+      .map((s) => (regular ? { ...s, at: propAt(s.at, stroke!.step, s.asset) } : s))
       .filter((s) => !seen.has(s.at.join(',')) && Boolean(seen.add(s.at.join(','))))
       .slice(0, 500);
+  }
+
+  /** What a brush stroke paints: the picked prop's group when Mix is on and it has one, else the prop alone. */
+  function brushVariants(): string[] {
+    return settings.brushMix ? groupVariants(settings.prop) : [settings.prop];
   }
 
   function finishStroke(): void {
@@ -920,7 +964,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const m = map();
     const ops: Op[] = spots.map((s, k) => ({
       op: 'add',
-      object: { id: nextId(m, 'i', k), type: 'prop', asset: settings.prop, at: s.at, ...(s.rotation ? { rotation: s.rotation } : {}), ...(s.scale !== 1 ? { scale: s.scale } : {}) },
+      object: { id: nextId(m, 'i', k), type: 'prop', asset: s.asset ?? settings.prop, at: s.at, ...(s.rotation ? { rotation: s.rotation } : {}), ...(s.scale !== 1 ? { scale: s.scale } : {}) },
     }));
     void apply(ops); // one stroke, one undo step
     draw();
@@ -1182,8 +1226,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     }
 
     if (drag?.kind === 'move' && drag.moved) {
-      const dx = snap(drag.cur[0] - drag.start[0], settings.snap);
-      const dy = snap(drag.cur[1] - drag.start[1], settings.snap);
+      const ms = sel.some((o) => o.type === 'prop' && assetInfo(o.asset)?.modular) ? Math.max(1, Math.round(settings.snap)) : settings.snap;
+      const dx = snap(drag.cur[0] - drag.start[0], ms);
+      const dy = snap(drag.cur[1] - drag.start[1], ms);
       for (const o of sel) {
         const b = objectBounds(o, m);
         if (b) layer.appendChild(rectEl({ x0: b.x0 + dx, y0: b.y0 + dy, x1: b.x1 + dx, y1: b.y1 + dy }, 'ghost'));
@@ -1260,11 +1305,12 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     }
     const info = tool === 'prop' ? assetInfo(settings.prop) : undefined;
     // the props as they would land: footprints and art, turned and sized; a brush stroke shows every copy
-    const ghost = (at: Point, rotation: number, scale: number) => {
-      if (!info) return;
-      layer.appendChild(rectEl(propBounds({ asset: info.id, at, rotation, scale }), 'ghost'));
+    const ghost = (at: Point, rotation: number, scale: number, asset?: string) => {
+      const a = asset ? assetInfo(asset) : info;
+      if (!a) return;
+      layer.appendChild(rectEl(propBounds({ asset: a.id, at, rotation, scale }), 'ghost'));
       layer.appendChild(
-        svgEl('image', { href: thumb(info.id), x: -info.w / 2, y: -info.h / 2, width: info.w, height: info.h, transform: `translate(${at[0]} ${at[1]}) rotate(${rotation}) scale(${scale})`, class: 'ghost-prop' }),
+        svgEl('image', { href: thumb(a.id), x: -a.w / 2, y: -a.h / 2, width: a.w, height: a.h, transform: `translate(${at[0]} ${at[1]}) rotate(${rotation}) scale(${scale})`, class: 'ghost-prop' }),
       );
     };
     if (tool === 'prop' && settings.propDoor) {
@@ -1272,7 +1318,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       if (hoverRaw && !drag) doorGhost(pickerDoor(baseFloor(), hoverRaw, settings.propDoorWidth, settings.propRotation, hoverStep).door);
     } else if (info && stroke) {
       layer.appendChild(svgEl('polyline', { points: stroke.path.map((q) => q.join(',')).join(' '), class: 'ghost-line brush-path' }));
-      for (const s of brushSpots()) ghost(s.at, s.rotation, s.scale);
+      for (const s of brushSpots()) ghost(s.at, s.rotation, s.scale, s.asset);
     } else if (info && hoverRaw && !drag) ghost(propAt(hoverRaw, hoverStep), settings.propRotation, 1);
     if (tool === 'image' && hoverRaw && !drag) images.ghost(layer, hoverRaw, hoverStep);
     if (tool === 'segment' && !drag) segments.draw(layer, hoverRaw);
@@ -1492,11 +1538,17 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
             miniRange('Scatter', { value: settings.brushScatter, min: 0, max: 100, step: 5, show: (v) => `${v}%`, onChange: (v) => (settings.brushScatter = v), onInput: (v) => (settings.brushScatter = v) }),
           );
         } else out.push(keyHint('Shift', 'drag to paint'));
+        // a colour prop with variants: painting mixes them (on by default), so a forest isn't one tree repeated
+        const kin = groupVariants(settings.prop);
+        if (kin.length > 1) {
+          const g = assetInfo(settings.prop)?.group ?? '';
+          out.push(group('Variants', chip(`Mix ${g} (${kin.length})`, settings.brushMix, () => ((settings.brushMix = !settings.brushMix), renderTools()), { title: `Painting mixes the ${kin.length} props of the group “${g}” at random` })));
+        }
         return out;
       }
       case 'terrain': {
         const t = assetInfo(settings.tile);
-        return [t ? h('span', { class: 'ctxbar-opt', 'aria-checked': 'true', style: 'cursor:default' }, h('span', { class: 'ed-swatch', style: `background-color:${t.tint ?? '#ccc'};background-image:url("${thumb(t.id)}")` }), t.name) : null, hint('Drag an area')];
+        return [t ? h('span', { class: 'ctxbar-opt', 'aria-checked': 'true', style: 'cursor:default' }, h('span', { class: 'ed-swatch', style: `background-color:${tintOf(t)};background-image:url("${thumb(t.id)}")` }), t.name) : null, hint('Drag an area')];
       }
       case 'label':
         return [hint('Click to place text, then type it'), keyHint('Enter', 'commit'), keyHint('Esc', 'cancel')];
@@ -1560,9 +1612,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   function assetButton(a: AssetInfo, pressed: boolean, on: () => void): HTMLElement {
     const pic =
       a.kind === 'terrain'
-        ? h('span', { class: 'tile', style: `background-color:${a.tint ?? '#ccc'};background-image:url("${thumb(a.id)}")` })
+        ? h('span', { class: 'tile', style: `background-color:${tintOf(a)};background-image:url("${thumb(a.id)}")` })
         : h('img', { src: thumb(a.id), alt: '', loading: 'lazy' });
-    const title = `${a.name}${a.kind === 'prop' ? ` · ${a.w}×${a.h}` : ''}${a.blocks === 'sight' ? ' · blocks sight' : a.blocks === 'movement' ? ' · blocks movement' : ''}${a.difficult ? ' · difficult' : ''}`;
+    const title = `${a.name}${a.kind === 'prop' ? ` · ${a.w}×${a.h}` : a.palette === 'colour' ? ` · ${a.w}×${a.h} tile` : ''}${a.blocks === 'sight' ? ' · blocks sight' : a.blocks === 'movement' ? ' · blocks movement' : ''}${a.difficult ? ' · difficult' : ''}`;
     return h('button', { type: 'button', class: 'ed-asset', 'aria-pressed': String(pressed), title, onclick: on }, h('span', { class: 'ed-asset-pic' }, pic), h('span', { class: 'ed-asset-name' }, a.name));
   }
 
@@ -1578,18 +1630,21 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     const count = h('span', { class: 'ed-flyout-count' });
     const all = propList();
     refreshCustomProps();
+    // Ink / Colour / All: which library the picker shows (doors count as ink: the renderer draws them in the style's inks)
+    const shown = all.filter((a) => inPalette(a, settings.propPalette));
+    const withDoors = settings.propPalette !== 'colour';
     const fill = () => {
       const words = settings.propSearch.toLowerCase().split(/\s+/).filter(Boolean);
-      const list = settings.propCategory === 'doors' && !words.length ? [] : all.filter(
+      const list = settings.propCategory === 'doors' && !words.length ? [] : shown.filter(
         (a) =>
           (words.length ? true : settings.propCategory === 'all' || a.category === settings.propCategory || (settings.propCategory === 'custom' && a.custom)) &&
-          words.every((w) => a.id.includes(w) || a.name.toLowerCase().includes(w) || a.tags.some((t) => t.includes(w))),
+          words.every((w) => a.id.includes(w) || a.name.toLowerCase().includes(w) || a.tags.some((t) => t.includes(w)) || Boolean(a.group?.includes(w))),
       );
       // the Doors group: real doors (door objects, not props), first under All
-      const doors = DOOR_STYLES.filter((s) =>
+      const doors = !withDoors ? [] : DOOR_STYLES.filter((s) =>
         words.length ? words.every((w) => `${DOOR_TILE_NAME[s]} door ${s}`.toLowerCase().includes(w)) : settings.propCategory === 'all' || settings.propCategory === 'doors',
       );
-      count.textContent = `${list.length + doors.length} of ${all.length + DOOR_STYLES.length}`;
+      count.textContent = `${list.length + doors.length} of ${shown.length + (withDoors ? DOOR_STYLES.length : 0)}`;
       const tile = (a: AssetInfo) => {
         const b = assetButton(a, !settings.propDoor && a.id === settings.prop, () => ((settings.prop = a.id), (settings.propDoor = null), fill(), renderBar(), draw()));
         return a.custom ? customTile(b, a, propMaker) : b;
@@ -1616,12 +1671,21 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       const tiles = [...doors.map(doorTile), ...list.map(tile)];
       grid.replaceChildren(...(tiles.length ? tiles : [h('p', { class: 'hint', style: 'grid-column:1/-1' }, 'Nothing matches. “New prop…” asks Claude to draw it.')]));
     };
+    // colour categories in their own order when only colour props show; with ink, after the ink ones (a shared id such as nature is one chip)
+    const catList = settings.propPalette === 'colour' ? COLOUR_CATEGORIES : [...CATEGORIES, ...COLOUR_CATEGORIES.filter((c) => !CATEGORIES.some((k) => k.id === c.id))];
     const cats = [
       { id: 'all', name: 'All' },
-      { id: 'doors', name: 'Doors' },
-      ...CATEGORIES.filter((c) => c.id !== 'terrain' && all.some((a) => a.category === c.id)),
-      ...(all.some((a) => a.custom) ? [{ id: 'custom', name: 'Custom' }] : []),
+      ...(withDoors ? [{ id: 'doors', name: 'Doors' }] : []),
+      ...catList.filter((c) => c.id !== 'terrain' && shown.some((a) => a.category === c.id)),
+      ...(shown.some((a) => a.custom) ? [{ id: 'custom', name: 'Custom' }] : []),
     ];
+    if (!cats.some((c) => c.id === settings.propCategory)) settings.propCategory = 'all';
+    const palette = seg<PaletteFilter>('prop-palette', [['all', 'All'], ['ink', 'Ink'], ['colour', 'Colour']], settings.propPalette, (v) => {
+      settings.propPalette = v;
+      savePalette(v);
+      renderFlyout();
+    }, 'ed-seg-full');
+    palette.setAttribute('aria-label', 'Ink or colour props');
     const chips = h(
       'div',
       { class: 'ed-chips', role: 'tablist', 'aria-label': 'Categories' },
@@ -1629,20 +1693,36 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     );
     const search = input({ type: 'search', placeholder: 'Search props', value: settings.propSearch, 'aria-label': 'Search props', oninput: (e: Event) => ((settings.propSearch = (e.target as HTMLInputElement).value), fill()) });
     fill();
-    flyoutShell('Props', null, [h('div', { class: 'ed-search' }, iconEl('search', 15), search), chips, h('div', { class: 'ed-flyout-body' }, grid)], h('div', { class: 'ed-flyout-foot' }, h('kbd', {}, 'Q'), h('kbd', {}, 'E'), `rotate · now ${settings.propRotation}°`, h('span', { class: 'spacer' }), newPropButton(propMaker)));
+    flyoutShell('Props', null, [h('div', { class: 'ed-search' }, iconEl('search', 15), search), h('div', { class: 'ed-palette' }, palette), chips, h('div', { class: 'ed-flyout-body' }, grid)], h('div', { class: 'ed-flyout-foot' }, h('kbd', {}, 'Q'), h('kbd', {}, 'E'), `rotate · now ${settings.propRotation}°`, h('span', { class: 'spacer' }), newPropButton(propMaker)));
     flyout.querySelector('.ed-flyout-head')!.insertBefore(count, flyout.querySelector('.ed-flyout-head .spacer'));
   }
 
   function tilePicker(): void {
     const grid = h('div', { class: 'ed-grid', role: 'listbox', 'aria-label': 'Terrain' });
+    // the ink tiles under one chip, then the colour textures by their categories (floors, ground, water…)
+    const cats = [
+      { id: 'all', name: 'All' },
+      { id: 'terrain', name: 'Ink tiles' },
+      ...COLOUR_CATEGORIES.filter((c) => TILES.some((a) => a.palette === 'colour' && a.category === c.id)),
+    ];
+    if (!cats.some((c) => c.id === settings.tileCategory)) settings.tileCategory = 'all';
     const fill = () => {
-      const w = settings.tileSearch.toLowerCase();
-      const list = TILES.filter((a) => !w || a.name.toLowerCase().includes(w) || a.id.includes(w));
+      const words = settings.tileSearch.toLowerCase().split(/\s+/).filter(Boolean);
+      const list = TILES.filter(
+        (a) =>
+          (words.length ? true : settings.tileCategory === 'all' || (settings.tileCategory === 'terrain' ? a.palette !== 'colour' : a.palette === 'colour' && a.category === settings.tileCategory)) &&
+          words.every((w) => a.id.includes(w) || a.name.toLowerCase().includes(w) || a.tags.some((t) => t.includes(w)) || Boolean(a.group?.includes(w))),
+      );
       grid.replaceChildren(...list.map((a) => assetButton(a, a.id === settings.tile, () => ((settings.tile = a.id), fill(), renderTools()))));
     };
     fill();
     const search = input({ type: 'search', placeholder: 'Search terrain', value: settings.tileSearch, 'aria-label': 'Search terrain', oninput: (e: Event) => ((settings.tileSearch = (e.target as HTMLInputElement).value), fill()) });
-    flyoutShell('Terrain', `${TILES.length}`, [h('div', { class: 'ed-search' }, iconEl('search', 15), search), h('div', { class: 'ed-flyout-body', style: 'padding-top:10px' }, grid)]);
+    const chips = h(
+      'div',
+      { class: 'ed-chips', role: 'tablist', 'aria-label': 'Terrain kinds' },
+      ...cats.map((c) => h('button', { type: 'button', class: 'ed-chip', role: 'tab', 'aria-selected': String(settings.tileCategory === c.id), onclick: () => ((settings.tileCategory = c.id), renderFlyout()) }, c.name)),
+    );
+    flyoutShell('Terrain', `${TILES.length}`, [h('div', { class: 'ed-search' }, iconEl('search', 15), search), chips, h('div', { class: 'ed-flyout-body' }, grid)]);
   }
 
   function renderFlyout(): void {
@@ -1771,7 +1851,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
   /** Options grouped by category, with the current one selected (kept even if it's not in the catalog). */
   function assetOptions(list: readonly AssetInfo[], current: string): HTMLElement[] {
-    const groups = [...CATEGORIES, CUSTOM_CATEGORY].map((c) => ({ c, items: list.filter((a) => a.category === c.id) })).filter((g) => g.items.length);
+    const groups = [...CATEGORIES, CUSTOM_CATEGORY, ...COLOUR_CATEGORIES.filter((c) => !CATEGORIES.some((k) => k.id === c.id))].map((c) => ({ c, items: list.filter((a) => a.category === c.id) })).filter((g) => g.items.length);
     const out: HTMLElement[] = groups.map((g) => h('optgroup', { label: g.c.name }, ...g.items.map((a) => h('option', { value: a.id, selected: a.id === current }, a.name))));
     if (!list.some((a) => a.id === current)) out.unshift(h('option', { value: current, selected: true }, current));
     return out;
@@ -1905,7 +1985,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           else upd({ scale: s });
         };
         out.push(
-          field('Prop', select(assetOptions(propList(), o.asset), o.asset, (v) => upd({ asset: v }))),
+          // swapped within its own library: an ink prop for another ink one, a colour prop for another colour one
+          field('Prop', select(assetOptions(propList().filter((a) => (a.palette === 'colour') === (assetInfo(o.asset)?.palette === 'colour')), o.asset), o.asset, (v) => upd({ asset: v }))),
           h('p', { class: 'hint' }, info ? `${info.w}×${info.h} squares · ${info.blocks === 'none' ? 'walk over it' : info.blocks === 'movement' ? 'blocks movement' : 'blocks sight'}` : `Unknown asset "${o.asset}".`),
           atFields(o, ' (centre)'),
           range('Rotation', { value: rot, min: 0, max: 345, step: 15, show: (v) => `${v}°`, keys: 'Q / E', onChange: (v) => void apply([setRotation(id, v)]) }),
@@ -1924,7 +2005,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           ...(categoryOf(o.asset)?.gmOnly
             ? []
             : [
-                checkbox('Hidden from players', propHidden(o), (on) => (on === HIDDEN_ASSETS.has(o.asset) ? unset('gmOnly') : upd({ gmOnly: on }))),
+                checkbox('Hidden from players', propHidden(o), (on) => (on === hiddenByDefault(o.asset) ? unset('gmOnly') : upd({ gmOnly: on }))),
                 ...(propHidden(o) ? [h('p', { class: 'hint' }, 'Only in the GM view: players don’t see it on their screen, on Delve Table or in their exports. Untick it once they find it.')] : []),
               ]),
           field('GM note · only you see this', text(id, 'notes', o.notes, { area: true })),

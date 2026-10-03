@@ -1,5 +1,6 @@
 // Style presets. Sizes are in grid squares, so a map looks the same at any
 // export resolution (at Roll20's 70 px per square, 0.1 sq = 7 px).
+import type { ColourMode } from '../assets/colour.ts';
 import type { DelveMap } from '../schema.ts';
 
 export interface HatchStyle {
@@ -31,6 +32,8 @@ export interface Style {
   /** font: free labels; numberFont: room numbers (needs clear lining figures). */
   labels: { font: string; numberFont: string; size: number; color: string };
   /** Props and terrain tiles: the three asset inks become these colours. */
+  /** Colour props (palette colour): as drawn, toned toward the props' sepia, or by lightness on the props' ink–shade–paper ramp (assets/colour.ts). */
+  colours: ColourMode;
   props: { ink: string; paper: string; shade: string };
   /** Terrain tint: 1 = the tile's own tint, lower mixes it toward the floor colour; gray drops the hue (print), and tone then colours the gray (sepia). */
   terrain: { mix: number; gray: boolean; tone?: string };
@@ -65,6 +68,7 @@ export const PRESETS: Record<string, Style> = {
     stairs: { color: '#111111', width: 0.04 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#111111' },
     props: { ink: '#1A1A1A', paper: '#FBF8F1', shade: '#B7AD9B' },
+    colours: { mode: 'drawn' },
     terrain: { mix: 1, gray: false },
     fog: { color: '#24211D', dim: 0.5 },
   },
@@ -82,6 +86,7 @@ export const PRESETS: Record<string, Style> = {
     stairs: { color: '#22252A', width: 0.035 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.8, color: '#22252A' },
     props: { ink: '#22252A', paper: '#FFFFFF', shade: '#C3C9D1' },
+    colours: { mode: 'drawn' },
     terrain: { mix: 0.8, gray: false },
     fog: { color: '#2A2F36', dim: 0.45 },
   },
@@ -99,6 +104,7 @@ export const PRESETS: Record<string, Style> = {
     stairs: { color: '#0F2438', width: 0.04 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#0F2438' },
     props: { ink: '#0F2438', paper: '#FFFFFF', shade: '#9CBBDA' },
+    colours: { mode: 'ramp', steps: 6 },
     terrain: { mix: 0.55, gray: false },
     fog: { color: '#0B1B2B', dim: 0.5 },
   },
@@ -124,6 +130,7 @@ export const PRESETS: Record<string, Style> = {
     stairs: { color: '#000000', width: 0.035 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#000000' },
     props: { ink: '#000000', paper: '#FFFFFF', shade: '#BDBDBD' },
+    colours: { mode: 'ramp', steps: 6 },
     terrain: { mix: 0.45, gray: true },
     fog: { color: '#FFFFFF', dim: 0.7 },
   },
@@ -150,6 +157,7 @@ export const PRESETS: Record<string, Style> = {
     stairs: { color: '#2E1F11', width: 0.035 },
     labels: { font: FONT, numberFont: NUMBER_FONT, size: 0.9, color: '#2E1F11' },
     props: { ink: '#2E1F11', paper: '#EEDDB6', shade: '#B89A6A' },
+    colours: { mode: 'toned', chroma: 0.45 },
     terrain: { mix: 0.55, gray: true, tone: '#8C6A3C' },
     fog: { color: '#2E1F11', dim: 0.45 },
   },

@@ -253,18 +253,19 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
 
 | Path | Returns |
 |---|---|
-| `GET /api/v1/assets` | `{ categories, assets: [{ id, name, category, kind: prop \| terrain, w, h, tags, blocks, tint?, difficult?, available, custom? }] }`: the built-in catalog, then this Delve's custom props (`custom: true`, see "Custom props") |
+| `GET /api/v1/assets` | `{ categories, assets: [{ id, name, category, kind: prop \| terrain, w, h, tags, blocks, tint?, difficult?, hidden?, palette?, layer?, group?, modular?, available, custom? }] }`: the ink catalog, then the colour props (`palette: "colour"`, see "Colour props" below), then this Delve's custom props (`custom: true`, see "Custom props") |
 | `GET /assets/props/<id>.svg` | The cleaned SVG in its original inks (thumbnails; the viewer loads art from here) |
 | `GET /assets/icons/<name>.svg`, `/assets/brand/<name>.svg`, `/favicon.svg` | Editor icons and the Delve logo |
 
 - **Props** are `{ type: "prop", asset, at, rotation?, scale? }`. `at` is the centre of the footprint. At rotation 0 a prop faces south, and rotation turns it clockwise in degrees.
-  - **Hidden from players:** `gmOnly: true` keeps a prop out of the players' view (their screen, Delve Table, players' exports and handouts). Unset, the asset decides: pressure plates, spike traps and floor runes (core `HIDDEN_ASSETS`) are hidden until found; `gmOnly: false` shows one. GM symbols are never drawn for players. The editor has a "Hidden from players" checkbox per prop; MCP `add_prop` takes `hidden`. Pictures keep the same size in both views, so the GM and players' PNGs line up.
+  - **Hidden from players:** `gmOnly: true` keeps a prop out of the players' view (their screen, Delve Table, players' exports and handouts). Unset, the asset decides (`hidden` in the catalog, core `hiddenByDefault`): pressure plates, spike traps and floor runes (core `HIDDEN_ASSETS`) and the colour props marked hidden (hidden trapdoors, covered pits) are hidden until found; `gmOnly: false` shows one. GM symbols are never drawn for players. The editor has a "Hidden from players" checkbox per prop; MCP `add_prop` takes `hidden`. Pictures keep the same size in both views, so the GM and players' PNGs line up.
 - **Prop brush:** in the editor's Prop tool, Shift + drag paints copies of the picked prop along the path.
   - **Regular** puts one every N squares, snapped to the grid like a click.
   - **Irregular** varies the gaps and strays up to `spread` squares to the sides, turning each copy at random and sizing it 0.8–1.2×.
   - The dashed stroke and a ghost of every copy show while dragging. No copy lands within 0.6 × spacing of the same prop already on the map, and a stroke is one undo step.
   - Selecting a prop on the map and switching to the Prop tool picks that prop (and its turn).
-  - Over MCP: `add_props_along` (`asset`, `path`, `spacing?`=3, `placement?`, `spread?`, `rotation?`), up to 500 per call.
+  - **Mixing variants:** for a prop with a `group` (colour props: all oaks are `oak`), the brush mixes the group's props at random, seeded per stroke, never the same twice running; the context bar's "Mix <group> (n)" chip turns it off (on by default). No copy lands near any prop of the group already there.
+  - Over MCP: `add_props_along` (`asset`, `path`, `spacing?`=3, `placement?`, `spread?`, `rotation?`, `mix?` = true when the prop has a group), up to 500 per call.
   - Core: `scatterAlong` in `scatter.ts`.
 - **Wall roughness** runs from 1 (smooth: straight walls, no hand wobble) to 10 (extremely rough: caves).
   - Set it for the whole map (`roughness` on the map, via `update_map` or MCP `set_map roughness`, `null` resets) and override it per room, corridor or cutout (`roughness` on the object).
@@ -274,16 +275,30 @@ All storeys of a place stacked like a cutaway model: the **3D** button on the ma
   - Unset keeps the style's own look.
   - Exports to Dungeon Scrawl keep the plain outline.
   - Core: `geometry/rough.ts`.
-- **Terrain** is `{ type: "terrain", asset, shape, holes? }`, drawn over the floor and under the grid, as a tint plus a repeating 2×2-square tile. `holes` are rings (`[[x, y], ...]`, 3 points or more) cut out of the shape: a forest filled around a dungeon leaves its rooms out this way. Moving the terrain moves its holes; fog of war and the editor's clicks ignore the holes' area.
-- **Drawing order:** decals lie under the walls, props sit on top of walls and doors, and GM symbols come last. GM symbols appear in the GM view only.
-- **Recolouring:** every style recolours the three asset inks (`props` in the style preset).
+- **Terrain** is `{ type: "terrain", asset, shape, holes? }`, drawn over the floor and under the grid, as a tint plus a repeating 2×2-square tile (a colour texture instead: its own tile size, no tint; see "Colour props"). `holes` are rings (`[[x, y], ...]`, 3 points or more) cut out of the shape: a forest filled around a dungeon leaves its rooms out this way. Moving the terrain moves its holes; fog of war and the editor's clicks ignore the holes' area.
+- **Drawing order:** decals (and colour props with `layer: "floor"`: rugs, trapdoors, leaf piles) lie under the walls, props sit on top of walls and doors, and GM symbols come last. GM symbols appear in the GM view only.
+- **Recolouring:** every style recolours the three asset inks (`props` in the style preset). Colour props keep their palette as the style shows it (`colours` in the style preset, see "Colour props").
 - **GM markers** are `{ type: "marker", kind: "discover" | "interact" | "trap", at, text, done? }`. They are notes pinned to a spot: "?" is something to discover, "!" something to interact with, and a skull a trap.
   - They are drawn last, in the GM view only. The players' view, the players' screen and the players' 3D view never contain them, and neither do Dungeon Scrawl exports. They don't change the picture's size.
   - On open floor a badge is 0.68 squares across. On a prop or uploaded picture it shrinks to at most 30% of that item's shorter side (never under 0.16 squares), so the item stays visible (core `markerRadius`; clicks use the same size).
   - In the viewer, clicking a marker opens its note in a small box, which editors can edit. Shift-click toggles `done`, which fades the badge and strikes it through, and strikes the note's text through.
   - The editor's Marker tool (M) places them at square centres (Alt for half squares) and opens the box for typing.
   - The SVG tags each badge `data-marker="<id>" data-kind="<kind>"`, plus `data-done` when done. Code: core `markers.ts`, web `markers.ts`.
-- **Where the art comes from:** `delve-props-design-system/assets`. `npm run assets` rebuilds `packages/core/src/assets/catalog.json` and the full `manifest.json` from the batch generators' metadata, and reports files that are listed but missing. Every SVG goes through a whitelist (`parseAssetSvg`) before it reaches a page or a PNG.
+- **Where the art comes from:** `delve-props-design-system/assets`. `npm run assets` rebuilds `packages/core/src/assets/catalog.json` and the full `manifest.json` from the batch generators' metadata, and reports files that are listed but missing. The colour props are in `assets/colour/`, imported by `npm run colour-props -- ~/colour-props` (see "Colour props"). Every SVG goes through a whitelist (`parseAssetSvg`) before it reaches a page or a PNG.
+
+## Colour props
+
+A second built-in library in full colour: trees, plants, rocks, rugs and carpets, trapdoors, hidden traps, modular ruin walls, and more as the batches are finished. The art, its rules and the import are in `docs/ASSETS-COLOUR.md`.
+
+- **Ids** are the art's ids behind `c-` (core `COLOUR_PREFIX`, `isColourAsset`): `c-oak-a`, `c-persian-red-a`, `c-wall-2`. They never clash with ink ids (ink `stalagmites`, colour `c-stalagmites`) or custom props (`my-…`). Maps, REST, MCP, segments and the editor use them like any prop id.
+- **Catalog:** core `COLOUR_ASSETS` and `COLOUR_CATEGORIES` (from `catalog-colour.json`); `allAssets()` is ink, then colour, then custom; `ASSETS` and `CATEGORIES` stay the ink catalog's. Each entry has `palette: "colour"`, `layer` (`floor` or `props`), and maybe `group`, `hidden` and `modular`. Categories can share an id with an ink one (`nature`); then the ink one names it.
+- **Drawing:** `layer: "floor"` props go into the decals layer (core `propLayer`), so furniture stands on a rug. The art keeps its palette, shown per style by core `colourMap(style)` (`Style.colours`): as drawn in classic-hatching and clean, toned toward the style's sepia on parchment and the handout, and by lightness onto the style's ink → shade → paper ramp in 6 tones in old-school blue and print. The scene's assets layer carries the style's colours (`colours`) only when it holds colour props, so maps without them draw exactly as before.
+- **Hidden** colour props are GM-only by default, like the ink traps (see "Hidden from players" above).
+- **Terrain textures:** the seamless textures (`"tile": true` in the art: floorboards, flagstones, grass, sand, calm or stormy water…) are `kind: "terrain"`, `palette: "colour"`, `w × h` their tile size in squares (2 or 3). A terrain object takes one as its `asset` (`{ type: "terrain", asset: "c-water-calm", shape }`); the scene draws it as a pattern of that size from the grid origin (so neighbouring areas of one texture join without a seam), in the style's colours and without a tint. Water tagged `swim` or `difficult terrain` is `difficult`. MCP `add_terrain` and the Terrain tool (G, chips Ink tiles, Water, Floors, Ground) take them; `list_assets` lists them as `(terrain, colour texture 3×3, group …)`. The Prop picker and `add_prop` leave them out.
+- **Groups:** core `groupVariants(id)` lists a prop's variants; the brush and `add_props_along` mix them (see "Prop brush").
+- **Modular ruin walls** (`modular: true`): 36 units thick on the centre line of their squares, open ends running to the edge. Core `modularAt` puts a footprint on whole squares; the editor uses it when placing (Stamp and Brush) and moving them, and MCP `add_prop` snaps them and says so ("Moved onto whole squares…"). Rotation 90 runs a piece north–south.
+- **MCP:** `list_assets` takes `palette` (`ink`, `colour` or `all`) besides `category` and `search` (which also matches groups). Without filters it lists the ink catalog as before plus one line per colour category (count and first ids); `palette: "colour"` alone gives just that summary; any list stops after 200 lines with a hint to narrow it. Each colour line says `colour`, `on the floor`, `group …`, `modular` and `hidden from players` where they apply.
+- **Editor:** the Prop picker's All / Ink / Colour switch (localStorage `delve-prop-palette`) picks the library, with the colour categories as chips; search matches names, tags and groups. The inspector's Prop list swaps a prop within its own library.
 
 ## Custom props (this Delve's own)
 

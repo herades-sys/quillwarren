@@ -2,12 +2,13 @@
 // plus the editor icons and the Delve logo. They come from
 // delve-props-design-system/assets in development and release/assets in a
 // release. Every prop and tile goes through parseAssetSvg, so only whitelisted
-// shapes in the three inks ever reach a page or a PNG.
+// shapes in the three inks (or, for colour props, the Delve palette) ever reach
+// a page or a PNG.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { ASSETS, assetInfo, assetSvg, CATEGORIES, CUSTOM_CATEGORY, customAssets, isCustomAsset, parseAssetSvg } from '@delve/core';
+import { ASSETS, assetInfo, assetSvg, CATEGORIES, COLOUR_ASSETS, COLOUR_CATEGORIES, CUSTOM_CATEGORY, customAssets, isCustomAsset, parseAssetSvg } from '@delve/core';
 
 /** release/assets next to the bundle, or the design system folder in development. DELVE_ASSETS overrides. */
 export function findAssetDir(): string | null {
@@ -32,7 +33,7 @@ export class AssetLibrary {
       let body: string | null = null;
       if (info && this.dir) {
         try {
-          body = parseAssetSvg(readFileSync(join(this.dir, info.file), 'utf8')).body;
+          body = parseAssetSvg(readFileSync(join(this.dir, info.file), 'utf8'), info).body;
         } catch {
           body = null;
         }
@@ -42,7 +43,7 @@ export class AssetLibrary {
     return this.bodies.get(id) ?? undefined;
   };
 
-  /** A standalone, cleaned SVG in the original inks. */
+  /** A standalone, cleaned SVG in the original inks (colour props: as drawn). */
   svg(id: string): string | undefined {
     const info = assetInfo(id);
     const body = this.body(id);
@@ -82,10 +83,10 @@ function customBody(id: string): string | undefined {
 }
 
 export function registerAssets(app: FastifyInstance, lib: AssetLibrary = assets): void {
-  // the built-in catalog, then this Delve's custom props (custom: true, under their own category or Custom)
+  // the built-in catalogs (ink, then colour: palette "colour"), then this Delve's custom props (custom: true, under their own category or Custom)
   app.get('/api/v1/assets', async () => ({
-    categories: [...CATEGORIES, CUSTOM_CATEGORY],
-    assets: [...ASSETS, ...customAssets()].map(({ file: _file, ...a }) => ({ ...a, available: lib.body(a.id) !== undefined })),
+    categories: [...CATEGORIES, CUSTOM_CATEGORY, ...COLOUR_CATEGORIES.filter((c) => !CATEGORIES.some((k) => k.id === c.id))],
+    assets: [...ASSETS, ...COLOUR_ASSETS, ...customAssets()].map(({ file: _file, ...a }) => ({ ...a, available: lib.body(a.id) !== undefined })),
   }));
 
   app.get('/assets/props/:file', async (req, reply) => {

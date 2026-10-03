@@ -13,6 +13,8 @@ const DIR = join(ROOT, 'delve-props-design-system/assets');
 const CATEGORIES = ['furniture', 'storage', 'treasure', 'temple', 'dungeon', 'workshop', 'light', 'nature', 'water', 'decals', 'symbols', 'cartography', 'terrain'];
 /** The four style-sheet samples live in samples/; in the editor they sit with their kind. */
 const SAMPLE_HOME: Record<string, string> = { 'table-round': 'furniture', chest: 'storage', barrel: 'storage', statue: 'temple' };
+/** Props that are secrets until found: hidden from players by default (catalog.json `hidden`; core HIDDEN_ASSETS). */
+const HIDDEN = new Set(['pressure-plate', 'spike-trap', 'rune']);
 
 type Blocks = 'none' | 'movement' | 'sight';
 interface Entry {
@@ -26,6 +28,7 @@ interface Entry {
   blocks: Blocks;
   tint?: string;
   difficult?: boolean;
+  hidden?: boolean;
   file: string;
 }
 
@@ -48,6 +51,7 @@ const problems: string[] = [];
 
 function add(e: Omit<Entry, 'file'>, file: string): void {
   if (seen.has(e.id)) return void problems.push(`${e.id}: duplicate id, second one ignored`);
+  if (e.id.startsWith('c-')) return void problems.push(`${e.id}: c- is the colour props' prefix (core COLOUR_PREFIX), dropped`);
   if (!existsSync(join(DIR, file))) return void missing.push(`${file} (${e.name})`);
   const parsed = parseAssetSvg(readFileSync(join(DIR, file), 'utf8'));
   for (const p of parsed.problems) problems.push(`${file}: ${p}`);
@@ -56,7 +60,7 @@ function add(e: Omit<Entry, 'file'>, file: string): void {
     e = { ...e, w: parsed.w, h: parsed.h };
   }
   seen.add(e.id);
-  entries.push({ ...e, file });
+  entries.push({ ...e, ...(HIDDEN.has(e.id) ? { hidden: true } : {}), file });
 }
 
 // Samples first (they are what the style sheet approved), then the batches.

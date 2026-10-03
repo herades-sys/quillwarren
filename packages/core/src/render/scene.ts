@@ -1,7 +1,8 @@
 // buildScene: map + style -> an ordered list of drawing layers in grid squares.
 // sceneToSvg (svg.ts) writes it out; a Canvas backend can draw the same layers.
 import { differenceD, EndType, FillRule, inflatePathsD, intersectD, JoinType, type PathsD } from 'clipper2-ts';
-import { assetInfo, categoryOf, propBounds, propHidden, type AssetLayer } from '../assets/catalog.ts';
+import { assetInfo, propBounds, propHidden, propLayer } from '../assets/catalog.ts';
+import { colourMap } from '../assets/colour.ts';
 import { fogShade, visiblePaths } from '../fog.ts';
 import { clipPolylines, insidePolygons } from '../geometry/objects.ts';
 import type { Palette } from '../assets/svg.ts';
@@ -69,6 +70,8 @@ export interface AssetItem {
   /** Footprint in squares before rotation and scale. */
   w: number;
   h: number;
+  /** A colour prop: drawn in the layer's `colours`, not its three inks. */
+  colour?: true;
 }
 
 /** One uploaded picture in an 'images' layer: w × h squares centred on `at`, turned clockwise by `rotation` degrees. */
@@ -101,9 +104,13 @@ export type Layer =
     })
   | (LayerBase & { kind: 'dots'; points: Point[]; radius: number; color: string })
   | (LayerBase & { kind: 'text'; items: { text: string; at: Point; size: number }[]; color: string; font: string })
-  | (LayerBase & { kind: 'assets'; items: AssetItem[]; palette: Palette })
-  /** Polygons filled with `tint`, then with a 2×2-square tile repeated from the origin. */
-  | (LayerBase & { kind: 'pattern'; polygons: Polygon[]; tile: string; body?: string; tint: string; palette: Palette })
+  /** colours: what a style makes of the palette (assets/colour.ts), there only when the layer holds colour props and the style changes them. */
+  | (LayerBase & { kind: 'assets'; items: AssetItem[]; palette: Palette; colours?: ReadonlyMap<string, string> })
+  /**
+   * Polygons filled with `tint`, then with a 2×2-square tile repeated from the origin. A colour
+   * texture (`colour`) has no tint: its own w × h-square tile, in its palette as the style shows it.
+   */
+  | (LayerBase & { kind: 'pattern'; polygons: Polygon[]; tile: string; body?: string; tint?: string; palette: Palette; colour?: { size: [number, number]; colours?: ReadonlyMap<string, string> } })
   /** GM markers: badges of radius `r` squares (smaller on props and pictures), each tagged with its id so a viewer can make it clickable. */
   | (LayerBase & { kind: 'markers'; items: { id: string; kind: MarkerKind; at: Point; done: boolean; r: number }[] })
   /** Short labels on rounded boxes `size` squares tall, centred on `at` (the GM's stair labels). */
@@ -195,15 +202,18 @@ export function terrainTint(tint: string | undefined, style: Style): string {
   return toHex(rgb.map((v, i) => v * k + floor[i]! * (1 - k)));
 }
 
-function layerOfProp(p: Prop): AssetLayer {
-  return categoryOf(p.asset)?.layer ?? 'props';
-}
-
 function assetItems(props: Prop[], body: RenderOptions['assets']): AssetItem[] {
   return props.map((p) => {
     const info = assetInfo(p.asset);
-    return { id: p.id, asset: p.asset, body: body?.(p.asset), at: p.at, rotation: p.rotation ?? 0, scale: p.scale ?? 1, w: info?.w ?? 1, h: info?.h ?? 1 };
+    return { id: p.id, asset: p.asset, body: body?.(p.asset), at: p.at, rotation: p.rotation ?? 0, scale: p.scale ?? 1, w: info?.w ?? 1, h: info?.h ?? 1, ...(info?.palette === 'colour' ? { colour: true as const } : {}) };
   });
+}
+
+/** An assets layer; with colour props in it, also the style's colours for them (unless it draws them as they are). */
+function assetLayer(name: string, props: Prop[], opts: RenderOptions, style: Style): Layer {
+  const items = assetItems(props, opts.assets);
+  const colours = items.some((i) => i.colour) ? colourMap(style) : null;
+  return { name, kind: 'assets', items, palette: style.props, ...(colours ? { colours } : {}) };
 }
 
 function stairLines(s: Stairs): Polyline[] {
@@ -351,13 +361,20 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
 
   // Terrain goes over the floor (and over open ground outside it), under the grid.
   for (const { t, polygons } of terrain) {
+    const info = assetInfo(t.asset);
+    if (info?.palette === 'colour') {
+      // a colour texture: its own colours as the style shows them, at its own size, still lined up with the grid from the origin
+      const colours = colourMap(style);
+      layers.push({ name: `terrain:${t.id}`, kind: 'pattern', polygons, tile: t.asset, body: opts.assets?.(t.asset), palette: style.props, colour: { size: [info.w, info.h], ...(colours ? { colours } : {}) } });
+      continue;
+    }
     layers.push({
       name: `terrain:${t.id}`,
       kind: 'pattern',
       polygons,
       tile: t.asset,
       body: opts.assets?.(t.asset),
-      tint: terrainTint(assetInfo(t.asset)?.tint, style),
+      tint: terrainTint(info?.tint, style),
       palette: style.props,
     });
   }
@@ -411,8 +428,9 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   if (heightArt) layers.push(...heightArt.edges);
 
   // Decals (cracks, puddles, moss) lie on the floor under the walls.
-  const decals = props.filter((p) => layerOfProp(p) === 'decals');
-  if (decals.length) layers.push({ name: 'decals', kind: 'assets', items: assetItems(decals, opts.assets), palette: style.props });
+  // Colour props that lie flat (rugs, trapdoors, leaf piles) go here too, so furniture stands on them.
+  const decals = props.filter((p) => propLayer(p.asset) === 'decals');
+  if (decals.length) layers.push(assetLayer('decals', decals, opts, style));
 
   // Solid cutouts (pillars, wall blocks) are filled with the wall colour; the walls then outline them.
   const solid = solidCutouts(map, floor, seenPaths);
@@ -484,8 +502,8 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   // Props stand on top of walls and doors (wall-mounted ones overlap the wall line);
   // GM symbols come last, and only in the GM view (filtered above).
   for (const layer of ['props', 'symbols'] as const) {
-    const list = props.filter((p) => layerOfProp(p) === layer || (layer === 'props' && layerOfProp(p) === 'terrain'));
-    if (list.length) layers.push({ name: layer, kind: 'assets', items: assetItems(list, opts.assets), palette: style.props });
+    const list = props.filter((p) => propLayer(p.asset) === layer || (layer === 'props' && propLayer(p.asset) === 'terrain'));
+    if (list.length) layers.push(assetLayer(layer, list, opts, style));
     if (layer === 'props') imageLayer('props'); // over the props, under the GM symbols
   }
 

@@ -1,11 +1,13 @@
 // sceneToSvg: a scene (in grid squares) as a standalone SVG string. The
 // viewBox is in squares; width/height are pixels at `ppg` (pixels per grid square).
+import { recolour } from '../assets/colour.ts';
 import { recolor, type Palette } from '../assets/svg.ts';
 import { markerGlyph } from '../markers.ts';
 import type { Polygon } from '../geometry/shapes.ts';
 import type { Polyline } from '../geometry/walls.ts';
 import { imageUrl } from '../images.ts';
 import { inscriptionSeed, inscriptionSvg } from '../inscriptions.ts';
+import { hashString } from './rng.ts';
 import type { AssetItem, ImageItem, Layer, Scene } from './scene.ts';
 
 export interface SvgOptions {
@@ -49,8 +51,13 @@ function linesD(lines: readonly Polyline[]): string {
 const patternId = (prefix: string, tile: string, p: Palette): string =>
   `${prefix}tile-${tile.replace(/[^A-Za-z0-9_-]/g, '_')}-${(p.ink + p.paper + p.shade).replace(/#/g, '')}`;
 
+type PatternLayer = Extract<Layer, { kind: 'pattern' }>;
+/** A pattern layer's id: a colour texture's also names the colours it is drawn in, which differ between styles with the same inks. */
+const patternKey = (prefix: string, l: PatternLayer): string =>
+  `${patternId(prefix, l.tile, l.palette)}${l.colour ? `-c${l.colour.colours ? hashString([...l.colour.colours.values()].join('')).toString(36) : ''}` : ''}`;
+
 /** A prop: the body is in asset units (100 per square) with its footprint's top-left at 0,0. */
-function assetSvg(it: AssetItem, palette: Palette): string {
+function assetSvg(it: AssetItem, palette: Palette, colours: ReadonlyMap<string, string> | undefined): string {
   const place = `translate(${n(it.at[0])} ${n(it.at[1])})${it.rotation ? ` rotate(${n(it.rotation)})` : ''}`;
   const w = it.w * it.scale;
   const h = it.h * it.scale;
@@ -61,7 +68,9 @@ function assetSvg(it: AssetItem, palette: Palette): string {
       `fill="none" stroke="${palette.ink}" stroke-width="0.04" stroke-dasharray="0.15 0.1"/></g>`
     );
   }
-  return `<g transform="${place} scale(${n(it.scale / 100)}) translate(${n(-it.w * 50)} ${n(-it.h * 50)})">${recolor(it.body, palette)}</g>`;
+  // colour props keep their palette, as the style shows it; the rest swap their three inks
+  const body = it.colour ? recolour(it.body, colours ?? null) : recolor(it.body, palette);
+  return `<g transform="${place} scale(${n(it.scale / 100)}) translate(${n(-it.w * 50)} ${n(-it.h * 50)})">${body}</g>`;
 }
 
 /** An uploaded picture stretched over its footprint and turned about its centre. The src was checked against IMAGE_SRC. */
@@ -124,13 +133,15 @@ function layerSvg(layer: Layer, prefix: string): string {
       return g(`<g font-family="${esc(layer.font)}, serif" fill="${layer.color}">${items}</g>`);
     }
     case 'assets':
-      return layer.items.length ? g(layer.items.map((it) => assetSvg(it, layer.palette)).join('')) : '';
+      return layer.items.length ? g(layer.items.map((it) => assetSvg(it, layer.palette, layer.colours)).join('')) : '';
     case 'images':
       return layer.items.length ? g(layer.items.map(imageSvg).join('')) : '';
     case 'pattern': {
       const d = polygonsD(layer.polygons);
       if (!d) return '';
-      const tile = layer.body ? `<path d="${d}" fill="url(#${patternId(prefix, layer.tile, layer.palette)})" fill-rule="evenodd"/>` : '';
+      const tile = layer.body ? `<path d="${d}" fill="url(#${patternKey(prefix, layer)})" fill-rule="evenodd"/>` : '';
+      // a colour texture covers its tile edge to edge: no tint under it
+      if (layer.tint === undefined) return tile ? g(tile) : '';
       return g(`<path d="${d}" fill="${layer.tint}" fill-rule="evenodd"/>${tile}`);
     }
     case 'markers':
@@ -162,15 +173,19 @@ function layerSvg(layer: Layer, prefix: string): string {
   }
 }
 
-/** One <pattern> per terrain tile and palette in the scene. Tiles are 2×2 squares, lined up with the grid from the origin. */
+/**
+ * One <pattern> per terrain tile and palette in the scene, lined up with the grid from the origin.
+ * Ink tiles are 2×2 squares in the style's inks; colour textures are their own size, in the style's colours.
+ */
 function patternDefs(scene: Scene, prefix: string): string {
   const out = new Map<string, string>();
   for (const l of scene.layers) {
     if (l.kind !== 'pattern' || !l.body) continue;
-    const id = patternId(prefix, l.tile, l.palette);
-    if (!out.has(id)) {
-      out.set(id, `<pattern id="${esc(id)}" patternUnits="userSpaceOnUse" x="0" y="0" width="2" height="2"><g transform="scale(0.01)">${recolor(l.body, l.palette)}</g></pattern>`);
-    }
+    const id = patternKey(prefix, l);
+    if (out.has(id)) continue;
+    const [w, h] = l.colour?.size ?? [2, 2];
+    const body = l.colour ? recolour(l.body, l.colour.colours ?? null) : recolor(l.body, l.palette);
+    out.set(id, `<pattern id="${esc(id)}" patternUnits="userSpaceOnUse" x="0" y="0" width="${n(w)}" height="${n(h)}"><g transform="scale(0.01)">${body}</g></pattern>`);
   }
   return [...out.values()].join('');
 }
