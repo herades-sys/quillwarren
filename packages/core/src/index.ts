@@ -154,6 +154,7 @@ export { DRAW_SHAPES, PRESET_SHAPES, OVAL_POINTS, shapeFromBox, shapeFromDrag, d
 export { solidCutouts } from './geometry/solid.ts';
 export { sceneToSvg, type SvgOptions } from './render/svg.ts';
 export { handoutSvg, PAPERS, type Paper, type HandoutOptions, type Handout } from './render/handout.ts';
+export { legendEntries, legendLayout, groupName, LEGEND_CAP, type LegendEntry, type LegendKind, type LegendLayout } from './render/legend.ts';
 export { frameTransform, type HandoutFrame } from './render/handout.ts';
 export {
   INSCRIPTION_SIZE,

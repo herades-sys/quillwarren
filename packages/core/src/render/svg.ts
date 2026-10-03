@@ -17,6 +17,8 @@ export interface SvgOptions {
   frame?: { x: number; y: number; width: number; height: number };
   /** Prefix for element ids, so several maps can sit inline on one HTML page. */
   idPrefix?: string;
+  /** The terrain tiles are already defined in the document under this id prefix (the handout's legend uses the map's): no <pattern>s of its own. */
+  patternPrefix?: string;
 }
 
 const n = (v: number): string => {
@@ -90,7 +92,7 @@ function common(layer: Layer, prefix: string): string {
   return a;
 }
 
-function layerSvg(layer: Layer, prefix: string): string {
+function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
   const g = (inner: string) => `<g data-layer="${esc(layer.name)}"${common(layer, prefix)}>${inner}</g>`;
   switch (layer.kind) {
     case 'rect': {
@@ -139,7 +141,7 @@ function layerSvg(layer: Layer, prefix: string): string {
     case 'pattern': {
       const d = polygonsD(layer.polygons);
       if (!d) return '';
-      const tile = layer.body ? `<path d="${d}" fill="url(#${patternKey(prefix, layer)})" fill-rule="evenodd"/>` : '';
+      const tile = layer.body ? `<path d="${d}" fill="url(#${patternKey(tiles, layer)})" fill-rule="evenodd"/>` : '';
       // a colour texture covers its tile edge to edge: no tint under it
       if (layer.tint === undefined) return tile ? g(tile) : '';
       return g(`<path d="${d}" fill="${layer.tint}" fill-rule="evenodd"/>${tile}`);
@@ -204,7 +206,7 @@ export function sceneToSvg(scene: Scene, opts: SvgOptions = {}): string {
     .join('');
   const f = opts.frame;
   const size = f ? `x="${n(f.x)}" y="${n(f.y)}" width="${n(f.width)}" height="${n(f.height)}"` : `width="${Math.round(w * ppg)}" height="${Math.round(h * ppg)}"`;
-  const body = scene.layers.map((l) => layerSvg(l, prefix)).join('');
+  const body = scene.layers.map((l) => layerSvg(l, prefix, opts.patternPrefix ?? prefix)).join('');
   // reveal: only what's inside the polygons is drawn, over a plain fill (never a filter: resvg panics on feDisplacementMap)
   const r = scene.reveal;
   const revealDef = r ? `<clipPath id="${esc(prefix)}clip-reveal"><path d="${polygonsD(r.polygons)}" clip-rule="evenodd"/></clipPath>` : '';
@@ -214,7 +216,7 @@ export function sceneToSvg(scene: Scene, opts: SvgOptions = {}): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" ${size} ` +
     `viewBox="${n(x0)} ${n(y0)} ${n(w)} ${n(h)}">` +
-    `<defs>${clips}${revealDef}${patternDefs(scene, prefix)}</defs>` +
+    `<defs>${clips}${revealDef}${opts.patternPrefix === undefined ? patternDefs(scene, prefix) : ''}</defs>` +
     drawn +
     `</svg>`
   );

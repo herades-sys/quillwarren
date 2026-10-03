@@ -947,7 +947,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       title: 'Export link',
       description:
         'A download link for the user: PNG (default 70 px per square, Roll20\'s grid), SVG, ds (opens in Dungeon Scrawl), ' +
-        'or handout: the players\' map drawn by hand on an old parchment sheet, to print or hand out (the link opens a page with print and download buttons). ' +
+        'or handout: the players\' map drawn by hand on an old parchment sheet, to print or hand out (the link opens a page with print and download buttons), with a legend of what is drawn on it in a free corner (legend false leaves it out). ' +
         'PNG, SVG and handout can be cropped to part of the map: crop [x, y, width, height] in squares, and/or around: object ids (e.g. ["r4", "r11"] for rooms 4 and 11 only) ' +
         'with margin squares around them (default 1). Both together cover both. The crop is widened to whole squares, so a VTT grid lines up.',
       inputSchema: {
@@ -959,6 +959,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         crop: z.tuple([z.number(), z.number(), z.number().positive(), z.number().positive()]).optional().describe('Only this rectangle [x, y, width, height] in squares'),
         around: z.array(z.string()).min(1).optional().describe('Only the part around these objects (their bounds plus margin)'),
         margin: z.number().min(0).max(100).optional().describe('Squares around the around objects (default 1)'),
+        legend: z.boolean().optional().describe('handout only: the legend (map key) in a free corner of the sheet; default: when 2 or more kinds of things are drawn. false leaves it out, true keeps even a single entry'),
       },
       annotations: { readOnlyHint: true },
     },
@@ -972,7 +973,10 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           return text(`${base}/api/v1/maps/${encodeURIComponent(a.map)}/export.ds?view=${view}`);
         }
         const note = cropped ? `\nCropped to x ${cropped.x0}–${cropped.x1}, y ${cropped.y0}–${cropped.y1} (${cropped.x1 - cropped.x0}×${cropped.y1 - cropped.y0} squares).` : '';
-        if (a.format === 'handout') return text(`${base}/maps/${encodeURIComponent(a.map)}/handout${cropped ? `?crop=${frameQuery(cropped)}` : ''}${note}`);
+        if (a.format === 'handout') {
+          const hq = [...(cropped ? [`crop=${frameQuery(cropped)}`] : []), ...(a.legend !== undefined ? [`legend=${a.legend ? 1 : 0}`] : [])];
+          return text(`${base}/maps/${encodeURIComponent(a.map)}/handout${hq.length ? `?${hq.join('&')}` : ''}${note}`);
+        }
         const q = new URLSearchParams({ view, ...(a.style ? { style: a.style } : {}), ...(a.ppg ? { ppg: String(a.ppg) } : {}) });
         // the frame by hand: URLSearchParams would write its commas as %2C
         return text(`${base}/api/v1/maps/${encodeURIComponent(a.map)}/render.${a.format ?? 'png'}?${q}${cropped ? `&frame=${frameQuery(cropped)}` : ''}${note}`);

@@ -108,6 +108,8 @@ export interface HandoutQuery {
   download?: string;
   /** "0": without the handwritten notes (the handout page draws them itself while the GM edits them). */
   inscriptions?: string;
+  /** "0": no legend; "1": a legend even of one entry; missing: a legend when it has 2 entries or more. */
+  legend?: string;
 }
 
 export function handoutOptions(q: HandoutQuery, ext: 'svg' | 'png'): HandoutOptions {
@@ -132,6 +134,7 @@ export function handoutOptions(q: HandoutQuery, ext: 'svg' | 'png'): HandoutOpti
     assets: assets.body,
     ...(q.crop !== undefined ? { crop: parseFrame(q.crop, 'crop') } : {}),
     ...(q.inscriptions === '0' ? { inscriptions: false } : {}),
+    ...(q.legend === '0' || q.legend === '1' ? { legend: q.legend === '1' } : {}),
   };
 }
 

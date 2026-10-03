@@ -100,6 +100,7 @@ function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewe
       ${check('compass', 'Compass rose', true)}
       ${check('scale', 'Scale bar', true)}
       ${check('frame', 'Ink frame', true)}
+      ${check('legend', 'Legend', true, ' title="A key to what is drawn on the sheet: doors, stairs, terrain and props"')}
       ${check('stains', 'Stains and wear', true)}
       ${check('names', 'Room names', false)}
       ${check('revealed', 'Only what the players have seen', false, ` title="${fogOn ? 'Fog of war is on for this map' : 'Turn fog of war on in the editor to use this'}"`)}
@@ -130,12 +131,16 @@ function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewe
   // a cropped handout (the editor's "Crop to selection", MCP export crop): only that part of the map
   var crop = new URLSearchParams(location.search).get('crop');
   if (crop) { var cn = document.createElement('span'); cn.className = 'note'; cn.textContent = 'Cropped to squares ' + crop.split(',').join(', ') + '. '; var wa = document.createElement('a'); wa.href = location.pathname; wa.textContent = 'Whole map'; cn.appendChild(wa); document.querySelector('header').appendChild(cn); }
+  // the legend: legend=0 in the page's address starts without it, legend=1 keeps it even for a single entry (MCP export)
+  var legendQ = new URLSearchParams(location.search).get('legend');
+  if (legendQ === '0') $('legend').checked = false;
   function query(extra) {
     var q = new URLSearchParams({ paper: $('paper').value, orientation: $('orientation').value });
     if (crop) q.set('crop', crop);
     var t = $('title').value.trim();
     if (t !== init.name) q.set('title', t);
-    ['compass', 'scale', 'frame', 'stains'].forEach(function (k) { if (!$(k).checked) q.set(k, '0'); });
+    ['compass', 'scale', 'frame', 'stains', 'legend'].forEach(function (k) { if (!$(k).checked) q.set(k, '0'); });
+    if ($('legend').checked && legendQ === '1') q.set('legend', '1');
     ['names', 'revealed'].forEach(function (k) { if ($(k).checked) q.set(k, '1'); });
     Object.keys(extra || {}).forEach(function (k) { q.set(k, extra[k]); });
     return q.toString();

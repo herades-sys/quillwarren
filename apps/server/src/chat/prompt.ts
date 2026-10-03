@@ -170,7 +170,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - png for Roll20: 70 px per square and the players' view by default. The filename holds the size in squares, which is the Roll20 page size to set.
   - svg for print.
   - ds opens in Dungeon Scrawl.
-  - handout: the players' map on an old parchment sheet.
+  - handout: the players' map on an old parchment sheet, with a legend of what is drawn on it (legend false leaves it out).
   - Cropped: png, svg and handout can cover just part of the map. around: object ids ("rooms 4 and 11 only": around ["r4", "r11"]) plus margin squares (default 1), and/or crop [x, y, width, height] in squares. The crop is widened to whole squares so a VTT grid lines up; the filename holds its size in squares.
   - In the editor, Export → "Crop to selection" does the same for what the user has selected.
 

@@ -424,7 +424,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 - **What it is:** the players' view of the map, drawn in the parchment style on an aged sheet.
   - **The map:** no room numbers, secret doors shut, and no GM markers or GM symbols. It shows the whole map, unless "only what the players have seen" is on.
   - **The sheet:** paper texture and stains, a torn and burnt edge, and a hand-ruled frame.
-  - **Extras:** a title with a flourish, a compass rose and a scale bar in the map's own unit.
+  - **Extras:** a title with a flourish, a compass rose, a scale bar in the map's own unit, and a legend (see "The legend" below).
 - **Page:** `/maps/:id/handout`, with a "Handout" button in the viewer and "Parchment handout" on the start page.
   - It has a live preview on a table and the options.
   - Print or save as PDF: the 200 dpi PNG goes on a page of the right paper size.
@@ -433,7 +433,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
   - `paper`: `a4` (the default), `a3`, `letter`, or `fit` (the sheet is sized to the map).
   - `orientation`: `auto` (whichever way round draws the map bigger), `portrait` or `landscape`.
   - `title`: missing means the map's name; empty means no title.
-  - `compass=0`, `scale=0`, `frame=0`, `stains=0` leave each of those out.
+  - `compass=0`, `scale=0`, `frame=0`, `stains=0`, `legend=0` leave each of those out. `legend=1` draws a legend even for a single entry.
   - `names=1` writes the room names on the map.
   - `revealed=1` draws only what the players have seen.
   - `dpi`: 50–400; PNG defaults to 200, SVG to 96.
@@ -444,6 +444,26 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 - **Don't use `feDisplacementMap`** in anything resvg renders. It panics on uneven region rounding (e.g. A3 at 60 dpi), and the panic aborts the whole server.
 - **Keep handout geometry on the page:** a cropped sheet with the whole map's geometry running far past the page made resvg panic under a stain's blur filter (geom.rs `unwrap` on `None`), so cropped handouts are cut to their frame first (`cropScene`).
 - **resvg also panics** when what a clipped or see-through group holds reaches far into negative coordinates (on A4, about 1000 pt left of or above the sheet). Handwritten notes are therefore drawn only when they stay within a quarter sheet of the sheet's edge (core `inscriptionNear`); the same rule, a quarter of the picture's shorter side, keeps far-off `onMap` notes out of map renders.
+
+#### The legend
+
+- **What it is:** a hand-drawn key box (an ink frame like the sheet's, "Legend" with a flourish) listing each kind of thing drawn on this handout once: a small picture in the same art and parchment colours as on the map, and its name in IM FELL English, like the title.
+- **What it lists:**
+  - **Doors** by style: Door, Double door, Locked door, Portcullis, Archway (open doors count as their style). Each picture is a door in a stub of wall, drawn by the renderer from a tiny sample map.
+  - **Stairs** (a few treads in a stairwell), then the props that lead somewhere: ladders, trapdoors, hatches, spiral stairs.
+  - **Terrain:** ink tiles and colour textures, by area, as a swatch of one tile. A strip less than half a square deep (the edge of the revealed fog) doesn't count.
+  - **Height edges:** Cliff, Rock face, Slope, Step, when height areas are drawn.
+  - **Props**, ink, colour and custom alike, by how often they appear. A group of variants is one entry, named from the catalog (core `groupName`): c-oak-a, -b and -c are "Oak", the two red Persian rugs "Persian rug, red", the market stalls "Market stall". Its picture is the variant there is most of, upright, scaled to fit the icon (a big tree shrinks to one icon). Two groups that would share a name get fuller ones ("Oak", "Oak, autumn"). Map parts (the compass rose, title cartouche and other cartography props) aren't listed.
+  - **Never:** anything players don't see on the sheet. Hidden and `gmOnly` props (hidden traps), GM symbols, markers, secret doors and room numbers aren't in the handout's scene, which the entries come from. With `revealed=1`, only what lies in the revealed fog; with `crop=`, only what lies inside the crop.
+  - **Order:** doors, stairs, ladders and trapdoors first (classic dungeon keys open with these), then the ground (terrain, height edges), then props from the most common. So a capped legend drops only the rarest props.
+  - **At most 24 entries**, then "and N more". Names over 28 characters are cut at a comma or a word.
+- **Where it goes:** in a corner inside the margins, clear of the map's ink (its floor grown by the hatching, terrain, props, labels), the title, the compass rose, the scale bar and handwritten notes, in 1 to 6 columns.
+  - **Which corner:** of the corners where it fits, the one with the most empty paper around the box (up to 3 icons' worth), weighed against a box that's too long or too flat; then bottom right first, the compass's corner last.
+  - **No corner has room:** the map is moved away from a corner (centred the other way where it fits), then shrunk in 3 % steps down to 60 %. The biggest map that leaves room wins, which on a sheet the map spans makes a strip along a margin.
+  - **A sheet fitted to the map** (`paper=fit`) keeps the map's size and grows a strip under it (above the scale bar) or beside it, whichever adds less paper.
+  - The `x-handout-frame` header always gives the map's final place and size, so the Notes tool stays lined up.
+- **Default:** on when there are at least 2 entries (a map with only plain doors gets none). `legend=0` gives the sheet byte for byte as it was before the legend. The page has a "Legend" checkbox under "On the sheet"; `/maps/:id/handout?legend=0` opens it unchecked, and `legend=1` keeps a one-entry legend.
+- **Code:** core `render/legend.ts` (`legendEntries`, `groupName`, `legendLayout`, `InkMask`: a coarse grid of where the map has ink, with running sums so every box test is instant) and `render/handout.ts` (`placeLegend`, `legendSvg`). Terrain swatches fill with the map's own tile patterns (`sceneToSvg`'s `patternPrefix`), so each tile is in the file once.
 
 #### Handwritten notes on the handout
 
@@ -565,7 +585,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 | `move`, `resize`, `update`, `delete`, `set_map` (name, style, overrides, seed, roughness 1–10, level_name, floor) | Changes; `add_room` also takes `roughness`. `update {"notes": "…"}` writes GM notes on a room, corridor or terrain (see "GM notes") |
 | `undo`, `redo` | History |
 | `render` (`view?`, `style?`, `ppg?`=24) | Returns a PNG image, so Claude can look at its work |
-| `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70, `crop?` [x, y, w, h], `around?` ids, `margin?`=1) | A download link for the user; `handout` links the parchment handout page. `crop` / `around` crop png, svg and handout to whole squares (see "Cropped exports") |
+| `export` (`format?` png/svg/ds/handout, `view?`=players, `ppg?`=70, `crop?` [x, y, w, h], `around?` ids, `margin?`=1, `legend?`) | A download link for the user; `handout` links the parchment handout page. `crop` / `around` crop png, svg and handout to whole squares (see "Cropped exports"). `legend` (handout only): `false` opens the page without the legend, `true` keeps even a one-entry legend (see "The legend") |
 | `focus` (`ids`) | Pans and highlights every open viewer |
 | `plan` (`steps: [{title, status}]` with status `pending` \| `active` \| `done` \| `skipped`, `note?`) | Claude's plan for the editor's chat panel (a checklist with a progress bar and time left; see "Claude's plan"). Each call replaces the whole plan; it says "ok" and changes no map. Elsewhere it shows nowhere |
 | `apply_ops` | Raw ops, one undoable step |
