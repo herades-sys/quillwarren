@@ -67,8 +67,9 @@ export function claudeArgs(r: RunRequest, files: { system: string; mcp: string }
     '--system-prompt-file', files.system,
     '--mcp-config', files.mcp,
     '--strict-mcp-config',
-    '--tools', '',
-    '--allowedTools', 'mcp__delve',
+    // no built-in tools except Claude Code's task list, which the chat shows as the plan
+    '--tools', 'TaskCreate,TaskUpdate,TaskList',
+    '--allowedTools', 'mcp__delve,TaskCreate,TaskUpdate,TaskList',
     '--setting-sources', '',
     ...(r.resume ? ['--resume', r.resume] : []),
   ];

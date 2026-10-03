@@ -193,6 +193,28 @@ describe('plan calls in the stream', () => {
     expect(t.feed(assistant('d', PLAN_2))).toEqual([{ type: 'plan', ...PLAN_2 }]);
   });
 
+  it("shows Claude Code's task list as the plan, and never as tool events", () => {
+    const t = new StreamTranslator();
+    const call = (id: string, tools: [string, string, unknown][]) =>
+      JSON.stringify({ type: 'assistant', session_id: SESSION, message: { id, content: tools.map(([toolId, name, input]) => ({ type: 'tool_use', id: toolId, name, input })) } });
+    const step = (title: string, status: string) => ({ title, status });
+    expect(t.feed(call('m1', [['t1', 'TaskCreate', { subject: 'Lay the road', description: 'west to east' }], ['t2', 'TaskCreate', { subject: 'Plant the forest' }]]))).toEqual([
+      { type: 'plan', steps: [step('Lay the road', 'pending')] },
+      { type: 'plan', steps: [step('Lay the road', 'pending'), step('Plant the forest', 'pending')] },
+    ]);
+    expect(t.feed(JSON.stringify(result('t1', 'Task #4 created successfully: Lay the road')))).toEqual([]);
+    expect(t.feed(JSON.stringify(result('t2', 'Task #5 created successfully: Plant the forest')))).toEqual([]);
+    expect(t.feed(call('m2', [['u1', 'TaskUpdate', { taskId: '4', status: 'in_progress' }], ['a1', 'mcp__delve__add_terrain', { map: 'm' }]]))).toEqual([
+      { type: 'plan', steps: [step('Lay the road', 'active'), step('Plant the forest', 'pending')] },
+      { type: 'tool', id: 'a1', name: 'add_terrain', input: { map: 'm' } },
+    ]);
+    expect(t.feed(JSON.stringify(result('u1', 'Updated task #4 status')))).toEqual([]); // no tool_done for task calls
+    expect(t.feed(call('m3', [['u2', 'TaskUpdate', { taskId: '4', status: 'completed' }], ['u3', 'TaskUpdate', { taskId: '5', status: 'deleted' }], ['u4', 'TaskUpdate', { taskId: '99', status: 'completed' }], ['l1', 'TaskList', {}]]))).toEqual([
+      { type: 'plan', steps: [step('Lay the road', 'done'), step('Plant the forest', 'pending')] },
+      { type: 'plan', steps: [step('Lay the road', 'done'), step('Plant the forest', 'skipped')] },
+    ]);
+  });
+
   it('ignores the input of other tools and of unknown blocks', () => {
     const evs = translate([
       { type: 'stream_event', session_id: SESSION, event: { type: 'message_start', message: { id: 'q' } } },
@@ -260,7 +282,7 @@ describe('the plan tool', () => {
 
 describe('what Claude is told about plans', () => {
   it('asks for a plan for 3 or more steps, kept current, and none for small requests', () => {
-    for (const s of ['# Showing your plan (the plan tool)', '3 or more steps', 'the first one "active"', 'that step "done" and the next one "active"', '"skipped"', 'Small requests', 'in the user\'s language']) {
+    for (const s of ['# Showing your plan (the task list)', '3 or more steps', 'one task per step with TaskCreate', 'to "in_progress" when you start it and to "completed" when it is done', '"deleted"', 'Small requests', 'in the user\'s language']) {
       expect(CHAT_SYSTEM_PROMPT).toContain(s);
     }
   });

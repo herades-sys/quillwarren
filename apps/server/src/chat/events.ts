@@ -36,6 +36,12 @@ export type ChatEvent =
 type Json = Record<string, unknown>;
 const TOOL_PREFIX = 'mcp__delve__';
 const PLAN_TOOL = `${TOOL_PREFIX}plan`;
+/**
+ * Claude Code's own task list, the checklist Claude is trained to keep for longer
+ * work: TaskCreate / TaskUpdate become the plan as well (TaskList and TaskGet only
+ * read it). Claude ignored the plan tool; it uses these.
+ */
+const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
 
 const PLAN_ALIASES: Record<string, PlanStatus> = { in_progress: 'active', running: 'active', completed: 'done', complete: 'done', finished: 'done', skip: 'skipped', todo: 'pending' };
 
@@ -79,6 +85,10 @@ export class StreamTranslator {
   /** The plan as last sent: a call that is still streaming in is merged into it. */
   private plan: { steps: PlanStep[]; note?: string } = { steps: [] };
   private planSent = '';
+  /** The tasks created in this run, in order; id is Claude Code's task number, known once its result arrives. */
+  private tasks: { id?: string; step: PlanStep }[] = [];
+  /** TaskCreate calls waiting for their result (the new task's number), by tool_use id. */
+  private taskCreates = new Map<string, number>();
 
   feed(line: string): ChatEvent[] {
     let m: Json;
@@ -186,6 +196,9 @@ export class StreamTranslator {
         if (name === PLAN_TOOL) {
           this.planIds.add(String(c.id ?? ''));
           out.push(...this.sendPlan(planFromInput(c.input)));
+        } else if (TASK_TOOLS.has(name)) {
+          this.planIds.add(String(c.id ?? ''));
+          out.push(...this.task(name, String(c.id ?? ''), (c.input ?? {}) as Json));
         } else out.push({ type: 'tool', id: String(c.id ?? ''), name: name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : name, input: c.input ?? {} });
         this.needBreak = true;
       }
@@ -193,8 +206,37 @@ export class StreamTranslator {
     return out;
   }
 
+  /** A TaskCreate or TaskUpdate call: the tasks of this run become the plan. */
+  private task(name: string, useId: string, a: Json): ChatEvent[] {
+    const title = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, PLAN_MAX_TITLE) : '');
+    // Claude Code's statuses are pending / in_progress / completed, and deleted for a dropped task
+    const status = (v: unknown, fallback: PlanStatus): PlanStatus => {
+      const s = String(v ?? '').toLowerCase();
+      if (s === 'deleted') return 'skipped';
+      return (PLAN_STATUSES as readonly string[]).includes(s) ? (s as PlanStatus) : (PLAN_ALIASES[s] ?? fallback);
+    };
+    if (name === 'TaskCreate') {
+      const t = title(a.subject) || title(a.activeForm) || title(a.description);
+      if (!t || this.tasks.length >= PLAN_MAX_STEPS) return [];
+      this.taskCreates.set(useId, this.tasks.length);
+      this.tasks.push({ step: { title: t, status: status(a.status, 'pending') } });
+    } else if (name === 'TaskUpdate') {
+      const task = this.tasks.find((x) => x.id !== undefined && x.id === String(a.taskId ?? ''));
+      if (!task) return []; // a task from an earlier message, or one we never saw created
+      if (a.status !== undefined) task.step.status = status(a.status, task.step.status);
+      if (title(a.subject)) task.step.title = title(a.subject);
+    } else return [];
+    return this.sendPlan({ steps: this.tasks.map((x) => ({ ...x.step })) });
+  }
+
   private toolResults(msg: Json | undefined): ChatEvent[] {
     const content = Array.isArray(msg?.content) ? (msg!.content as Json[]) : [];
+    // a created task's number, from its result ("Task #3 created successfully: ...")
+    for (const c of content) {
+      const i = c.type === 'tool_result' ? this.taskCreates.get(String(c.tool_use_id ?? '')) : undefined;
+      const m = i === undefined ? null : /#(\d+)/.exec(textOf(c.content));
+      if (m && i !== undefined && this.tasks[i]) this.tasks[i]!.id = m[1];
+    }
     return content
       .filter((c) => c.type === 'tool_result' && !this.planIds.has(String(c.tool_use_id ?? '')))
       .map((c) => ({ type: 'tool_done' as const, id: String(c.tool_use_id ?? ''), ok: c.is_error !== true, text: textOf(c.content).slice(0, 400) }));

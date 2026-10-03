@@ -86,8 +86,8 @@ describe('bridge request checks', () => {
     const after = (flag: string) => args[args.indexOf(flag) + 1];
     expect(args).toContain('-p');
     expect(args).toContain('--strict-mcp-config');
-    expect(after('--tools')).toBe('');
-    expect(after('--allowedTools')).toBe('mcp__delve');
+    expect(after('--tools')).toBe('TaskCreate,TaskUpdate,TaskList'); // only the task list, shown as the plan
+    expect(after('--allowedTools')).toBe('mcp__delve,TaskCreate,TaskUpdate,TaskList');
     expect(after('--setting-sources')).toBe('');
     expect(after('--mcp-config')).toBe('/m.json');
     expect(after('--system-prompt-file')).toBe('/s.md');
@@ -219,7 +219,7 @@ describe('what Claude is told', () => {
     expect(ctx).toContain('Objects (exact, in squares):');
     expect(ctx).toMatch(/d\d+ door at \[/);
     // the plan reminder comes last, right before the user's words (the system prompt alone was ignored)
-    expect(ctx).toMatch(/Plan: if this request takes 3 or more steps, call plan first[^\n]*\n\[End of Delve context\]$/);
+    expect(ctx).toMatch(/Plan: if this request takes 3 or more steps, first create a task for each step with TaskCreate[^\n]*\n\[End of Delve context\]$/);
     expect(chatPrompt({ map: testMap, rev: 7 }, '  make it bigger ')).toMatch(/\[End of Delve context\]\n\nmake it bigger$/);
   });
 
