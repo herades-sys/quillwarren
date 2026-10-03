@@ -42,6 +42,10 @@ import {
   squareUnit,
   ValidationError,
   scatterAlong,
+  blockingProps,
+  freeSpot,
+  keepClear,
+  overlapReport,
   withAttachedDoors,
   type AssetInfo,
   type Door,
@@ -77,6 +81,7 @@ Each tool call is one undoable step. Check your work with render (returns a pict
 Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.
 Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
 Colour props (ids c-…: trees, plants, rocks, rugs, trapdoors, hidden traps, ruin walls…) are a second library in full colour, placed the same way; list_assets palette "colour" lists them by category. Floor ones (rugs, trapdoors) lie under the other props, and add_props_along mixes a group's variants (a forest of different oaks).
+Trees are tall: they are drawn over every other prop, so whatever stands under a tree is hidden by its crown. Keep boulders, ruins and camps in clearings, off trees: add_props_along skips spots where a copy would stand on a tree, boulder or wall, and add_prop warns with the ids it overlaps and the nearest free spot (avoid true puts it there).
 A place with several storeys is several maps in one group: add_level adds a storey above or below. Keep one coordinate grid across storeys so stairs line up.
 Floor numbers: a storey's floor is its level order (0 ground level, -1 one floor below ground, 1 the first floor up; set_map floor changes it). label_stairs gives every stair, ladder and trapdoor its GM label, floor number then flight letter (0A, 1A, 2A up one staircase).
 Room and cutout shapes: rect, circle, poly, or preset {kind: oval|triangle|hexagon|octagon, box: [x, y, w, h]}. Cutouts with fill "solid" draw as solid pillars or wall blocks.
@@ -149,6 +154,11 @@ export function colourSummary(): string {
     const count = tex === items.length ? `${tex} terrain textures` : tex ? `${items.length - tex} props, ${tex} terrain textures` : String(items.length);
     return `- ${c.name} (${c.id}, ${count}): ${items.slice(0, 4).map((a) => a.id).join(', ')}${items.length > 4 ? ', …' : ''}`;
   }).join('\n');
+}
+
+/** The ids of the props a list of ops adds (batches included). */
+function addedProps(ops: readonly Op[]): string[] {
+  return ops.flatMap((o) => (o.op === 'batch' ? addedProps(o.ops) : o.op === 'add' && o.object.type === 'prop' ? [o.object.id] : []));
 }
 
 /** At most this many lines from list_assets; narrower filters list the rest. */
@@ -523,7 +533,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       title: 'Add prop',
       description:
         'Place a prop (see list_assets). at is the centre of its footprint: a 1×1 prop in the square at x 3–4, y 5–6 has at [3.5, 5.5]; a 2×1 prop covering x 3–5 has at [4, 5.5]. ' +
-        'At rotation 0 a prop faces south (its back or wall side is north); rotation turns it clockwise in degrees (90, 180, 270).',
+        'At rotation 0 a prop faces south (its back or wall side is north); rotation turns it clockwise in degrees (90, 180, 270). ' +
+        'A tree, or a prop that blocks movement or sight, placed on a tree, boulder, wall or other blocking prop is still added, but the reply names what it overlaps and the nearest free spot; avoid true puts it there instead.',
       inputSchema: {
         map: mapId,
         asset: z.string().describe('Asset id, e.g. "chest-closed"'),
@@ -536,6 +547,10 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           .boolean()
           .optional()
           .describe('Hidden from players (GM view only), e.g. a trap they have not found. Default: pressure plates, spike traps, floor runes and the colour props marked hidden (hidden traps) are hidden, everything else is shown; false shows a hidden trap'),
+        avoid: z
+          .boolean()
+          .optional()
+          .describe('If it would stand on a tree, boulder, wall or other prop that blocks movement or sight, put it at the nearest free spot instead (within 6 squares). Default false: placed where asked, and the reply names what it overlaps'),
         id: z.string().optional().describe('Defaults to the next i<n>'),
       },
     },
@@ -544,10 +559,22 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const info = assetInfo(a.asset);
         if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets; terrain goes in add_terrain)`]);
         const map = store.get(a.map).map;
+        const id = a.id ?? nextId(map, 'i');
         // modular pieces (ruin walls, seamless textures) go onto whole squares, so they meet the next piece
-        const at = modularAt({ asset: a.asset, at: a.at, rotation: a.rotation, scale: a.scale });
+        const snappedAt = modularAt({ asset: a.asset, at: a.at, rotation: a.rotation, scale: a.scale });
+        // standing on a tree, boulder or wall: said in the reply with the nearest free spot, or moved there with avoid
+        const asked = { id, asset: a.asset, at: snappedAt, rotation: a.rotation, scale: a.scale };
+        const on = blockingProps(map.objects, asked);
+        const free = on.length ? freeSpot(map.objects, asked) : null;
+        const at = a.avoid && free ? free : snappedAt;
+        const names = on.map((o) => `${o.id} (${assetInfo(o.asset)?.name ?? o.asset})`).join(', ');
+        const overlapNote = !on.length
+          ? ''
+          : a.avoid && free
+          ? ` Moved to [${free.join(', ')}], the nearest free spot: at [${snappedAt.join(', ')}] it would overlap ${names}.`
+          : ` Warning: it overlaps ${names}, so they are drawn over each other. ${free ? `The nearest free spot is [${free.join(', ')}]: move it there, or add it with avoid true.` : 'There is no free spot within 6 squares.'}`;
         const prop: MapObject = {
-          id: a.id ?? nextId(map, 'i'),
+          id,
           type: 'prop',
           asset: a.asset,
           at,
@@ -559,8 +586,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         };
         const b = propBounds(prop);
         const hidden = propHidden(prop as { asset: string; gmOnly?: boolean }) ? ' It is hidden from players (GM view only).' : '';
-        const snapped = at[0] !== a.at[0] || at[1] !== a.at[1] ? ` Moved onto whole squares (at [${at.join(', ')}]) so it meets the next piece.` : '';
-        return addObject(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.${hidden}${snapped}`);
+        const snapped = snappedAt[0] !== a.at[0] || snappedAt[1] !== a.at[1] ? ` Moved onto whole squares (at [${snappedAt.join(', ')}]) so it meets the next piece.` : '';
+        return addObject(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.${hidden}${snapped}${overlapNote}`);
       }),
   );
 
@@ -572,7 +599,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         'Place copies of one prop along a path, like painting with a brush: trees along a road, rocks along a cave wall, pillars down a hall. ' +
         'placement "regular" puts one exactly every `spacing` squares (the first at the path\'s start); "irregular" varies the gaps, strays up to `spread` squares to either side, and turns and sizes each copy a little. ' +
         'A colour prop with a group (oaks, pines, boulders…) mixes the group\'s variants at random unless mix is false, so a forest is not one tree repeated. ' +
-        'Spots within 0.6 × spacing of the same prop (or its group) already on the map are skipped. One undo step.',
+        'Spots within 0.6 × spacing of the same prop (or its group) already on the map are skipped, and so are spots where a copy would stand on a tree, boulder, wall or other blocking prop, or on an earlier copy (footprints may touch, overlapping up to a quarter square; props you walk over, like ferns and rugs, go anywhere); the reply says how many. overlap true allows that, for a dense thicket. One undo step.',
       inputSchema: {
         map: mapId,
         asset: z.string().describe('Prop id, e.g. "tree" or "c-oak-a" (see list_assets)'),
@@ -582,6 +609,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         spread: z.number().min(0).max(10).optional().describe('Irregular: how far copies stray to the sides, in squares (default a third of the spacing)'),
         rotation: z.number().optional().describe('Regular: the rotation of every copy'),
         mix: z.boolean().optional().describe("Mix the variants of the prop's group (default true when it has one, see list_assets)"),
+        overlap: z.boolean().optional().describe('true: copies may stand on blocking props and on each other (a dense thicket). Default false: those spots are skipped'),
+        seed: z.number().int().min(1).optional().describe('The same seed, path and map give the same copies (default random)'),
       },
     },
     (a) =>
@@ -597,19 +626,26 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           placement: a.placement ?? 'regular',
           ...(a.spread !== undefined ? { spread: a.spread } : {}),
           ...(a.rotation ? { rotation: a.rotation } : {}),
-          seed: randomInt(1, 2 ** 31),
+          seed: a.seed ?? randomInt(1, 2 ** 31),
           avoid,
           ...(variants.length > 1 ? { variants } : {}),
-        }).slice(0, 500);
-        if (!spots.length) return text('Nothing placed: every spot along the path already has one nearby.');
-        const ops = spots.map((s, k) => {
-          const asset = s.asset ?? a.asset;
-          const at = modularAt({ asset, at: s.at, rotation: s.rotation, scale: s.scale });
-          return { op: 'add' as const, object: { id: nextId(map, 'i', k), type: 'prop' as const, asset, at, ...(s.rotation ? { rotation: s.rotation } : {}), ...(s.scale !== 1 ? { scale: s.scale } : {}) } };
         });
+        const placed = spots.map((s) => {
+          const asset = s.asset ?? a.asset;
+          return { asset, at: modularAt({ asset, at: s.at, rotation: s.rotation, scale: s.scale }), rotation: s.rotation, scale: s.scale };
+        });
+        // copies that would stand on a tree, boulder or wall (or on an earlier copy) are skipped unless overlap is asked for
+        const { kept, skipped } = a.overlap ? { kept: placed, skipped: 0 } : keepClear(map.objects, placed);
+        const copies = kept.slice(0, 500);
+        const skippedNote = skipped ? `${skipped} spot${skipped === 1 ? ' was' : 's were'} skipped where a copy would have stood on a tree, boulder, wall or other blocking prop, or on another copy (overlap true allows that).` : '';
+        if (!copies.length) return text(spots.length ? `Nothing placed: ${skippedNote}` : 'Nothing placed: every spot along the path already has one nearby.');
+        const ops = copies.map((s, k) => ({
+          op: 'add' as const,
+          object: { id: nextId(map, 'i', k), type: 'prop' as const, asset: s.asset, at: s.at, ...(s.rotation ? { rotation: s.rotation } : {}), ...(s.scale !== 1 ? { scale: s.scale } : {}) },
+        }));
         const used = [...new Set(ops.map((o) => o.object.asset))];
         const what = used.length > 1 ? `props of group ${info.group} (${used.map((u) => assetInfo(u)?.name ?? u).join('; ')})` : info.name;
-        return change(a.map, ops, `Added ${spots.length} × ${what} (${ops[0]!.object.id}–${ops.at(-1)!.object.id}) along the path.`);
+        return change(a.map, ops, `Added ${copies.length} × ${what} (${ops[0]!.object.id}–${ops.at(-1)!.object.id}) along the path.${skippedNote ? ` ${skippedNote}` : ''}`);
       }),
   );
 
@@ -1039,7 +1075,18 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       description: 'Apply delve ops (add, update, move, delete, update_map, batch) as one undoable step. For anything the other tools don\'t cover.',
       inputSchema: { map: mapId, ops: z.array(z.unknown()).min(1), base_rev: z.number().int().optional() },
     },
-    (a) => guarded(() => change(a.map, parseOps(a.ops), `Applied ${a.ops.length} op${a.ops.length === 1 ? '' : 's'}.`, a.base_rev)),
+    (a) =>
+      guarded(() => {
+        const ops = parseOps(a.ops);
+        const c = service.apply(a.map, ops, { by: BY, baseRev: a.base_rev });
+        // added props that stand on trees, boulders or walls: named, so they can be moved (add_prop's avoid finds a free spot)
+        const report = overlapReport(store.get(a.map).map.objects, addedProps(ops));
+        const lines = report.slice(0, 8).map((r) => `${r.id} overlaps ${r.on.join(', ')}`);
+        const warning = report.length
+          ? ` Warning: ${report.length === 1 ? 'a new prop stands' : `${report.length} new props stand`} on trees or other props in the way, so they are drawn over each other: ${lines.join('; ')}${report.length > 8 ? `; and ${report.length - 8} more` : ''}. Move them clear unless that is meant.`
+          : '';
+        return text(`Applied ${a.ops.length} op${a.ops.length === 1 ? '' : 's'}. Map is at rev ${c.rev}.${warning}`);
+      }),
   );
 
   registerSegmentTools(server, service, BY);

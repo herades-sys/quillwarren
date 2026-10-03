@@ -213,19 +213,20 @@ describe('handout legend: on and off', () => {
     expect(handoutSvg(testMap()).svg).not.toContain('data-legend');
     expect(handoutSvg(testMap(), { legend: true }).legend?.entries).toEqual(['Door']);
     expect(sheet(legendKeep()).svg).toContain('data-legend');
-    // hashes taken from the code before the legend (c.f. legend-maps.ts)
+    // hashes taken from the code before the legend (c.f. legend-maps.ts); the sheets that show the
+    // garden's oaks re-taken with the canopy layer, which draws trees over the other props
     const keep = legendKeep();
     const fogged = legendKeep({ fog: { on: true, revealed: ['r1'] } });
     const old: [string, DelveMap, HandoutOptions][] = [
-      ['58bcc34662ff7f07', keep, {}],
-      ['8eb5dc76c43bb1ba', keep, { paper: 'a3', orientation: 'landscape', names: true }],
-      ['314182ea5c761507', keep, { paper: 'letter', orientation: 'portrait' }],
-      ['f1b81d487cbbb07c', keep, { paper: 'fit' }],
+      ['35ca81fed8cacdf9', keep, {}],
+      ['6af6c62de4af87d0', keep, { paper: 'a3', orientation: 'landscape', names: true }],
+      ['2992cf2c714aa41e', keep, { paper: 'letter', orientation: 'portrait' }],
+      ['e03dfeb368fd363b', keep, { paper: 'fit' }],
       ['bb6e5f925414c92e', fogged, { revealedOnly: true }],
-      ['6867be6a017dc7f3', keep, { crop: { x0: 9, y0: 0, x1: 17, y1: 6 } }],
+      ['1580c027047fefd3', keep, { crop: { x0: 9, y0: 0, x1: 17, y1: 6 } }],
     ];
     for (const [want, map, o] of old) expect(hash(handoutSvg(map, { ...o, assets: body, legend: false }).svg)).toBe(want);
-    expect(hash(handoutSvg(keep, { title: '', compass: false, scaleBar: false, frame: false, stains: false, legend: false }).svg)).toBe('a77c92599a33a750');
+    expect(hash(handoutSvg(keep, { title: '', compass: false, scaleBar: false, frame: false, stains: false, legend: false }).svg)).toBe('04242008df587712');
     expect(hash(handoutSvg(testMap()).svg)).toBe('db5dae6a7cb69c7e');
     expect(hash(handoutSvg(testMap(), { paper: 'fit' }).svg)).toBe('f94850a32a8209dc');
   });

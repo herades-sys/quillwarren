@@ -500,11 +500,12 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
   if (secretMarks.length) layers.push({ name: 'secret-marks', kind: 'text', items: secretMarks, color: style.labels.color, font: style.labels.font });
 
   // Props stand on top of walls and doors (wall-mounted ones overlap the wall line);
+  // tree canopies over them and the pictures, so whatever stands under a tree is hidden by its crown;
   // GM symbols come last, and only in the GM view (filtered above).
-  for (const layer of ['props', 'symbols'] as const) {
+  for (const layer of ['props', 'canopy', 'symbols'] as const) {
     const list = props.filter((p) => propLayer(p.asset) === layer || (layer === 'props' && propLayer(p.asset) === 'terrain'));
     if (list.length) layers.push(assetLayer(layer, list, opts, style));
-    if (layer === 'props') imageLayer('props'); // over the props, under the GM symbols
+    if (layer === 'props') imageLayer('props'); // over the props, under the canopies and GM symbols
   }
 
   // Free labels show in both views; room numbers are a GM key, drawn on top in a face with clear digits.

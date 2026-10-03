@@ -38,6 +38,8 @@ export interface AssetInfo {
   group?: string;
   /** Modular pieces (ruin walls): placed on whole squares, so their open ends meet. */
   modular?: boolean;
+  /** A tree's crown (see "canopies" below): drawn in the canopy layer, over every other prop. Set by this file, not by the catalogs. */
+  canopy?: true;
   /** A prop from this Delve's own library (see "Custom props" below), not the built-in catalog. */
   custom?: boolean;
   /** Custom props: who made it and when (ISO times). */
@@ -46,8 +48,8 @@ export interface AssetInfo {
   updated?: string;
 }
 
-/** Where a category draws: decals on the floor under the walls, props on top, GM symbols last and GM view only. */
-export type AssetLayer = 'terrain' | 'decals' | 'props' | 'symbols';
+/** Where a category draws: decals on the floor under the walls, props on top, tree canopies over them, GM symbols last and GM view only. */
+export type AssetLayer = 'terrain' | 'decals' | 'props' | 'canopy' | 'symbols';
 
 export interface Category {
   id: string;
@@ -76,8 +78,21 @@ export const CATEGORIES: readonly Category[] = [
 /** Where custom props go unless their maker picks a built-in category. Not in CATEGORIES, which lists the built-in catalog's. */
 export const CUSTOM_CATEGORY: Category = { id: 'custom', name: 'Custom', layer: 'props' };
 
+// ---------- canopies ----------
+// Trees are tall: their crowns draw in the canopy layer, after every other prop
+// (render/scene.ts), so a boulder or a cart standing under a tree is hidden by
+// it, as on a real forest map. Which props are canopies is decided here, when
+// the catalogs load: every colour prop of the category trees (all its groups,
+// saplings and potted trees too), and the ink props listed below. Custom props
+// draw by their category as before.
+
+/** The ink catalog's canopies: the two trees and the giant mushroom's cap. */
+export const CANOPY_INK: ReadonlySet<string> = new Set(['tree', 'tree-dead', 'mushroom-giant']);
+/** The colour category whose props are all canopies. */
+export const CANOPY_CATEGORY = 'trees';
+
 /** The ink catalog: props and terrain tiles in the three inks. */
-export const ASSETS: readonly AssetInfo[] = catalog as AssetInfo[];
+export const ASSETS: readonly AssetInfo[] = (catalog as AssetInfo[]).map((a) => (CANOPY_INK.has(a.id) ? { ...a, canopy: true as const } : a));
 
 // ---------- colour props and textures ----------
 // A second built-in library in the Delve palette (docs/ASSETS-COLOUR.md).
@@ -114,6 +129,7 @@ export const COLOUR_ASSETS: readonly AssetInfo[] = (colourCatalog.assets as unkn
     ...(group ? { group } : {}),
     ...(f.includes('hidden') ? { hidden: true } : {}),
     ...(f.includes('modular') ? { modular: true } : {}),
+    ...(category === CANOPY_CATEGORY && !f.includes('tile') ? { canopy: true as const } : {}),
   };
 });
 
@@ -151,12 +167,19 @@ for (const a of COLOUR_ASSETS) if (a.group && a.kind === 'prop') byGroup.set(a.g
 export const assetInfo = (id: string): AssetInfo | undefined => byId.get(id) ?? customById.get(id);
 export const categoryOf = (id: string): Category | undefined => categoryById.get(assetInfo(id)?.category ?? '');
 
-/** Where a prop draws: by its category, except colour props, which say it themselves (floor ones lie with the decals, under the other props). */
+/**
+ * Where a prop draws: canopies (trees) over the other props; else by its category, except colour props,
+ * which say it themselves (floor ones lie with the decals, under the other props).
+ */
 export function propLayer(asset: string): AssetLayer {
   const info = assetInfo(asset);
+  if (info?.canopy) return 'canopy';
   if (info?.palette === 'colour') return info.layer === 'floor' ? 'decals' : 'props';
   return categoryOf(asset)?.layer ?? 'props';
 }
+
+/** Is this prop a tree's crown, drawn over the other props? (see "canopies" above) */
+export const isCanopy = (asset: string): boolean => assetInfo(asset)?.canopy === true;
 
 /** The variants the prop brush mixes for a prop: every prop of its group in catalog order (itself included), or only itself. */
 export function groupVariants(asset: string): string[] {

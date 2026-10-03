@@ -118,7 +118,7 @@ describe('what Claude is told about colour props', () => {
     expect(CHAT_SYSTEM_PROMPT).toContain('# Colour props (ids c-…)');
     expect(CHAT_SYSTEM_PROMPT).toMatch(/- Trees \(trees, \d+\): c-oak-a 3×3, /);
     expect(CHAT_SYSTEM_PROMPT).toContain('A forest of mixed trees');
-    expect(CHAT_SYSTEM_PROMPT).toContain('add_props_along (asset, path, spacing, placement, spread, mix)');
+    expect(CHAT_SYSTEM_PROMPT).toContain('add_props_along (asset, path, spacing, placement, spread, mix, overlap)');
     // a line per category, not per prop
     const section = CHAT_SYSTEM_PROMPT.slice(CHAT_SYSTEM_PROMPT.indexOf('# Colour props'));
     expect(section.split('\n').length).toBeLessThan(50);

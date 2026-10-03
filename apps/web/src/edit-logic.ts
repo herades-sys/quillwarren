@@ -16,6 +16,7 @@ import {
   placeDoorBetween,
   pointInRing,
   pointInShape,
+  propLayer,
   roomsById,
   selectionBounds,
   shapeArea,
@@ -71,7 +72,9 @@ export function hitAll(map: DelveMap, p: Point, tol: number): string[] {
     const b = objectBounds(n, map);
     if (b && p[0] >= b.x0 - tol && p[0] <= b.x1 + tol && p[1] >= b.y0 - tol && p[1] <= b.y1 + tol) out.push(n.id);
   }
-  for (const l of map.objects.filter((o) => o.type === 'label' || o.type === 'prop').reverse()) {
+  // in drawing order, top first: labels, GM symbols, tree canopies, the other props, floor props; newest first within each
+  const drawn = (o: MapObject) => (o.type !== 'prop' ? 0 : ({ symbols: 1, canopy: 2, decals: 4 } as Partial<Record<string, number>>)[propLayer(o.asset)] ?? 3);
+  for (const l of map.objects.filter((o) => o.type === 'label' || o.type === 'prop').reverse().sort((a, b) => drawn(a) - drawn(b))) {
     const b = objectBounds(l, map);
     if (b && p[0] >= b.x0 - tol && p[0] <= b.x1 + tol && p[1] >= b.y0 - tol && p[1] <= b.y1 + tol) out.push(l.id);
   }

@@ -35,6 +35,8 @@ import {
   COLOUR_ASSETS,
   propCentre,
   scatterAlong,
+  keepClear,
+  isObstacle,
   segmentCounts,
   shapeBounds,
   shapeFromDrag,
@@ -271,6 +273,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     brushScatter: 0,
     /** The brush mixes the variants of the picked prop's group (colour props), at random but seeded per stroke. */
     brushMix: true,
+    /** The brush may put copies on trees, boulders, walls and each other (a dense thicket); off, it skips those spots (core keepClear). */
+    brushOverlap: false,
     /** The Prop picker's Ink / Colour / All filter, remembered in localStorage. */
     propPalette: loadPalette(),
     roomShape: 'rect' as DrawShape,
@@ -928,10 +932,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   /**
    * Where a brush stroke puts its copies: without scatter they snap to the grid
    * like a click would, with scatter they stay where it put them. Never on top
-   * of the same prop already there.
+   * of the same prop already there, and unless Overlap is on, never on a tree,
+   * boulder, wall or other blocking prop, or on another copy (`skipped` counts those).
    */
-  function brushSpots(): Placement[] {
-    if (!stroke) return [];
+  function brushSpots(): { spots: Placement[]; skipped: number } {
+    if (!stroke) return { spots: [], skipped: 0 };
     const variants = brushVariants();
     const kin = new Set(variants);
     const avoid = map().objects.flatMap((o) => (o.type === 'prop' && kin.has(o.asset) ? [o.at] : []));
@@ -946,10 +951,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       ...(variants.length > 1 ? { variants } : {}),
     });
     const seen = new Set(avoid.map((a) => a.join(',')));
-    return spots
-      .map((s) => (regular ? { ...s, at: propAt(s.at, stroke!.step, s.asset) } : s))
-      .filter((s) => !seen.has(s.at.join(',')) && Boolean(seen.add(s.at.join(','))))
-      .slice(0, 500);
+    const placed = spots
+      .map((s) => ({ ...s, asset: s.asset ?? settings.prop, ...(regular ? { at: propAt(s.at, stroke!.step, s.asset) } : {}) }))
+      .filter((s) => !seen.has(s.at.join(',')) && Boolean(seen.add(s.at.join(','))));
+    const { kept, skipped } = settings.brushOverlap ? { kept: placed, skipped: 0 } : keepClear(map().objects, placed);
+    return { spots: kept.slice(0, 500), skipped };
   }
 
   /** What a brush stroke paints: the picked prop's group when Mix is on and it has one, else the prop alone. */
@@ -958,8 +964,9 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   }
 
   function finishStroke(): void {
-    const spots = brushSpots();
+    const { spots, skipped } = brushSpots();
     stroke = null;
+    if (skipped) ctx.toast(`Skipped ${skipped} ${skipped === 1 ? 'spot' : 'spots'} where a copy would stand on a tree, boulder, wall or another copy (Overlap allows it).`, 'info');
     if (!spots.length) return draw();
     const m = map();
     const ops: Op[] = spots.map((s, k) => ({
@@ -1318,7 +1325,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       if (hoverRaw && !drag) doorGhost(pickerDoor(baseFloor(), hoverRaw, settings.propDoorWidth, settings.propRotation, hoverStep).door);
     } else if (info && stroke) {
       layer.appendChild(svgEl('polyline', { points: stroke.path.map((q) => q.join(',')).join(' '), class: 'ghost-line brush-path' }));
-      for (const s of brushSpots()) ghost(s.at, s.rotation, s.scale, s.asset);
+      for (const s of brushSpots().spots) ghost(s.at, s.rotation, s.scale, s.asset);
     } else if (info && hoverRaw && !drag) ghost(propAt(hoverRaw, hoverStep), settings.propRotation, 1);
     if (tool === 'image' && hoverRaw && !drag) images.ghost(layer, hoverRaw, hoverStep);
     if (tool === 'segment' && !drag) segments.draw(layer, hoverRaw);
@@ -1543,6 +1550,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         if (kin.length > 1) {
           const g = assetInfo(settings.prop)?.group ?? '';
           out.push(group('Variants', chip(`Mix ${g} (${kin.length})`, settings.brushMix, () => ((settings.brushMix = !settings.brushMix), renderTools()), { title: `Painting mixes the ${kin.length} props of the group “${g}” at random` })));
+        }
+        // painting props that block: spots on trees, boulders and walls are skipped unless Overlap is on (a dense thicket)
+        if (kin.some(isObstacle)) {
+          out.push(group('Spots', chip('Overlap', settings.brushOverlap, () => ((settings.brushOverlap = !settings.brushOverlap), renderTools()), { title: 'Painting may put copies on trees, boulders, walls and each other. Off: those spots are skipped' })));
         }
         return out;
       }

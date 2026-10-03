@@ -79,6 +79,11 @@ describe('picking with props and terrain', () => {
     expect(hitAll(marked, [10.6, 27.6], 0)).toEqual(['m1', 'i1', 't1', 'r1']);
   });
 
+  it('picks props in drawing order: a tree over the boulder under it, whichever came first', () => {
+    const grove: DelveMap = { ...furnished, objects: [...furnished.objects, { id: 'i3', type: 'prop', asset: 'c-oak-a', at: [10.5, 27.5] }, { id: 'i4', type: 'prop', asset: 'c-persian-red-a', at: [10.5, 27.5] }, { id: 'i5', type: 'prop', asset: 'c-boulder-a', at: [10.5, 27.5] }] };
+    expect(hitAll(grove, [10.5, 27.5], 0)).toEqual(['i3', 'i5', 'i1', 'i4', 't1', 'r1']);
+  });
+
   it('moves on to the next hit when the selected one is clicked again', () => {
     expect(nextHit(['i1', 't1', 'r1'], 'i1')).toBe('t1');
     expect(nextHit(['i1', 't1', 'r1'], 'r1')).toBe('i1');

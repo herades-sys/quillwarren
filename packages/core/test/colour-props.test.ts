@@ -209,13 +209,13 @@ describe('colour terrain textures', () => {
 
 describe('floor props and hidden props', () => {
   it('lays floor colour props with the decals, under furniture', () => {
-    const map = withProps({ id: 'i1', asset: 'table-round', at: [10, 27] }, { id: 'i2', asset: 'c-persian-red-a', at: [10, 27] }, { id: 'i3', asset: 'c-oak-a', at: [20.5, 27.5] });
+    const map = withProps({ id: 'i1', asset: 'table-round', at: [10, 27] }, { id: 'i2', asset: 'c-persian-red-a', at: [10, 27] }, { id: 'i3', asset: 'c-boulder-a', at: [20.5, 27.5] });
     expect(propLayer('c-persian-red-a')).toBe('decals');
-    expect(propLayer('c-oak-a')).toBe('props');
+    expect(propLayer('c-boulder-a')).toBe('props');
     const layers = assetLayers(buildScene(map).layers);
     expect(layers.map((l) => l.name)).toEqual(['decals', 'props']);
     expect(layers[0]!.assets).toEqual(['c-persian-red-a']);
-    expect(layers[1]!.assets).toEqual(['table-round', 'c-oak-a']);
+    expect(layers[1]!.assets).toEqual(['table-round', 'c-boulder-a']);
     const names = buildScene(map).layers.map((l) => l.name);
     expect(names.indexOf('decals')).toBeLessThan(names.indexOf('walls'));
   });
