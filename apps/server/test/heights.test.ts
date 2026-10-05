@@ -69,7 +69,7 @@ describe('MCP add_height', () => {
     expect(described.text).toContain('Heights (relative to the floor');
     expect(described.text).toContain('h2 "Sunken arena": −10 ft, cliff edge');
     expect((await call('update', { map: id, id: 'h2', set: { edge: 'slope' } })).isError).toBeFalsy();
-    expect((await call('describe_map', { map: id })).text).toContain('h2 "Sunken arena": −10 ft, slope (walkable)');
+    expect((await call('describe_map', { map: id })).text).toContain('h2 "Sunken arena": −10 ft hollow, slope (walkable)');
     const bad = await call('add_height', { map: id, rect: [0, 0, 2, 2], height: 5, edge: 'wall' });
     expect(bad.isError).toBe(true);
     expect((await call('delete', { map: id, ids: ['h2'] })).isError).toBeFalsy();
@@ -110,5 +110,19 @@ describe('Delve Table pages from a map with heights', () => {
     expect(players.heights?.edges ?? []).toEqual([]);
     const hidden = { ...map, objects: map.objects.map((o) => (o.type === 'height' ? { ...o, hidden: true } : o)) };
     expect(scene3d('g1', page, hidden, 'players', 'all').heights).toBeUndefined();
+  });
+
+  it('drape a hill in the 3D scene (a piece with a grid of heights), cut to what the players may see', () => {
+    const map: DelveMap = { ...hall(), objects: [...hall().objects, { id: 'h2', type: 'height', shape: { circle: [8, 7, 2.5] }, height: 5, edge: 'slope' }] };
+    const page = { id: 'pg1', ...pageFromMap(map) } as Page;
+    const gm = scene3d('g1', page, map, 'gm', 'all').heights!;
+    expect(gm.pieces?.find((p) => !p.grid)?.h).toBe(2); // the ledge
+    const hill = gm.pieces?.find((p) => p.grid);
+    expect(hill?.grid?.max).toBeGreaterThan(0.9);
+    expect(gm.step).toBe(0.25);
+    const region = [{ outer: [[0, 4], [6, 4], [6, 10], [0, 10]] as [number, number][], holes: [] }];
+    const players = scene3d('g1', page, map, 'players', region).heights!;
+    expect(players.pieces?.length).toBeGreaterThan(0);
+    expect(players.pieces?.every((p) => p.polygons.every((q) => q.outer.every(([x, y]) => x <= 6 + 1e-6 && y >= 4 - 1e-6)))).toBe(true);
   });
 });

@@ -240,12 +240,20 @@ export const Inscription = z.strictObject({
 export const HEIGHT_EDGES = ['cliff', 'rock', 'slope', 'step'] as const;
 
 /**
+ * The ground's shape inside a height area: "plateau" flat at its height (ledges,
+ * arenas, built platforms, cliff tops); "hill" rounded, rising from its outline
+ * to its full height toward the middle and the ridge (long, thin areas become
+ * ridges). Unset: a hill for a "slope" edge, else a plateau (surface.ts heightProfile).
+ */
+export const HEIGHT_PROFILES = ['plateau', 'hill'] as const;
+
+/**
  * A raised or sunken area within one map: a ledge archers shoot from, a hill, a
  * sunken arena, a pit. `height` is relative to the map's floor, in the map's
  * units (grid.unit: feet or metres): +10 is a ledge, -5 a pit. It doesn't make
  * floor itself: it changes the height where floor (rooms, corridors) or terrain
  * already is. Where areas overlap, the last one wins, so a hill can carry a
- * higher crest. `hidden` keeps it from the players (a drop they haven't found):
+ * higher crest. `profile` makes it a rounded hill or a flat plateau. `hidden` keeps it from the players (a drop they haven't found):
  * their view shows flat floor there and Delve Table doesn't enforce it.
  */
 export const HeightArea = z.strictObject({
@@ -254,6 +262,7 @@ export const HeightArea = z.strictObject({
   shape: Shape,
   height: z.number().min(-10_000, 'from -10000 to 10000 (in the map\'s units)').max(10_000, 'from -10000 to 10000 (in the map\'s units)'),
   edge: z.enum(HEIGHT_EDGES).optional(),
+  profile: z.enum(HEIGHT_PROFILES).optional(),
   hidden: z.boolean().optional(),
 });
 
@@ -323,6 +332,7 @@ export type MapImage = z.infer<typeof MapImage>;
 export type Opening = z.infer<typeof Opening>;
 export type HeightArea = z.infer<typeof HeightArea>;
 export type HeightEdge = (typeof HEIGHT_EDGES)[number];
+export type HeightProfile = (typeof HEIGHT_PROFILES)[number];
 export type ImageLayer = (typeof IMAGE_LAYERS)[number];
 export type Inscription = z.infer<typeof Inscription>;
 export type InscriptionInk = (typeof INSCRIPTION_INKS)[number];

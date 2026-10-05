@@ -1,9 +1,9 @@
 // The editor's Height tool (K): raised and sunken ground within one map (core
-// heights.ts). Its context bar (shape, height, edge), the inspector's fields,
+// heights.ts). Its context bar (shape, height, edge, flat or hill), the inspector's fields,
 // the dashed outlines of the areas while the tool is on, and "Where you can go"
 // (Shift K): the movement overlay, ground tinted by height, cliff edges nobody
 // crosses as a red dashed line, crossings (stairs, ladders, slopes, steps) green.
-import { HEIGHT_EDGES, type DelveMap, type HeightArea, type HeightEdge, type Shape, type SquareUnit } from '@delve/core';
+import { HEIGHT_EDGES, type DelveMap, type HeightArea, type HeightEdge, type HeightProfile, type Shape, type SquareUnit } from '@delve/core';
 import { h, type Kid } from './dom.ts';
 
 export { bandColor, drawMovement, loadMovement, movementIcon, MOVEMENT_KEY, saveMovement } from './movement-overlay.ts';
@@ -11,27 +11,47 @@ import { heightValue, parseHeight } from './height-text.ts';
 export { heightValue, parseHeight };
 
 export type EdgeChoice = HeightEdge | 'auto';
+export type ProfileChoice = HeightProfile | 'auto';
 
 export interface HeightToolState {
   height: number;
   edge: EdgeChoice;
+  profile?: ProfileChoice;
 }
+
+export const PROFILE_CHOICES: [ProfileChoice, string, string][] = [
+  ['auto', 'Auto', 'A hill when the edge is a slope, else flat'],
+  ['plateau', 'Flat', 'A plateau, flat on top: ledges, arenas, built platforms'],
+  ['hill', 'Hill', 'Rounded: rises from its edge to the full height toward the middle; long shapes become ridges'],
+];
+
+/** The profile chips: Auto, Flat, Hill. */
+export function profileChips(kit: CtxKit, value: ProfileChoice, pick: (v: ProfileChoice) => void): HTMLElement {
+  return kit.group('Top', ...PROFILE_CHOICES.map(([k, label, title]) => kit.chip(label, value === k, () => pick(k), { title })));
+}
+
+/** The inspector's profile select ("Auto" is no `profile`). */
+export const PROFILE_OPTIONS: [string, string][] = [
+  ['auto', 'Auto (hill for a slope)'],
+  ['plateau', 'Flat'],
+  ['hill', 'Hill'],
+];
 
 export const EDGE_CHOICES: [EdgeChoice, string, string][] = [
   ['auto', 'Auto', 'A drop of a square or more is a cliff (indoors) or rock face (outdoors), less a step'],
   ['cliff', 'Cliff', 'A sheer ledge: a firm line with ticks on the low side. Not walkable'],
   ['rock', 'Rock face', 'A cliff drawn as a band of rock, as wide as the drop. Not walkable'],
-  ['slope', 'Slope', 'A hill or ramp: soft hachures, walkable'],
+  ['slope', 'Slope', 'A hill or ramp, walkable: contours and soft shading'],
   ['step', 'Step', 'A low step or rubble: walkable'],
 ];
 
 export const EDGE_NAME: Record<HeightEdge, string> = { cliff: 'Cliff', rock: 'Rock face', slope: 'Slope', step: 'Step' };
 
-export const HEIGHT_HINT = 'Drag over a room or terrain to raise or sink the ground there: a ledge, a hill, a pit. Stairs or a ladder across a cliff edge are the way up. Shift keeps width and height equal.';
+export const HEIGHT_HINT = 'Drag over a room or terrain to raise or sink the ground there: a ledge, a hill, a pit. A hill rounds off toward its middle, a flat top stays level. Stairs or a ladder across a cliff edge are the way up. Shift keeps width and height equal.';
 
 /** The new area the Height tool makes from a drawn shape. */
 export function heightObject(map: DelveMap, id: string, shape: Shape, st: HeightToolState): HeightArea {
-  return { id, type: 'height', shape, height: st.height, ...(st.edge !== 'auto' ? { edge: st.edge } : {}) };
+  return { id, type: 'height', shape, height: st.height, ...(st.edge !== 'auto' ? { edge: st.edge } : {}), ...(st.profile && st.profile !== 'auto' ? { profile: st.profile } : {}) };
 }
 
 /** A small legend for the overlay (the map settings and the Height tool's bar show it). */

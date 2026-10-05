@@ -218,7 +218,7 @@ describe('describe_map', () => {
     const m = describeMap(mountain());
     expect(m).toContain('h3 "Plateau": +20 ft, rock face');
     expect(m).toContain('no stairs or ladder: only by climbing, jumping or flying');
-    expect(m).toContain('h2 "Crest": +10 ft, slope (walkable)');
+    expect(m).toContain('h2 "Crest": +10 ft hill, slope (walkable)');
   });
 });
 
@@ -256,7 +256,10 @@ describe('drawing', () => {
 
   it('draws rock faces as a band with hachures, stipple and a ragged foot', () => {
     const n = names(mountain());
-    expect(n).toEqual(expect.arrayContaining(['height-rock', 'height-rock-hachures', 'height-rock-stipple', 'height-rock-foot', 'height-rock-top', 'height-slopes', 'height-slope-hachures']));
+    expect(n).toEqual(expect.arrayContaining(['height-rock', 'height-rock-hachures', 'height-rock-stipple', 'height-rock-foot', 'height-rock-top', 'height-slope-contours']));
+    // the hill and its crest are shaded and contoured, not toned flat, and have no brow line
+    expect(n.filter((x) => x.startsWith('height-tone'))).toEqual(['height-tone:h3']);
+    expect(n).not.toContain('height-slopes');
     const band = layers(mountain()).find((l) => l.name === 'height-rock');
     // on the low side of the plateau's edge (west of x = 24 and south of y = 10), about a square wide per 10 ft
     if (band?.kind === 'fill') {

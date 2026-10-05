@@ -61,12 +61,37 @@ export interface Scene3D {
 
 /**
  * Height areas in 3D (core heightScene), every number in cells, heights too (a
- * 10 ft ledge on a 5 ft grid is 2 up). `bands` are the raised and sunken parts,
- * `base` the rest of the page at 0. Walking along an edge's points, its low
- * side is on the right; a slope or rock face reaches `run` cells out there.
+ * 10 ft ledge on a 5 ft grid is 2 up). `pieces` are the ground as it's draped:
+ * each at one height `h`, or with a `grid` of heights where it varies (hills,
+ * ramps); pieces at different heights meet in a sheer face, and `base` is the
+ * rest of the page at 0. `bands` are the areas' own heights (which end of a
+ * flight of stairs is up). Walking along an edge's points, its low side is on
+ * the right. Everything is cut to what the viewer may see, grids included.
  */
 export interface SceneHeights {
   bands: { h: number; polygons: ScenePolygon[] }[];
   base: ScenePolygon[];
   edges: { points: ScenePoint[]; closed: boolean; hi: number; lo: number; kind: 'cliff' | 'rock' | 'slope' | 'step'; run: number }[];
+  pieces?: ScenePiece[];
+  /** The grids' lattice in cells, from the page's origin cell 0, 0. */
+  step?: number;
+  /** The colour rock faces are toned to (from the map's style). */
+  rock?: string;
+}
+
+/** Heights on the lattice: rows of columns from post (i0, j0), each 16 bits between min and max, little-endian, base64. */
+export interface SceneGrid {
+  i0: number;
+  j0: number;
+  cols: number;
+  rows: number;
+  min: number;
+  max: number;
+  z: string;
+}
+
+export interface ScenePiece {
+  polygons: ScenePolygon[];
+  h: number;
+  grid?: SceneGrid;
 }

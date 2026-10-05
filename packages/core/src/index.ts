@@ -238,10 +238,13 @@ export {
   type HeightScene,
   type HeightView,
   type Polygon3,
+  type Grid3,
+  GRID_CELLS,
   type Walkable,
   type WalkableOptions,
 } from './heights.ts';
-export { heightDrawing, labelPoint, HEIGHT_TAG_SIZE, type HeightDrawing } from './render/heights.ts';
+export { heightProfile, heightSurface, sampleSurface, latticeOver, isolines, ease, MIN_BAND, HILL_LIP, type HeightSurface, type PostGrid, type SurfaceArea, type SurfacePiece } from './surface.ts';
+export { contourInterval, heightDrawing, labelPoint, HEIGHT_TAG_SIZE, type HeightDrawing } from './render/heights.ts';
 export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
 export { hashString } from './render/rng.ts';
 

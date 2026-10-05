@@ -4,7 +4,8 @@
 // overlap the last one wins, so a hill can carry a higher crest. Everything here
 // is pure: the renderer draws the plan (render/heights.ts), the walkable map says
 // which edges block movement (Delve Table's "Respect heights"), and the 3D views
-// lift the floor (heightScene).
+// drape the floor over the ground's real shape (heightScene, from surface.ts:
+// hills rounded, slopes as ramps).
 import { differenceD, FillRule, intersectD, unionD, type PathsD } from 'clipper2-ts';
 import { assetInfo, propBounds, propHidden } from './assets/catalog.ts';
 import { floorPaths, polygonsOf } from './geometry/floor.ts';
@@ -14,6 +15,8 @@ import { terrainArea } from './geometry/terrain.ts';
 import { computeWalls, doorSegment, type Segment } from './geometry/walls.ts';
 import { MINUS } from './floors.ts';
 import { STAIR_PROPS } from './levels.ts';
+import { resolveStyle } from './render/style.ts';
+import { heightProfile, heightSurface, sampleSurface } from './surface.ts';
 import type { DelveMap, Door, HeightArea, HeightEdge, Point } from './schema.ts';
 import { parseSquareUnit, type SquareUnit } from './units.ts';
 
@@ -107,9 +110,16 @@ export function rockWidth(drop: number, unit: SquareUnit): number {
   return Math.min(3, Math.max(0.5, (Math.abs(drop) / unit.size) * 0.5));
 }
 
-/** How far a slope runs out on its low side, in squares: a square and a half per square of rise, from 0.75 to 3. */
+/**
+ * How far a slope runs on its low side, in squares: two and a half squares per
+ * square of rise (about 22° on average, a hillside you walk up), from 1 to 8.
+ * Below a square a ramp reads as a step; past 8 a big rise would eat the map, so
+ * it gets steeper instead (a 5 m rise on a 1 m grid ramps over 8 squares).
+ * In 3D and on the 2D map's contours, ramps narrow where something is in the
+ * way (surface.ts).
+ */
 export function slopeRun(drop: number, unit: SquareUnit): number {
-  return Math.min(3, Math.max(0.75, (Math.abs(drop) / unit.size) * 1.5));
+  return Math.min(8, Math.max(1, (Math.abs(drop) / unit.size) * 2.5));
 }
 
 interface Boxed {
@@ -450,46 +460,192 @@ export interface Polygon3 {
   holes: [number, number][][];
 }
 
+/** Heights on the scene's lattice (`HeightScene.step` squares from the map's origin): rows of columns from (i0, j0), as 16-bit steps between min and max, base64. */
+export interface Grid3 {
+  i0: number;
+  j0: number;
+  cols: number;
+  rows: number;
+  min: number;
+  max: number;
+  z: string;
+}
+
 /** The heights of a map for a 3D view, everything in squares (heights too: a 10 ft ledge on a 5 ft grid is 2 up). */
 export interface HeightScene {
-  /** Raised or sunken ground, by height (0 is left out: it is the plain ground). */
+  /** Raised or sunken ground, by the plan's height (0 is left out: it is the plain ground). Which end of stairs is up. */
   bands: { h: number; polygons: Polygon3[] }[];
-  /** The rest of the frame, at 0: the floor picture without the bands. */
+  /** The rest of the frame, at 0: the floor picture without the pieces. */
   base: Polygon3[];
-  /** The faces between heights. Walking along points, the low side is on the right; `run` is how far a slope or rock face reaches out there. */
+  /** The edges between heights. Walking along points, the low side is on the right; `run` is how far a slope or rock face reaches out there on the 2D map. */
   edges: { points: [number, number][]; closed: boolean; hi: number; lo: number; kind: HeightEdge; run: number }[];
+  /**
+   * The ground as the 3D views drape it (surface.ts): pieces at one height, or
+   * with a grid of heights where the surface varies (hills, ramps). Neighbouring
+   * pieces at different heights meet in a sheer face. Off them the ground is at 0.
+   */
+  pieces: { polygons: Polygon3[]; h: number; grid?: Grid3 }[];
+  /** The grids' lattice, in squares. */
+  step: number;
+  /** The colour rock faces are toned to (from the map's style). */
+  rock: string;
 }
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000 + 0;
 const poly3 = (p: Polygon): Polygon3 => ({ outer: p.outer.map(([x, y]) => [r3(x), r3(y)]), holes: p.holes.map((h) => h.map(([x, y]) => [r3(x), r3(y)])) });
 
+/** About this many lattice cells over all the grids of a map; the lattice gets coarser past it (at most 4 per square, at least 1 per 2). */
+export const GRID_CELLS = 24_000;
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+function base64(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i]!;
+    const b = bytes[i + 1] ?? 0;
+    const c = bytes[i + 2] ?? 0;
+    out += B64[a >> 2]! + B64[((a & 3) << 4) | (b >> 4)]! + (i + 1 < bytes.length ? B64[((b & 15) << 2) | (c >> 6)]! : '=') + (i + 2 < bytes.length ? B64[c & 63]! : '=');
+  }
+  return out;
+}
+
 /**
- * The 3D view's heights: the bands, the frame's rest at 0, and the faces.
- * `region` (players: what they may see) cuts the bands and faces to it.
- * Null when the map has no height areas in this view.
+ * A grid as sent: only the posts near the piece (its polygons, two cells around),
+ * so nothing beyond what the viewer may see goes out; the rest repeat `min`.
+ */
+function packGrid(g: { i0: number; j0: number; cols: number; rows: number; z: Float64Array }, step: number, polys: readonly Polygon[], scale: number): Grid3 {
+  const { cols, rows } = g;
+  const keep = new Uint8Array(cols * rows);
+  // the posts of every cell the piece touches, and one cell around
+  const mark = (x: number, y: number) => {
+    const c0 = Math.floor(x / step) - g.i0;
+    const r0 = Math.floor(y / step) - g.j0;
+    for (let r = r0 - 1; r <= r0 + 2; r++) for (let c = c0 - 1; c <= c0 + 2; c++) if (r >= 0 && r < rows && c >= 0 && c < cols) keep[r * cols + c] = 1;
+  };
+  const boxes = polys.map((p) => pointsBounds(p.outer));
+  for (let r = 0; r + 1 < rows; r++) {
+    for (let c = 0; c + 1 < cols; c++) {
+      const q: Point = [(g.i0 + c + 0.5) * step, (g.j0 + r + 0.5) * step];
+      if (polys.some((p, k) => q[0] >= boxes[k]!.x0 && q[0] <= boxes[k]!.x1 && q[1] >= boxes[k]!.y0 && q[1] <= boxes[k]!.y1 && pointInRing(q, p.outer) && !p.holes.some((h) => pointInRing(q, h)))) mark(q[0], q[1]);
+    }
+  }
+  for (const p of polys) {
+    for (const ring of [p.outer, ...p.holes]) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i]!;
+        const b = ring[(i + 1) % ring.length]!;
+        const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (step / 2)));
+        for (let k = 0; k <= n; k++) mark(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n);
+      }
+    }
+  }
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let k = 0; k < g.z.length; k++) {
+    if (!keep[k]) continue;
+    lo = Math.min(lo, g.z[k]!);
+    hi = Math.max(hi, g.z[k]!);
+  }
+  if (!(hi >= lo)) lo = hi = 0;
+  const min = r3(lo / scale);
+  const max = Math.max(min, r3(hi / scale));
+  const span = max - min || 1;
+  const bytes = new Uint8Array(cols * rows * 2);
+  for (let k = 0; k < g.z.length; k++) {
+    const v = keep[k] ? Math.round(((g.z[k]! / scale - min) / span) * 65535) : 0;
+    const q = Math.max(0, Math.min(65535, v));
+    bytes[k * 2] = q & 255;
+    bytes[k * 2 + 1] = q >> 8;
+  }
+  return { i0: g.i0, j0: g.j0, cols, rows, min, max, z: base64(bytes) };
+}
+
+/** A map's rock tone in 3D: a weathered grey-brown, taken halfway toward the style's own shade colour. */
+function rockTone(map: DelveMap): string {
+  let shade = '#B7AD9B';
+  try {
+    shade = resolveStyle(map).props.shade;
+  } catch {
+    /* an unknown preset: the default tone */
+  }
+  const hex = (c: string) => {
+    const v = parseInt(c.replace('#', ''), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  };
+  const a = hex('#857C70');
+  const b = hex(/^#[0-9a-f]{6}$/i.test(shade) ? shade : '#B7AD9B');
+  return `#${a.map((v, i) => Math.round(v + (b[i]! - v) * 0.5).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * The 3D view's heights: the draped ground (pieces), the bands and the rest of
+ * the frame at 0, and the edges. `region` (players: what they may see) cuts all
+ * of it to it, grids included. Null when the map has no height areas in this view.
  */
 export function heightScene(map: DelveMap, opts: { view?: HeightView; frame: Bounds; region?: Polygon[] | 'all'; floor?: PathsD }): HeightScene | null {
   const view = opts.view ?? 'gm';
   if (!hasHeights(map, view)) return null;
-  const plan = heightPlan(map, { view, ...(opts.floor ? { floor: opts.floor } : {}) });
+  const floor = opts.floor ?? floorPaths(map);
+  const plan = heightPlan(map, { view, floor });
   const unit = plan.unit;
   const sq = (v: number) => r3(v / unit.size);
   const region = opts.region && opts.region !== 'all' ? opts.region : null;
   const regionPaths = region ? region.flatMap((p) => [p.outer, ...p.holes].map(toPath)) : null;
+  const f = opts.frame;
+  const box = [toPath([[f.x0, f.y0], [f.x1, f.y0], [f.x1, f.y1], [f.x0, f.y1]])];
+  const cut = (p: PathsD): PathsD => {
+    const inFrame = intersectD(p, box, FillRule.NonZero, PRECISION);
+    return regionPaths && inFrame.length ? intersectD(inFrame, regionPaths, FillRule.NonZero, PRECISION) : inFrame;
+  };
   const byHeight = new Map<number, PathsD>();
   for (const r of plan.regions) if (Math.abs(r.height) > 1e-9 && r.paths.length) byHeight.set(r.height, [...(byHeight.get(r.height) ?? []), ...r.paths]);
   const bands: HeightScene['bands'] = [];
-  const all: PathsD = [];
   for (const [height, paths] of byHeight) {
     let p = unionD(paths, [], FillRule.NonZero, PRECISION);
     if (regionPaths) p = intersectD(p, regionPaths, FillRule.NonZero, PRECISION);
     if (!p.length) continue;
-    all.push(...p);
     bands.push({ h: sq(height), polygons: polygonsOf(p).map(poly3) });
   }
   bands.sort((a, b) => a.h - b.h);
-  const f = opts.frame;
-  const box = [toPath([[f.x0, f.y0], [f.x1, f.y0], [f.x1, f.y1], [f.x0, f.y1]])];
+
+  // the draped ground: flat where the plan says (outside the surface's zones), sampled where it varies
+  const surf = heightSurface(map, { view, plan, floor });
+  const flat = new Map<number, PathsD>();
+  const addFlat = (height: number, paths: PathsD) => {
+    const k = Math.round(height * 1e6) / 1e6;
+    if (Math.abs(k) > 1e-9 && paths.length) flat.set(k, [...(flat.get(k) ?? []), ...paths]);
+  };
+  for (const r of plan.regions) addFlat(r.height, surf.zonePaths.length ? differenceD(r.paths, surf.zonePaths, FillRule.NonZero, PRECISION) : r.paths);
+  const zoneArea = surf.pieces.reduce((s, p) => s + (p.bounds.x1 - p.bounds.x0) * (p.bounds.y1 - p.bounds.y0), 0);
+  const step = Math.min(2, Math.max(0.25, Math.ceil(Math.sqrt(zoneArea / GRID_CELLS) * 16) / 16));
+  const pieces: HeightScene['pieces'] = [];
+  const all: PathsD = [];
+  const varying: { paths: PathsD; g: ReturnType<typeof sampleSurface> }[] = [];
+  surf.pieces.forEach((piece, i) => {
+    const g = sampleSurface(surf, i, step);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const v of g.z) {
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+    if (hi - lo < 1e-6) addFlat(lo, piece.paths);
+    else varying.push({ paths: piece.paths, g });
+  });
+  for (const [height, paths] of flat) {
+    const p = cut(unionD(paths, [], FillRule.NonZero, PRECISION));
+    if (!p.length) continue;
+    all.push(...p);
+    pieces.push({ polygons: polygonsOf(p).map(poly3), h: sq(height) });
+  }
+  for (const { paths, g } of varying) {
+    const p = cut(paths);
+    if (!p.length) continue;
+    all.push(...p);
+    const polys = polygonsOf(p);
+    const grid = packGrid(g, step, polys, unit.size);
+    pieces.push({ polygons: polys.map(poly3), h: grid.min, grid });
+  }
   const base = polygonsOf(all.length ? differenceD(box, all, FillRule.NonZero, PRECISION) : box).map(poly3);
   const edges: HeightScene['edges'] = [];
   for (const e of plan.edges) {
@@ -500,7 +656,7 @@ export function heightScene(map: DelveMap, opts: { view?: HeightView; frame: Bou
       edges.push({ points: l.points.map(([x, y]) => [r3(x), r3(y)]), closed: l.closed, hi: sq(e.high), lo: sq(e.low), kind: e.kind, run: r3(run) });
     }
   }
-  return { bands, base, edges };
+  return { bands, base, edges, pieces, step, rock: rockTone(map) };
 }
 
 // ---------- in words (describeMap) ----------
@@ -546,7 +702,7 @@ export function describeHeights(map: DelveMap): string[] {
   const walk = walkableMap(map, { plan });
   const unit = plan.unit;
   const byId = new Map(map.objects.map((o) => [o.id, o]));
-  const lines = [`Heights (relative to the floor, in ${unit.name}; slopes and steps are walked over, cliff edges and rock faces only by stairs or a ladder):`];
+  const lines = [`Heights (relative to the floor, in ${unit.name}; a hill rises to its height toward the middle (a hollow sinks), the rest are flat; slopes and steps are walked over, cliff edges and rock faces only by stairs or a ladder):`];
   for (const a of areas) {
     const region = plan.regions.find((r) => r.area.id === a.id);
     const b = shapeBoundsOf(a);
@@ -568,7 +724,7 @@ export function describeHeights(map: DelveMap): string[] {
     else if (blocked && !walkable) reach = '; no stairs or ladder: only by climbing, jumping or flying';
     const ground = region && region.polygons.length ? '' : ' (no floor or terrain under it, so it changes nothing yet)';
     lines.push(
-      `  ${a.id}${a.name ? ` "${a.name}"` : ''}: ${heightText(a.height, unit)}, ${edgeText}, ${size}, ${where(map, a)}${reach}${ground}${a.hidden ? ' (hidden from players)' : ''}`,
+      `  ${a.id}${a.name ? ` "${a.name}"` : ''}: ${heightText(a.height, unit)}${heightProfile(a) === 'hill' ? (a.height < 0 ? ' hollow' : ' hill') : ''}, ${edgeText}, ${size}, ${where(map, a)}${reach}${ground}${a.hidden ? ' (hidden from players)' : ''}`,
     );
   }
   return lines;

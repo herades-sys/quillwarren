@@ -58,10 +58,10 @@ import {
   type Polygon,
   type Shape,
 } from '@delve/core';
-import { heightPlan, heightText, parseSquareUnit, stairsUphill, walkableMap, type HeightArea } from '@delve/core';
+import { heightPlan, heightProfile, heightText, parseSquareUnit, stairsUphill, walkableMap, type HeightArea } from '@delve/core';
 import type { IconName } from '@delve/ui';
 import { onControl, type ViewerCtx } from './ctx.ts';
-import { drawMovement, EDGE_OPTIONS, edgeChips, heightBox, heightObject, HEIGHT_HINT, heightValue, loadMovement, movementIcon, movementLegend, parseHeight, saveMovement, type EdgeChoice } from './heights.ts';
+import { drawMovement, EDGE_OPTIONS, edgeChips, heightBox, heightObject, HEIGHT_HINT, heightValue, loadMovement, movementIcon, movementLegend, parseHeight, PROFILE_OPTIONS, profileChips, saveMovement, type EdgeChoice, type ProfileChoice } from './heights.ts';
 import { btn, checkbox, field, h, iconBtn, iconEl, input, miniRange, range, seg, select, svgEl, textarea, type Kid } from './dom.ts';
 import { drawHint, FILL_CHOICES, SHAPE_CHOICES, shapeGhost } from './draw-shapes.ts';
 import { TERRAIN_TOOL_DEFAULTS, terrainEdgeFields, terrainObject, terrainToolBar } from './terrain-edges.ts';
@@ -289,10 +289,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     openShape: 'rect' as DrawShape,
     /** Open area tool: leave out the wall lines inside too. */
     openWalls: false,
-    /** Height tool: its shape, the height (map units) and the edge it gives new areas. */
+    /** Height tool: its shape, the height (map units), and the edge and profile it gives new areas. */
     heightShape: 'rect' as DrawShape,
     height: 10,
     heightEdge: 'auto' as EdgeChoice,
+    heightProfile: 'auto' as ProfileChoice,
     /** Select tool on touch: one finger drags a box instead of panning. */
     touchBox: false,
   };
@@ -815,7 +816,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         if (tool === 'room') obj = { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
         else if (tool === 'cutout') obj = { id: nextId(m, 'p'), type: 'cutout', shape, ...(settings.pillarFill === 'solid' ? { fill: 'solid' as const } : {}) };
         else if (tool === 'opening') obj = { id: nextId(m, 'o'), type: 'opening', shape, ...(settings.openWalls ? { walls: true } : {}) };
-        else if (tool === 'height') obj = heightObject(m, nextId(m, 'h'), shape, { height: settings.height, edge: settings.heightEdge });
+        else if (tool === 'height') obj = heightObject(m, nextId(m, 'h'), shape, { height: settings.height, edge: settings.heightEdge, profile: settings.heightProfile });
         else if (tool === 'terrain') obj = terrainObject(nextId(m, 't'), shape, settings.tile, settings.terrainEdge);
         else obj = { id: nextId(m, 's'), type: 'stairs', shape, direction: stairsDirection(m, shape) };
         void apply([{ op: 'add', object: obj }], [obj.id]);
@@ -875,7 +876,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         : tool === 'opening'
           ? { id: nextId(m, 'o'), type: 'opening', shape, ...(settings.openWalls ? { walls: true } : {}) }
           : tool === 'height'
-            ? heightObject(m, nextId(m, 'h'), shape, { height: settings.height, edge: settings.heightEdge })
+            ? heightObject(m, nextId(m, 'h'), shape, { height: settings.height, edge: settings.heightEdge, profile: settings.heightProfile })
             : { id: nextId(m, 'r'), type: 'room', shape, label: nextLabel(m) };
     void apply([{ op: 'add', object: obj }], [obj.id]);
     draw();
@@ -1519,6 +1520,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           h('span', { class: 'vsep' }),
           edgeChips(kit, settings.heightEdge, (v) => ((settings.heightEdge = v), renderTools())),
           h('span', { class: 'vsep' }),
+          profileChips(kit, settings.heightProfile, (v) => ((settings.heightProfile = v), renderTools())),
+          h('span', { class: 'vsep' }),
           chip(movementIcon(16), movement, () => toggleMovement(), { title: 'Where you can go · Shift K' }),
           ...(movement ? [movementLegend()] : [keyHint('Shift K', 'where you can go')]),
         ];
@@ -1927,8 +1930,11 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           : 'No edge: the ground around it is at the same height.';
     return [
       two(field('Name', text(o.id, 'name', o.name, { placeholder: 'Archers’ ledge' })), field('Height', heightInput, { unit: unit.name })),
-      field('Edge', select(EDGE_OPTIONS, o.edge ?? 'auto', (v) => (v === 'auto' ? unset('edge') : upd({ edge: v })))),
-      h('p', { class: 'hint' }, `${heightText(o.height, unit)} from the floor. ${reach}`),
+      two(
+        field('Edge', select(EDGE_OPTIONS, o.edge ?? 'auto', (v) => (v === 'auto' ? unset('edge') : upd({ edge: v })))),
+        field('Top', select(PROFILE_OPTIONS, o.profile ?? 'auto', (v) => (v === 'auto' ? unset('profile') : upd({ profile: v })))),
+      ),
+      h('p', { class: 'hint' }, `${heightText(o.height, unit)} from the floor${heightProfile(o) === 'hill' ? ' at its top: a hill, rounded from its edge' : ''}. ${reach}`),
       checkbox('Hidden from players', Boolean(o.hidden), (on) => (on ? upd({ hidden: true }) : unset('hidden'))),
       ...(o.hidden ? [h('p', { class: 'hint' }, 'Players see flat ground here, and Delve Table doesn’t hold their tokens back at its edge.')] : []),
       shapeRow(o),

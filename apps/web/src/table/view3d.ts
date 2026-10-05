@@ -2,7 +2,9 @@
 // its floor picture, walls and doors standing on the drawn ones, steps for
 // stairs, the tokens as minis, pings, soft light with shadows, and the camera
 // (orbit, pan, zoom; top-down, fit, follow). Dragging a mini moves it over the
-// floor, snapped like the 2D board; the app sends the same move intents.
+// floor, snapped like the 2D board; the app sends the same move intents. On a
+// map with heights the floor picture is draped over hills, ramps and plateaus
+// (heights3d.ts), and minis, picking, pings, grid lines and overlays follow it.
 //
 // For the later steps: `lights` takes point lights per token or map light
 // (setSources), `overlays` is the layer for darkness or explored areas, and the
@@ -64,8 +66,8 @@ import {
   type View3,
 } from './scene3d-logic.ts';
 import { makeTexture, TextureCache } from './textures3d.ts';
-import { heightMeshes } from '../heights3d.ts';
-import { groundAt, stairRise, stairsUp, wallBase } from '../heights3d-logic.ts';
+import { drapedGeometry, heightMeshes, pieceBoxes } from '../heights3d.ts';
+import { drapeLine, stairRise, stairsUp, surfaceAt, surfaceHit, surfaceRange, wallBase } from '../heights3d-logic.ts';
 
 export interface View3dHost {
   me(): Member;
@@ -113,7 +115,7 @@ export interface View3d {
   focusPoint(x: number, y: number): void;
   /** A click (no drag, no mini under it) on the floor at x, y (cells). */
   onFloorClick(cb: (x: number, y: number) => void): void;
-  /** Where a spot on the floor is in the stage's pixels now, or null (behind the camera). */
+  /** Where a spot on the floor (at the ground there, unless a height is given) is in the stage's pixels now, or null (behind the camera). */
   project(x: number, y: number, height?: number): [number, number] | null;
   /** After every frame drawn (the camera may have moved): place your own HTML over the view. */
   onFrame(cb: () => void): void;
@@ -160,9 +162,14 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     ray.setFromCamera(ndc, camera);
     return ray;
   };
+  // the ground's height under a point (raised and sunken areas of the map: hills, ramps, plateaus), in cells
+  const groundY = (x: number, y: number): number => surfaceAt(current?.heights, x, y);
+  let groundRange: [number, number] = [0, 0];
   const floorAt = (clientX: number, clientY: number): [number, number] | null => {
     const r = rayAt(clientX, clientY).ray;
-    return groundHit([r.origin.x, r.origin.y, r.origin.z], [r.direction.x, r.direction.y, r.direction.z]);
+    const o: Vec3 = [r.origin.x, r.origin.y, r.origin.z];
+    const d: Vec3 = [r.direction.x, r.direction.y, r.direction.z];
+    return current?.heights ? (surfaceHit(o, d, groundY, groundRange) ?? groundHit(o, d)) : groundHit(o, d);
   };
 
   type Press = { pointer: number; sx: number; sy: number; hit: string | null; toggled: boolean; touch: boolean; armed: boolean; floor: [number, number] | null };
@@ -265,12 +272,6 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     step: new MeshStandardMaterial({ color: 0xa79d8f, roughness: 0.9 }),
   };
   const gridMat = new LineBasicMaterial({ color: 0x1b1f24, transparent: true, opacity: 0.2, depthWrite: false });
-  const faceMats = {
-    cliff: new MeshStandardMaterial({ color: 0x6e6255, roughness: 0.95, side: DoubleSide }),
-    step: new MeshStandardMaterial({ color: 0x6e6255, roughness: 0.95, side: DoubleSide }),
-    rock: new MeshStandardMaterial({ color: 0x57524b, roughness: 1, side: DoubleSide }),
-    slope: new MeshStandardMaterial({ color: 0x8a7f70, roughness: 1, side: DoubleSide }),
-  };
 
   // ---------- the board ----------
 
@@ -320,8 +321,9 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     const fb = s.floor?.box ?? b;
     const fw = fb.x1 - fb.x0;
     const fd = fb.y1 - fb.y0;
-    // raised and sunken ground (the map's height areas): the floor picture cut into plates at their heights, faces between
-    if (s.heights) for (const mesh of heightMeshes(s.heights, { box: fb, floor: floorMat, faces: faceMats })) board.add(mesh);
+    // raised and sunken ground (the map's height areas): the floor picture draped over hills, ramps and plateaus, rock where it drops sheer
+    groundRange = surfaceRange(s.heights);
+    if (s.heights) for (const mesh of heightMeshes(s.heights, { box: fb, floor: floorMat, anisotropy: aniso })) board.add(mesh);
     const plane = new Mesh(new PlaneGeometry(fw, fd).rotateX(-Math.PI / 2), floorMat);
     plane.position.set(fb.x0 + fw / 2, 0, fb.y0 + fd / 2);
     plane.receiveShadow = true;
@@ -329,8 +331,11 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     else plane.geometry.dispose();
     if (page?.showGrid) {
       const segs = gridSegments(b);
-      const pos = new Float32Array(segs.length * 6);
-      segs.forEach(([x0, z0, x1, z1], i) => pos.set([x0, 0.004, z0, x1, 0.004, z1], i * 6));
+      // over heights the lines follow the ground (in quarter cells, broken at cliffs)
+      const pts = s.heights ? segs.flatMap(([x0, z0, x1, z1]) => drapeLine([x0, z0], [x1, z1], groundY, 0.25, 0.02)) : null;
+      const pos = new Float32Array(pts ? pts.length * 3 : segs.length * 6);
+      if (pts) pts.forEach((p, i) => pos.set(p, i * 3));
+      else segs.forEach(([x0, z0, x1, z1], i) => pos.set([x0, 0.004, z0, x1, 0.004, z1], i * 6));
       const geo = new BufferGeometry();
       geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
       // blending happens in linear light, so lines need more opacity than on the 2D board to read as much
@@ -403,7 +408,8 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     const pieces = [
       ...s.doors.flatMap((d) => lifted(doorPieces(d, wallH, WALL_T), wallBase(hts, d.a, d.b))),
       ...s.stairs.flatMap((st) => {
-        const r = stairRise(hts, st.box, st.direction);
+        // from the ground at its foot to the ground at its head
+        const r = stairRise(hts, st.box, stairsUp(hts, st.box, st.direction));
         return r && r.rise > 0 ? lifted(stairSteps({ ...st, direction: stairsUp(hts, st.box, st.direction) }, r.rise), r.base) : lifted(stairSteps(st, Math.min(0.32, wallH * 0.4)), r?.base ?? 0);
       }),
     ];
@@ -434,13 +440,20 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
       requestRender();
     },
     polygons(polys, color, opacity) {
+      const mat = new MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: DoubleSide });
+      const hts = current?.heights;
+      if (hts) {
+        // laid over the ground (the layer itself sits a hair up), cut along the lattice where it isn't flat so it follows hills
+        const geo = drapedGeometry(polys, (x, y) => groundY(x, y) + 0.02, current!.bounds, hts.step ?? 0.25, pieceBoxes(hts));
+        if (geo) return new Mesh(geo, mat);
+      }
       const shapes = polys.map((p) => {
         const s = new Shape(p.outer.map(([x, y]) => new Vector2(x, y)));
         for (const h of p.holes) s.holes.push(new Path(h.map(([x, y]) => new Vector2(x, y))));
         return s;
       });
       const geo = new ShapeGeometry(shapes).rotateX(Math.PI / 2); // shape y becomes world z
-      return new Mesh(geo, new MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: DoubleSide }));
+      return new Mesh(geo, mat);
     },
   };
 
@@ -456,7 +469,7 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     hovered: () => hovered,
     dragging: () => dragIds,
     textures,
-    groundY: (x, y) => groundAt(current?.heights, x, y),
+    groundY,
     requestRender: () => requestRender(),
   });
 
@@ -466,7 +479,7 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
   const pings: { mesh: Mesh; start: number }[] = [];
   function showPing(x: number, y: number, color: string): void {
     const mesh = new Mesh(pingGeo, new MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false, side: DoubleSide }));
-    mesh.position.set(x, 0.03, y);
+    mesh.position.set(x, groundY(x, y) + 0.03, y);
     mesh.renderOrder = 4;
     pingGroup.add(mesh);
     pings.push({ mesh, start: performance.now() });
@@ -547,9 +560,9 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
         followId = null;
         host.followEnded?.();
       } else {
-        const goal = tokenCentre(t, 0);
+        const goal = tokenCentre(t, groundY(t.x + t.w / 2, t.y + t.h / 2));
         const v = viewNow();
-        const dist = Math.hypot(goal[0] - v.target[0], goal[2] - v.target[2]);
+        const dist = Math.hypot(goal[0] - v.target[0], goal[1] - v.target[1], goal[2] - v.target[2]);
         if (dist > 0.01) {
           setView(followStep(v, goal, 0.15));
           more = true;
@@ -766,20 +779,21 @@ export function createView3d(stage: HTMLElement, tagLayer: HTMLElement, host: Vi
     focusToken(id) {
       const t = displayTokens().find((x) => x.id === id);
       if (!t) return;
-      const goal: Vec3 = tokenCentre(t, 0);
+      const goal: Vec3 = tokenCentre(t, groundY(t.x + t.w / 2, t.y + t.h / 2));
       const v = viewNow();
       const d: Vec3 = [goal[0] - v.target[0], goal[1] - v.target[1], goal[2] - v.target[2]];
       animateTo({ position: [v.position[0] + d[0], v.position[1] + d[1], v.position[2] + d[2]], target: goal }, 350);
     },
     focusPoint(x, y) {
       const v = viewNow();
-      const d: Vec3 = [x - v.target[0], -v.target[1], y - v.target[2]];
-      animateTo({ position: [v.position[0] + d[0], v.position[1] + d[1], v.position[2] + d[2]], target: [x, 0, y] }, 350);
+      const gy = groundY(x, y);
+      const d: Vec3 = [x - v.target[0], gy - v.target[1], y - v.target[2]];
+      animateTo({ position: [v.position[0] + d[0], v.position[1] + d[1], v.position[2] + d[2]], target: [x, gy, y] }, 350);
     },
     onFloorClick(cb) {
       floorClicks.push(cb);
     },
-    project(x, y, height = 0) {
+    project(x, y, height = groundY(x, y)) {
       const v = new Vector3(x, height, y).project(camera);
       if (v.z > 1 || v.z < -1) return null;
       return [((v.x + 1) / 2) * canvas.clientWidth, ((1 - v.y) / 2) * canvas.clientHeight];

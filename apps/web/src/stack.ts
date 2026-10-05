@@ -8,7 +8,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { applyOps, buildScene, computeFloor, computeWalls, isTurned, revealedBounds, shutDoorLines, stairLinks, visibleFloor, visiblePolygons, type Bounds, type Connector, type DelveMap, type Door, type Op, type StairPlan } from '@delve/core';
 import { clipSegments, insidePolygons, intersect, startView, storeyHeights, texturePpg, unionOf, wallBox } from './stack-logic.ts';
 import { hasHeights, heightPlan, heightScene, polygonsOf, stairsUphill, type HeightScene, type Polygon } from '@delve/core';
-import { heightMeshes, type FaceKind } from './heights3d.ts';
+import { heightMeshes } from './heights3d.ts';
 import { wallBase } from './heights3d-logic.ts';
 
 interface Storey {
@@ -76,7 +76,8 @@ controls.screenSpacePanning = true;
 controls.maxPolarAngle = Math.PI * 0.49;
 scene.add(new THREE.HemisphereLight(0xf4efe6, 0x2a2622, 1.7));
 const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-sun.position.set(-40, 90, 60);
+// from the north-west (map y is +z here), like the Table and the hillshade baked into the floor picture
+sun.position.set(-40, 90, -60);
 scene.add(sun);
 
 const loader = new THREE.TextureLoader();
@@ -100,7 +101,7 @@ function dispose(g: THREE.Object3D): void {
     if (m.geometry && !shared.has(m.geometry)) m.geometry.dispose();
     const mats = m.material ? (Array.isArray(m.material) ? m.material : [m.material]) : [];
     for (const mat of mats) {
-      if (shared.has(mat)) continue;
+      if (shared.has(mat) || mat.userData.shared) continue;
       (mat as THREE.MeshBasicMaterial).map?.dispose();
       mat.dispose();
     }
@@ -143,7 +144,7 @@ function build(l: Loaded): void {
   const fogged = view === 'players' && Boolean(map.fog?.on);
   const fullFloor = computeFloor(map);
   const floor = fogged ? visibleFloor(map) : fullFloor;
-  // Height areas (core heightScene): the floor picture cut into plates at their heights, faces between them
+  // Height areas (core heightScene): the floor picture draped over hills, ramps and plateaus, rock faces where it drops sheer
   const hs = hasHeights(map, view) ? heightScene(map, { view, frame: buildScene(map, { view, ...(view === 'players' ? { fog: 'hide' as const } : {}) }).bounds, ...(fogged ? { region: visiblePolygons(map) } : {}) }) : null;
   const slabFloor = hs ? floorOutsidePits(floor, hs) : floor;
   if (slabFloor.length) {
@@ -171,7 +172,10 @@ function build(l: Loaded): void {
   tex.anisotropy = maxAniso;
   const floorMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
   if (hs) {
-    for (const mesh of heightMeshes(hs, { box: b, floor: floorMat, faces: faceMats, lift: 0.02 })) {
+    // draped ground needs light to show its shape, and depth so a hill hides what's behind it: lit, cut out where the picture is clear
+    floorMat.dispose();
+    const groundMat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
+    for (const mesh of heightMeshes(hs, { box: b, floor: groundMat, lift: 0.02, anisotropy: maxAniso })) {
       mesh.userData.storey = l.storey.id;
       if (mesh.userData.plate) mesh.renderOrder = 1;
       l.group.add(mesh);
@@ -223,14 +227,6 @@ function build(l: Loaded): void {
 }
 
 // ---------- heights ----------
-
-const faceMats: Record<FaceKind, THREE.Material> = {
-  cliff: new THREE.MeshStandardMaterial({ color: 0x7a7166, roughness: 0.95, side: THREE.DoubleSide }),
-  step: new THREE.MeshStandardMaterial({ color: 0x7a7166, roughness: 0.95, side: THREE.DoubleSide }),
-  rock: new THREE.MeshStandardMaterial({ color: 0x5c5751, roughness: 1, side: THREE.DoubleSide }),
-  slope: new THREE.MeshStandardMaterial({ color: 0x968c7d, roughness: 1, side: THREE.DoubleSide }),
-};
-for (const m of Object.values(faceMats)) shared.add(m);
 
 /** The floor's slab without the sunken parts (they get their own slab, further down). */
 function floorOutsidePits(floor: Polygon[], hs: HeightScene): Polygon[] {

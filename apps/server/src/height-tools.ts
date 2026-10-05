@@ -4,7 +4,7 @@
 // says how the area is reached (stairs, ladders) the way describe_map does.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { describeHeights, HEIGHT_EDGES, heightPlan, heightText, nextId, parseSquareUnit, shapeBounds, stairsUphill, type HeightArea, type Shape } from '@delve/core';
+import { describeHeights, HEIGHT_EDGES, HEIGHT_PROFILES, heightPlan, heightText, nextId, parseSquareUnit, shapeBounds, stairsUphill, type HeightArea, type Shape } from '@delve/core';
 import { errorResponse } from './api.ts';
 import { presetArg, shapeOrPreset } from './draw-args.ts';
 import type { MapService } from './service.ts';
@@ -36,7 +36,9 @@ export const ADD_HEIGHT_DESCRIPTION =
   'height is relative to the map\'s floor in the map\'s units (grid unit: feet, or metres on a metric map). It only changes height where there is floor (rooms, corridors) or terrain already: ' +
   'draw it over a room, or over terrain outdoors (a snowy mountain is add_terrain snow plus add_height areas). Where areas overlap, the one added last wins. ' +
   'edge: "cliff" (a sheer drop drawn as a ledge line with ticks: balconies, ledges, pit rims), "rock" (a cliff drawn as a band of rock face, as wide as the drop: mountainsides), ' +
-  '"slope" (a walkable hill or ramp, soft hachures) or "step" (walkable: a low step, rubble). Unset: a drop of a square\'s size or more is a cliff (indoors) or rock face (outdoors), less is a step. ' +
+  '"slope" (a walkable hill or ramp) or "step" (walkable: a low step, rubble). Unset: a drop of a square\'s size or more is a cliff (indoors) or rock face (outdoors), less is a step. ' +
+  'profile: "hill" rounds it (it rises from its edge to its height toward the middle; long, thin shapes become ridges) for natural hills; "plateau" keeps it flat for ledges, terraces, arenas and built platforms. Unset: a hill for a slope edge, else a plateau. ' +
+  'A plateau with a slope edge ramps down outside it (a raised one) or inside it (a sunken one). A smaller hill on a bigger one rises out of it to its own height (heights don\'t add); a plateau with a cliff on a hill stands at its own height. ' +
   'Cliffs and rock faces can\'t be walked: put stairs (add_stairs) or a ladder prop across the edge where the way up is; stairs going down into a sunken area work the same. ' +
   'Players see the edges; the GM view adds the height labels. hidden: true keeps it from the players.';
 
@@ -55,6 +57,7 @@ export function registerHeightTools(server: McpServer, service: MapService, by: 
         preset: presetArg,
         height: z.number().min(-10000).max(10000).describe('Relative to the floor, in the map\'s units: 10 for a 10 ft ledge, -5 for a 5 ft pit'),
         edge: z.enum(HEIGHT_EDGES).optional().describe('cliff, rock, slope or step (default: by the drop, see the description)'),
+        profile: z.enum(HEIGHT_PROFILES).optional().describe('hill (rounded: rises from its edge to its height toward the middle; natural hills, ridges) or plateau (flat top: ledges, terraces, arenas, built platforms). Default: hill for a slope edge, else plateau'),
         name: z.string().max(200).optional().describe('e.g. "Archers\' ledge", "Sunken arena"'),
         notes: z.string().max(10000).optional().describe('GM notes, never drawn'),
         hidden: z.boolean().optional().describe('Hidden from players (their view shows flat ground there; Delve Table doesn\'t enforce it)'),
@@ -72,6 +75,7 @@ export function registerHeightTools(server: McpServer, service: MapService, by: 
           shape,
           height: a.height,
           ...(a.edge ? { edge: a.edge } : {}),
+          ...(a.profile ? { profile: a.profile } : {}),
           ...(a.name ? { name: a.name } : {}),
           ...(a.notes ? { notes: a.notes } : {}),
           ...(a.hidden ? { hidden: true } : {}),

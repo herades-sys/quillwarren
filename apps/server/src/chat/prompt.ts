@@ -104,11 +104,13 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - **Wall roughness** from 1 (smooth, cut stone) to 10 (extremely rough, caves): set_map roughness for the whole map, and a room, corridor or cutout can have its own (update {"roughness": 9}), so a natural cave can sit beside a built keep. High levels reshape the floor outline itself; doors stay on straight wall. Unset means the style's own look.
 - **Heights** (add_height): raised and sunken ground within one map, a shape plus height, relative to the floor in the map's units (feet, or metres on a metric map): +10 a ledge, +5 a hill, -10 a sunken arena or pit. It changes the height only where there is floor or terrain already (draw it over a room, or outdoors over terrain); where areas overlap the one added last wins, so a hill can carry a higher crest.
   - edge: "cliff" (a sheer drop: a ledge line with ticks on the low side, for indoor ledges, balconies and pit rims), "rock" (a cliff drawn as a band of rock face as wide as the drop, for mountainsides and outdoor cliffs), "slope" (walkable hill or ramp) or "step" (walkable low step, rubble). Unset: a drop of one square's size or more is a cliff indoors and a rock face outdoors, less a step.
+  - profile: "hill" (rounded: it rises from its edge to its height toward the middle; long, thin shapes become ridges) for natural hills, knolls and ridges; "plateau" (flat on top) for built terraces, ledges, arenas and platforms. Unset: a hill for a slope edge, else flat. A smaller hill on a bigger one rises out of it to its own height (heights don't add), and a flat cliff-edged top on a hill stands at its own height.
   - Cliffs and rock faces can't be walked: put stairs (add_stairs, direction = the way up) or a ladder prop (asset ladder) across the edge where the way up or down is. Stairs going down into a sunken area are just stairs from the floor across its edge, direction pointing back up to the floor. describe_map says how each height is reached.
   - An archers' ledge along a hall: room rect [x, y, w, h]; add_height rect [x, y, w, 2] height 10 (cliff), and stairs rect [x + w - 2, y + 1, 2, 3] direction n across its edge at one end.
   - A sunken arena: a room, add_height with a smaller shape inside it at height -10, and stairs across its edge with direction pointing out of the pit (toward the room's floor).
   - A snowy mountainside with three plateaus and a path up: add_terrain snow over the whole area; add_height areas at 10, 20 and 30 drawn as polygons that overlap like steps (the higher one added later, inside or over the lower), edge rock; then a path up: stairs (rock-cut steps) across each rock face, or a ramp, a narrow add_height strip at the upper plateau's height with edge "slope" reaching from it down over its edge. Add trees, dead trees and boulders as props.
-  - In the 3D views the ground rises and sinks; on Delve Table the GM can turn on "Respect heights", so players' tokens can't cross a cliff without stairs.
+  - A hill with a rocky outcrop and a path up: add_terrain grass, add_height a wide poly at +5 edge slope (a hill); a smaller poly near its top at +9 edge rock (the outcrop, flat by default); stairs across the outcrop's rock face where the path reaches it; a dirt terrain strip winding up the hill as the path.
+  - In the 3D views the ground rises and sinks (hills rounded, ramps, sheer rock where it drops); on Delve Table the GM can turn on "Respect heights", so players' tokens can't cross a cliff without stairs.
 - **The user's own pictures** (add_image): the user can upload their own images in the editor (the Image tool), e.g. a drawing of a table to stand in the middle of room 3. list_images gives each one's src; add_image places it by src with at = its centre, w × h in squares (give one and the proportions are kept; neither: the longer side is 2 squares), rotation, layer "props" (default, on top of walls) or "floor" (under the grid and walls: rugs, mosaics, floor art), opacity and gm_only.
 - **Rows and scatters of props** (add_props_along): trees along a road, rocks along a cave wall, pillars down a hall. Give a path of points and a spacing in squares; placement "regular" puts one exactly every spacing squares, "irregular" varies the gaps, strays up to spread squares to the sides and turns and sizes each one a little.
   - A colour prop with a group (list_assets says "group oak") mixes the group's variants at random, so a row is not one prop repeated (mix false turns it off).
@@ -154,7 +156,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - terrain {"id","type":"terrain","asset","shape","edge"?: "hard"|"ragged"|"fade","fadeWidth"?,"edgeDetails"?: false,"stack"?}
   - opening {"id","type":"opening","shape","walls"?: true} (an open area: no hatching or shading inside)
   - inscription {"id","type":"inscription","text","at":[x,y],"size"?,"rotation"?,"ink"?: "brown"|"black"|"faded"|"red","onMap"?}
-  - height {"id","type":"height","shape","height","edge"?: "cliff"|"rock"|"slope"|"step","hidden"?: true} (raised or sunken ground)
+  - height {"id","type":"height","shape","height","edge"?: "cliff"|"rock"|"slope"|"step","profile"?: "plateau"|"hill","hidden"?: true} (raised or sunken ground)
 
   With apply_ops you choose the ids yourself, so keep them unique. The tools' error messages name the object and field that's wrong.
 
@@ -256,7 +258,7 @@ export function objectLine(o: MapObject): string {
     case 'marker':
       return `${o.id} marker ${o.kind} at [${n(o.at[0])}, ${n(o.at[1])}]${o.done ? ', done' : ''}: ${q(o.text)}${notes}`;
     case 'height':
-      return `${o.id} height${name} ${o.height > 0 ? '+' : ''}${n(o.height)} ${shapeText(o.shape)}${o.edge ? `, edge ${o.edge}` : ''}${o.hidden ? ', hidden from players' : ''}${notes}`;
+      return `${o.id} height${name} ${o.height > 0 ? '+' : ''}${n(o.height)} ${shapeText(o.shape)}${o.edge ? `, edge ${o.edge}` : ''}${o.profile ? `, ${o.profile}` : ''}${o.hidden ? ', hidden from players' : ''}${notes}`;
     case 'opening':
       return `${o.id} open area${name} ${shapeText(o.shape)}${o.walls ? ', walls left out too' : ''}${notes}`;
     case 'image':
