@@ -56,6 +56,7 @@ import {
   type Shape,
 } from '@delve/core';
 import { INSCRIPTION_INKS, INSCRIPTION_MAX, INSCRIPTION_SIZE } from '@delve/core';
+import { FADE_WIDTH_MAX, FADE_WIDTH_MIN, STACK_MAX, TERRAIN_EDGES, terrainEdgeText } from '@delve/core';
 import { errorResponse, newMap, tokenGuard } from './api.ts';
 import { bearer } from './auth.ts';
 import type { ChatTokens } from './chat/tokens.ts';
@@ -655,8 +656,29 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       title: 'Add terrain',
       description:
         'Fill an area with a terrain tile (water, grass, lava, rubble… see list_assets category terrain) or a colour terrain texture (ids c-…: floorboards, flagstones, grass, sand, water… see list_assets palette colour, categories floors, ground and water). ' +
-        'Give exactly one shape; it may cover a whole room or open ground outside rooms. Tiles repeat on the map grid, so neighbouring areas of one texture join without a seam.',
-      inputSchema: { map: mapId, asset: z.string().describe('Terrain id, e.g. "water-shallow" or "c-floor-planks-oak"'), ...shapeArgs, name: z.string().max(200).optional(), id: z.string().optional() },
+        'Give exactly one shape; it may cover a whole room or open ground outside rooms. Tiles repeat on the map grid, so neighbouring areas of one texture join without a seam. ' +
+        'Areas fade into each other instead of meeting at straight edges: natural ground and water fade (deep water → shallows → sand → grass, in that order), indoor floors stay crisp, and against bare floor or the background an edge is at most ragged. A later area still covers an earlier one where they overlap (a pond over a field). ' +
+        'edge, fade_width, edge_details and stack change that per area.',
+      inputSchema: {
+        map: mapId,
+        asset: z.string().describe('Terrain id, e.g. "water-shallow" or "c-floor-planks-oak"'),
+        ...shapeArgs,
+        name: z.string().max(200).optional(),
+        id: z.string().optional(),
+        edge: z
+          .enum(TERRAIN_EDGES)
+          .optional()
+          .describe('Its outline: "hard" exactly as drawn, "ragged" a natural wobble, "fade" fades into the terrain under it in patches and tongues. Default by material (natural ground and water fade, indoor floors are hard). One set here wins over a neighbour\'s default'),
+        fade_width: z.number().min(FADE_WIDTH_MIN).max(FADE_WIDTH_MAX).optional().describe('How wide its fades are, in squares: default 0.75; up to 5 for a long, gradual change (grass slowly turning into sand)'),
+        edge_details: z.boolean().optional().describe('false: no details along its soft edges (a wet shoreline with foam and pebbles, grass tufts over a road, a few patches)'),
+        stack: z
+          .number()
+          .int()
+          .min(0)
+          .max(STACK_MAX)
+          .optional()
+          .describe('Which of two areas lies on top where they fade into each other: the higher forms the patches. Default by material: deep water 0, water 1, shallows 2, sand and mud 3, dirt and gravel 4, grass 5, snow 6, floors 7'),
+      },
     },
     (a) =>
       guarded(() => {
@@ -665,7 +687,18 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const map = store.get(a.map).map;
         const shape = oneShape(a);
         const id = a.id ?? nextId(map, 't');
-        return addObject(a.map, { id, type: 'terrain', shape, asset: a.asset, ...(a.name ? { name: a.name } : {}) }, `Added ${info.name} terrain ${id}: ${where(shape)}.`);
+        const t = {
+          id,
+          type: 'terrain' as const,
+          shape,
+          asset: a.asset,
+          ...(a.name ? { name: a.name } : {}),
+          ...(a.edge ? { edge: a.edge } : {}),
+          ...(a.fade_width !== undefined ? { fadeWidth: a.fade_width } : {}),
+          ...(a.edge_details === false ? { edgeDetails: false } : {}),
+          ...(a.stack !== undefined ? { stack: a.stack } : {}),
+        };
+        return addObject(a.map, t, `Added ${info.name} terrain ${id}: ${where(shape)}; ${terrainEdgeText(t)}.`);
       }),
   );
 
@@ -855,7 +888,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'update',
     {
       title: 'Update object',
-      description: 'Set or remove fields of one object, e.g. {"name": "Armoury"}, {"style": "locked"} or {"angle": 30} on a door (turns it about its start point at; unset ["angle"] makes it run along x or y again), {"walls": true} on an open area, or {"notes": "Two ogres; a chest with 40 gp"} on a room, corridor or terrain (GM notes: never drawn, only the GM sees them; unset ["notes"] removes them). id and type can\'t change.',
+      description: 'Set or remove fields of one object, e.g. {"name": "Armoury"}, {"style": "locked"} or {"angle": 30} on a door (turns it about its start point at; unset ["angle"] makes it run along x or y again), {"walls": true} on an open area, {"edge": "ragged"}, {"fadeWidth": 3}, {"edgeDetails": false} or {"stack": 6} on terrain (see add_terrain; unset ["edge"] goes back to the material\'s default), or {"notes": "Two ogres; a chest with 40 gp"} on a room, corridor or terrain (GM notes: never drawn, only the GM sees them; unset ["notes"] removes them). id and type can\'t change.',
       inputSchema: { map: mapId, id: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional() },
     },
     (a) => guarded(() => change(a.map, [{ op: 'update', id: a.id, set: a.set, unset: a.unset }], `Updated ${a.id}.`)),

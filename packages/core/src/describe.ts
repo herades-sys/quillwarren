@@ -11,6 +11,7 @@ import { MARKERS } from './markers.ts';
 import { inscriptionsOf, inscriptionText } from './inscriptions.ts';
 import { describeHeights } from './heights.ts';
 import { areaTitle, hasNotes, isNoteArea } from './notes.ts';
+import { terrainEdgeText } from './render/terrain-edges.ts';
 import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Opening, Point, Prop, Room, Terrain } from './schema.ts';
 import { parseSquareUnit } from './units.ts';
 
@@ -143,7 +144,9 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
         .map((t) => {
           const b = shapeBounds(t.shape);
           const info = assetInfo(t.asset);
-          return `${t.id} ${info?.name ?? t.asset}${info?.difficult ? ' (difficult)' : ''} ${fmt(b.x1 - b.x0)}×${fmt(b.y1 - b.y0)} ${t.holes?.length ? `at ${fmt(b.x0)},${fmt(b.y0)} with ${t.holes.length} hole${t.holes.length === 1 ? '' : 's'} (the floor inside it stays clear)` : roomAt([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2])}`;
+          // its edge only when set on it (the default is the material's, see render/terrain-edges.ts)
+          const edge = t.edge !== undefined || t.fadeWidth !== undefined || t.edgeDetails !== undefined || t.stack !== undefined ? ` (${terrainEdgeText(t)})` : '';
+          return `${t.id} ${info?.name ?? t.asset}${info?.difficult ? ' (difficult)' : ''} ${fmt(b.x1 - b.x0)}×${fmt(b.y1 - b.y0)} ${t.holes?.length ? `at ${fmt(b.x0)},${fmt(b.y0)} with ${t.holes.length} hole${t.holes.length === 1 ? '' : 's'} (the floor inside it stays clear)` : roomAt([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2])}${edge}`;
         })
         .join('; ')}`,
     );

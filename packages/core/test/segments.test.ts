@@ -271,7 +271,8 @@ describe('terrain holes', () => {
 
   it('leaves maps without holes as they were', () => {
     const map = testMap();
-    map.objects.push({ id: 't1', type: 'terrain', asset: 'water-shallow', shape: { circle: [10, 5, 2] } });
+    // (a hard edge: a soft one is reshaped, see terrain-edges.test.ts)
+    map.objects.push({ id: 't1', type: 'terrain', asset: 'water-shallow', shape: { circle: [10, 5, 2] }, edge: 'hard' });
     const layer = buildScene(map).layers.find((l) => l.name === 'terrain:t1');
     if (layer?.kind !== 'pattern') throw new Error('no terrain layer');
     expect(layer.polygons).toHaveLength(1);

@@ -44,3 +44,12 @@ export function legendKeep(extra: Partial<DelveMap> = {}): DelveMap {
   ];
   return { format: 'delve.map', version: 1, id: 'legend-keep', name: 'The Legend Keep', grid: { type: 'square' }, seed: 5, objects, ...extra };
 }
+
+/**
+ * The map with every terrain area's edge set to hard. Hashes taken before terrain
+ * got soft edges (render/terrain-edges.ts) hold for it: a hard edge draws terrain
+ * exactly as before.
+ */
+export function hardTerrain(map: DelveMap): DelveMap {
+  return { ...map, objects: map.objects.map((o) => (o.type === 'terrain' ? { ...o, edge: 'hard' as const } : o)) };
+}

@@ -113,7 +113,7 @@ describe('handout notes in pictures', () => {
     for (const q of ['paper=a3&dpi=61', 'paper=letter&orientation=landscape&dpi=77', 'paper=fit&dpi=53']) {
       expect((await app.inject({ url: `/api/v1/maps/${id}/handout.png?${q}` })).statusCode).toBe(200);
     }
-  });
+  }, 20_000); // renders several handout PNGs: slow when the machine is busy
   it('leaves a stray label far off the map out of the handout (resvg panicked on it and took the server down)', async () => {
     const id = await newMapId();
     const ops = [

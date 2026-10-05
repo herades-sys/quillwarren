@@ -100,6 +100,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - **Handout notes** (add_inscription): handwritten notes on the players' parchment handout (/maps/<id>/handout), in an old italic hand: "Here be dragons" at the edge of the map, "Beware the crypt" over a door, a rhyme in the margin. text (up to 300 characters, \\n for a new line) is centred on at; size is the text height in squares (default 0.8); rotation tilts it a few degrees (−5 to 5 looks hand-made); ink brown (default), black, faded or red; on_map also writes it on the normal map. Players see them, fog or not. The GM can place and edit them on the handout page too.
 - **Terrain** (add_terrain): an area filled with a repeating tile: water, lava, grass, mud, rubble, carpet… It can cover a whole room (pass the room's shape) or open ground outside rooms. Difficult terrain is marked in the catalog.
   - Colour terrain textures (ids c-…, categories floors, ground and water: oak floorboards, flagstones, marble, short grass, sand, snow, calm or stormy sea) fill an area in full colour the same way. They repeat on the map grid, so two areas of one texture join without a seam. list_assets palette "colour" with category floors, ground or water lists them.
+  - Edges: areas fade into each other instead of meeting at straight lines. Natural ground and water fade over about 0.75 squares in patches and tongues, in the order deep water, water, shallows, sand and mud, dirt and gravel, grass, snow (the higher lies on top), with a wet shoreline and foam where water meets land and grass tufts over a road. Indoor floors stay crisp, and against bare floor or the background an edge is only ragged. Where areas overlap, the later one still covers the earlier, so draw a base (grass over the whole area) first, then roads, sand, shallows, deep water. Per area: edge (hard, ragged, fade), fade_width (up to 5 squares for a long, gradual change: grass slowly turning into sand), edge_details false, stack 0–9; update {"edge": "hard"} changes one.
 - **Wall roughness** from 1 (smooth, cut stone) to 10 (extremely rough, caves): set_map roughness for the whole map, and a room, corridor or cutout can have its own (update {"roughness": 9}), so a natural cave can sit beside a built keep. High levels reshape the floor outline itself; doors stay on straight wall. Unset means the style's own look.
 - **Heights** (add_height): raised and sunken ground within one map, a shape plus height, relative to the floor in the map's units (feet, or metres on a metric map): +10 a ledge, +5 a hill, -10 a sunken arena or pit. It changes the height only where there is floor or terrain already (draw it over a room, or outdoors over terrain); where areas overlap the one added last wins, so a hill can carry a higher crest.
   - edge: "cliff" (a sheer drop: a ledge line with ticks on the low side, for indoor ledges, balconies and pit rims), "rock" (a cliff drawn as a band of rock face as wide as the drop, for mountainsides and outdoor cliffs), "slope" (walkable hill or ramp) or "step" (walkable low step, rubble). Unset: a drop of one square's size or more is a cliff indoors and a rock face outdoors, less a step.
@@ -124,7 +125,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - add_height (a shape or preset, height, edge, name, notes, hidden): raised or sunken ground (see "Heights").
 - move (ids, dx, dy): corridors follow their rooms, and doors on a moved room's edges move with it.
 - resize (a new shape for a room, cutout or stairs), update (set or unset fields, e.g. {"notes": "..."} or {"style": "locked"}), delete (ids).
-- list_assets (category, palette, search), add_prop (asset, at, rotation, scale, notes, avoid), add_props_along (asset, path, spacing, placement, spread, mix, overlap), add_terrain (asset plus one of rect, poly or circle).
+- list_assets (category, palette, search), add_prop (asset, at, rotation, scale, notes, avoid), add_props_along (asset, path, spacing, placement, spread, mix, overlap), add_terrain (asset plus one of rect, poly or circle; edge, fade_width, edge_details, stack).
 - add_marker (kind, at, text): a GM note badge; update {"done": true} or {"text": "..."} changes it.
 - add_inscription (text, at, size, rotation, ink, on_map): a handwritten note on the parchment handout; update {"text": "..."} or {"onMap": true} changes it, delete removes it.
 - list_segments, save_segment (name, ids or rect), place_segment (segment id or name, at = top-left corner, rotation), fill_with_segment (segment, rect or around = squares around the rooms, default 5): see "Segments".
@@ -150,7 +151,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
   - stairs {"id","type":"stairs","shape","direction","label"?}
   - label {"id","type":"label","text","at":[x,y],"size"?}
   - prop {"id","type":"prop","asset","at":[x,y],"rotation"?,"scale"?,"notes"?,"label"? (ladders, trapdoors, spiral stairs)}
-  - terrain {"id","type":"terrain","asset","shape"}
+  - terrain {"id","type":"terrain","asset","shape","edge"?: "hard"|"ragged"|"fade","fadeWidth"?,"edgeDetails"?: false,"stack"?}
   - opening {"id","type":"opening","shape","walls"?: true} (an open area: no hatching or shading inside)
   - inscription {"id","type":"inscription","text","at":[x,y],"size"?,"rotation"?,"ink"?: "brown"|"black"|"faded"|"red","onMap"?}
   - height {"id","type":"height","shape","height","edge"?: "cliff"|"rock"|"slope"|"step","hidden"?: true} (raised or sunken ground)
@@ -251,7 +252,7 @@ export function objectLine(o: MapObject): string {
       return `${o.id} prop ${o.asset}${info ? ` (${info.name}, ${info.w}×${info.h})` : ' (unknown asset)'}${name} at [${n(o.at[0])}, ${n(o.at[1])}]${o.rotation ? `, rotation ${n(o.rotation)}` : ''}${o.scale ? `, scale ${n(o.scale)}` : ''}${o.label ? `, label ${q(o.label)}` : ''}${notes}`;
     }
     case 'terrain':
-      return `${o.id} terrain ${o.asset}${name} ${shapeText(o.shape)}${o.holes?.length ? ` with ${o.holes.length} hole${o.holes.length === 1 ? '' : 's'} cut out` : ''}${notes}`;
+      return `${o.id} terrain ${o.asset}${name} ${shapeText(o.shape)}${o.holes?.length ? ` with ${o.holes.length} hole${o.holes.length === 1 ? '' : 's'} cut out` : ''}${o.edge ? `, edge ${o.edge}` : ''}${o.fadeWidth !== undefined ? `, fade ${n(o.fadeWidth)}` : ''}${o.edgeDetails === false ? ', no edge details' : ''}${o.stack !== undefined ? `, stack ${o.stack}` : ''}${notes}`;
     case 'marker':
       return `${o.id} marker ${o.kind} at [${n(o.at[0])}, ${n(o.at[1])}]${o.done ? ', done' : ''}: ${q(o.text)}${notes}`;
     case 'height':

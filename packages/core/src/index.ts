@@ -74,7 +74,27 @@ export {
   type DoorLine,
   type DoorSlot,
 } from './geometry/doors.ts';
-export { buildScene, terrainTint, type Scene, type Layer, type RenderOptions, type View, type AssetItem, type ImageItem } from './render/scene.ts';
+export { buildScene, terrainTint, terrainToneColour, type Scene, type Layer, type RenderOptions, type View, type AssetItem, type ImageItem } from './render/scene.ts';
+export {
+  terrainEdges,
+  terrainEdgeSettings,
+  terrainEdgeText,
+  terrainMaterial,
+  defaultTerrainEdge,
+  pairEdge,
+  pairWidth,
+  edgeRecipe,
+  tonePaletteName,
+  MATERIAL_STACK,
+  DEFAULT_FADE_WIDTH,
+  type TerrainMaterial,
+  type TerrainEdgeSettings,
+  type TerrainEdges,
+  type AreaEdges,
+  type EdgeDetail,
+  type EdgeRecipe,
+  type Tone,
+} from './render/terrain-edges.ts';
 export {
   ASSETS,
   CATEGORIES,

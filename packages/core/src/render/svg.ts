@@ -85,6 +85,9 @@ function imageSvg(it: ImageItem): string {
   );
 }
 
+/** A paint's own opacity (no attribute when it is opaque). */
+const alphaAttr = (paint: 'fill' | 'stroke', alpha: number | undefined): string => (alpha !== undefined && alpha < 1 ? ` ${paint}-opacity="${n(alpha)}"` : '');
+
 function common(layer: Layer, prefix: string): string {
   let a = '';
   if (layer.opacity !== undefined && layer.opacity !== 1) a += ` opacity="${n(layer.opacity)}"`;
@@ -105,7 +108,7 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
       const stroke = layer.stroke
         ? ` stroke="${layer.stroke.color}" stroke-width="${n(layer.stroke.width)}" stroke-linejoin="miter"`
         : '';
-      return g(`<path d="${d}" fill="${layer.color}" fill-rule="evenodd"${stroke}/>`);
+      return g(`<path d="${d}" fill="${layer.color}" fill-rule="evenodd"${stroke}${alphaAttr('fill', layer.alpha)}${layer.stroke ? alphaAttr('stroke', layer.alpha) : ''}/>`);
     }
     case 'stroke': {
       const d = linesD(layer.lines);
@@ -113,7 +116,7 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
       const dash = layer.dash ? ` stroke-dasharray="${layer.dash.map(n).join(' ')}"` : '';
       return g(
         `<path d="${d}" fill="none" stroke="${layer.color}" stroke-width="${n(layer.width)}" ` +
-          `stroke-linecap="${layer.cap}" stroke-linejoin="${layer.join}" stroke-miterlimit="4"${dash}/>`,
+          `stroke-linecap="${layer.cap}" stroke-linejoin="${layer.join}" stroke-miterlimit="4"${dash}${alphaAttr('stroke', layer.alpha)}/>`,
       );
     }
     case 'dots': {
@@ -122,7 +125,7 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
       const d = layer.points
         .map(([x, y]) => `M${n(x - r)} ${n(y)}a${n(r)} ${n(r)} 0 1 0 ${n(2 * r)} 0a${n(r)} ${n(r)} 0 1 0 ${n(-2 * r)} 0Z`)
         .join('');
-      return g(`<path d="${d}" fill="${layer.color}"/>`);
+      return g(`<path d="${d}" fill="${layer.color}"${alphaAttr('fill', layer.alpha)}/>`);
     }
     case 'text': {
       // Baseline shifted by 0.35 em so digits and capitals sit centred on the point.
@@ -141,10 +144,11 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
     case 'pattern': {
       const d = polygonsD(layer.polygons);
       if (!d) return '';
-      const tile = layer.body ? `<path d="${d}" fill="url(#${patternKey(tiles, layer)})" fill-rule="evenodd"/>` : '';
+      const a = alphaAttr('fill', layer.alpha);
+      const tile = layer.body ? `<path d="${d}" fill="url(#${patternKey(tiles, layer)})" fill-rule="evenodd"${a}/>` : '';
       // a colour texture covers its tile edge to edge: no tint under it
       if (layer.tint === undefined) return tile ? g(tile) : '';
-      return g(`<path d="${d}" fill="${layer.tint}" fill-rule="evenodd"/>${tile}`);
+      return g(`<path d="${d}" fill="${layer.tint}" fill-rule="evenodd"${a}/>${tile}`);
     }
     case 'markers':
       return g(

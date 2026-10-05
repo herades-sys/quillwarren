@@ -27,7 +27,7 @@ import {
   type MapObject,
 } from '../src/index.ts';
 import { testMap } from './fixtures.ts';
-import { legendKeep } from './legend-maps.ts';
+import { hardTerrain, legendKeep } from './legend-maps.ts';
 
 const ASSET_DIR = resolve(import.meta.dirname, '../../../delve-props-design-system/assets');
 const body = (id: string) => (assetInfo(id) ? parseAssetSvg(readFileSync(resolve(ASSET_DIR, assetInfo(id)!.file), 'utf8'), assetInfo(id)).body : undefined);
@@ -215,8 +215,9 @@ describe('handout legend: on and off', () => {
     expect(sheet(legendKeep()).svg).toContain('data-legend');
     // hashes taken from the code before the legend (c.f. legend-maps.ts); the sheets that show the
     // garden's oaks re-taken with the canopy layer, which draws trees over the other props
-    const keep = legendKeep();
-    const fogged = legendKeep({ fog: { on: true, revealed: ['r1'] } });
+    // (terrain pinned hard: the hashes are from before soft terrain edges, and hard draws terrain as before)
+    const keep = hardTerrain(legendKeep());
+    const fogged = hardTerrain(legendKeep({ fog: { on: true, revealed: ['r1'] } }));
     const old: [string, DelveMap, HandoutOptions][] = [
       ['35ca81fed8cacdf9', keep, {}],
       ['6af6c62de4af87d0', keep, { paper: 'a3', orientation: 'landscape', names: true }],

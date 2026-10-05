@@ -23,7 +23,7 @@ import {
   type Layer,
 } from '../src/index.ts';
 import { clearing, grove } from './canopy-maps.ts';
-import { legendKeep } from './legend-maps.ts';
+import { hardTerrain, legendKeep } from './legend-maps.ts';
 import { testMap } from './fixtures.ts';
 
 const ASSET_DIR = resolve(import.meta.dirname, '../../../delve-props-design-system/assets');
@@ -100,7 +100,8 @@ describe('the canopy layer', () => {
     for (const o of clearing().objects) if (o.type === 'prop' || o.type === 'terrain') expect(assetInfo(o.asset), o.asset).toBeDefined();
     expect(fingerprint(clearing())).toBe('baf8a54e6141be4a');
     expect(fingerprint(testMap())).toBe('403e19c3a7a61067');
-    const keep = legendKeep();
+    // (its terrain pinned hard: hard draws terrain as it was before soft terrain edges)
+    const keep = hardTerrain(legendKeep());
     keep.objects = keep.objects.filter((o) => !(o.type === 'prop' && o.asset.startsWith('c-oak')));
     expect(fingerprint(keep)).toBe('a1b40e915aab8550');
     expect(fingerprint(grove())).not.toBe('224be06647ec3ffa'); // the grove as it was drawn before

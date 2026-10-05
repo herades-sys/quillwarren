@@ -64,6 +64,7 @@ import { onControl, type ViewerCtx } from './ctx.ts';
 import { drawMovement, EDGE_OPTIONS, edgeChips, heightBox, heightObject, HEIGHT_HINT, heightValue, loadMovement, movementIcon, movementLegend, parseHeight, saveMovement, type EdgeChoice } from './heights.ts';
 import { btn, checkbox, field, h, iconBtn, iconEl, input, miniRange, range, seg, select, svgEl, textarea, type Kid } from './dom.ts';
 import { drawHint, FILL_CHOICES, SHAPE_CHOICES, shapeGhost } from './draw-shapes.ts';
+import { TERRAIN_TOOL_DEFAULTS, terrainEdgeFields, terrainObject, terrainToolBar } from './terrain-edges.ts';
 import {
   boxOf,
   boxSelect,
@@ -269,6 +270,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     tile: TILES[0]?.id ?? '',
     tileSearch: '',
     tileCategory: 'all',
+    /** Terrain tool: the edge new areas get (Auto: by material), the fade's width and the edge details. */
+    terrainEdge: { ...TERRAIN_TOOL_DEFAULTS },
     markerKind: 'discover' as (typeof MARKER_KINDS)[number],
     brush: false,
     brushSpacing: 3,
@@ -813,7 +816,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         else if (tool === 'cutout') obj = { id: nextId(m, 'p'), type: 'cutout', shape, ...(settings.pillarFill === 'solid' ? { fill: 'solid' as const } : {}) };
         else if (tool === 'opening') obj = { id: nextId(m, 'o'), type: 'opening', shape, ...(settings.openWalls ? { walls: true } : {}) };
         else if (tool === 'height') obj = heightObject(m, nextId(m, 'h'), shape, { height: settings.height, edge: settings.heightEdge });
-        else if (tool === 'terrain') obj = { id: nextId(m, 't'), type: 'terrain', shape, asset: settings.tile };
+        else if (tool === 'terrain') obj = terrainObject(nextId(m, 't'), shape, settings.tile, settings.terrainEdge);
         else obj = { id: nextId(m, 's'), type: 'stairs', shape, direction: stairsDirection(m, shape) };
         void apply([{ op: 'add', object: obj }], [obj.id]);
         break;
@@ -1563,7 +1566,13 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       }
       case 'terrain': {
         const t = assetInfo(settings.tile);
-        return [t ? h('span', { class: 'ctxbar-opt', 'aria-checked': 'true', style: 'cursor:default' }, h('span', { class: 'ed-swatch', style: `background-color:${tintOf(t)};background-image:url("${thumb(t.id)}")` }), t.name) : null, hint('Drag an area')];
+        return [
+          t ? h('span', { class: 'ctxbar-opt', 'aria-checked': 'true', style: 'cursor:default' }, h('span', { class: 'ed-swatch', style: `background-color:${tintOf(t)};background-image:url("${thumb(t.id)}")` }), t.name) : null,
+          h('span', { class: 'vsep' }),
+          // how its outline meets the terrain under it (core render/terrain-edges.ts)
+          ...terrainToolBar({ chip, group }, settings.terrainEdge, settings.tile, (next) => ((settings.terrainEdge = next), renderTools())),
+          hint('Drag an area'),
+        ];
       }
       case 'label':
         return [hint('Click to place text, then type it'), keyHint('Enter', 'commit'), keyHint('Esc', 'cancel')];
@@ -2028,7 +2037,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         break;
       }
       case 'terrain':
-        out.push(field('Name', text(id, 'name', o.name)), field('Terrain', select(assetOptions(TILES, o.asset), o.asset, (v) => upd({ asset: v }))), ...shapeFields(o));
+        out.push(field('Name', text(id, 'name', o.name)), field('Terrain', select(assetOptions(TILES, o.asset), o.asset, (v) => upd({ asset: v }))), ...terrainEdgeFields(o, upd, unset), ...shapeFields(o));
         break;
       case 'marker':
         out.push(

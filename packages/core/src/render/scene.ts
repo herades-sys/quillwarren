@@ -2,7 +2,7 @@
 // sceneToSvg (svg.ts) writes it out; a Canvas backend can draw the same layers.
 import { differenceD, EndType, FillRule, inflatePathsD, intersectD, JoinType, type PathsD } from 'clipper2-ts';
 import { assetInfo, propBounds, propHidden, propLayer } from '../assets/catalog.ts';
-import { colourMap } from '../assets/colour.ts';
+import { COLOUR_PALETTE, colourMap } from '../assets/colour.ts';
 import { fogShade, visiblePaths } from '../fog.ts';
 import { clipPolylines, insidePolygons } from '../geometry/objects.ts';
 import type { Palette } from '../assets/svg.ts';
@@ -25,6 +25,7 @@ import type { Inscription } from '../schema.ts';
 import { hatchStrokes, insidePaths, outsideBand } from './hatching.ts';
 import { hashInts, hashString, rng } from './rng.ts';
 import { resolveStyle, type Style } from './style.ts';
+import { terrainEdges, tonePaletteName, type EdgeDetail, type Tone } from './terrain-edges.ts';
 
 export type View = 'gm' | 'players';
 
@@ -90,9 +91,10 @@ interface LayerBase {
   clip?: string;
   opacity?: number;
 }
+/** alpha: the paint's own opacity (fill-opacity / stroke-opacity), unlike `opacity`, which makes resvg draw the whole layer apart first. */
 export type Layer =
   | (LayerBase & { kind: 'rect'; bounds: Bounds; color: string })
-  | (LayerBase & { kind: 'fill'; polygons: Polygon[]; color: string; stroke?: { color: string; width: number } })
+  | (LayerBase & { kind: 'fill'; polygons: Polygon[]; color: string; stroke?: { color: string; width: number }; alpha?: number })
   | (LayerBase & {
       kind: 'stroke';
       lines: Polyline[];
@@ -101,16 +103,18 @@ export type Layer =
       cap: 'butt' | 'round' | 'square';
       join: 'miter' | 'round';
       dash?: number[];
+      alpha?: number;
     })
-  | (LayerBase & { kind: 'dots'; points: Point[]; radius: number; color: string })
+  | (LayerBase & { kind: 'dots'; points: Point[]; radius: number; color: string; alpha?: number })
   | (LayerBase & { kind: 'text'; items: { text: string; at: Point; size: number }[]; color: string; font: string })
   /** colours: what a style makes of the palette (assets/colour.ts), there only when the layer holds colour props and the style changes them. */
   | (LayerBase & { kind: 'assets'; items: AssetItem[]; palette: Palette; colours?: ReadonlyMap<string, string> })
   /**
    * Polygons filled with `tint`, then with a 2×2-square tile repeated from the origin. A colour
    * texture (`colour`) has no tint: its own w × h-square tile, in its palette as the style shows it.
+   * `alpha`: both drawn see-through (the soft rims of a terrain's fade, render/terrain-edges.ts).
    */
-  | (LayerBase & { kind: 'pattern'; polygons: Polygon[]; tile: string; body?: string; tint?: string; palette: Palette; colour?: { size: [number, number]; colours?: ReadonlyMap<string, string> } })
+  | (LayerBase & { kind: 'pattern'; polygons: Polygon[]; tile: string; body?: string; tint?: string; palette: Palette; colour?: { size: [number, number]; colours?: ReadonlyMap<string, string> }; alpha?: number })
   /** GM markers: badges of radius `r` squares (smaller on props and pictures), each tagged with its id so a viewer can make it clickable. */
   | (LayerBase & { kind: 'markers'; items: { id: string; kind: MarkerKind; at: Point; done: boolean; r: number }[] })
   /** Short labels on rounded boxes `size` squares tall, centred on `at` (the GM's stair labels). */
@@ -200,6 +204,64 @@ export function terrainTint(tint: string | undefined, style: Style): string {
   const floor = hex(style.floor.color);
   const k = style.terrain.mix;
   return toHex(rgb.map((v, i) => v * k + floor[i]! * (1 - k)));
+}
+
+const mixHex = (a: string, b: string, t: number): string => {
+  const x = hex(a);
+  const y = hex(b);
+  return toHex(x.map((v, i) => v + (y[i]! - v) * t));
+};
+
+/**
+ * A terrain edge detail's colour in this style (render/terrain-edges.ts): a colour
+ * texture's palette tone as the style shows it, or for an ink tile its tint,
+ * darker or lighter, and the style's own inks for foam, pebbles and crust.
+ */
+export function terrainToneColour(tone: Tone, style: Style): string {
+  const name = tonePaletteName(tone);
+  if (name) {
+    const hexOf = COLOUR_PALETTE[name as keyof typeof COLOUR_PALETTE] ?? COLOUR_PALETTE.stone;
+    return colourMap(style)?.get(hexOf) ?? hexOf;
+  }
+  const tint = terrainTint(assetInfo(tone.asset)?.tint, style);
+  const p = style.props;
+  switch (tone.tone) {
+    case 'main':
+      return tint;
+    case 'dark':
+      return mixHex(tint, p.ink, 0.4);
+    case 'light':
+      return mixHex(tint, p.paper, 0.5);
+    case 'foam':
+      return mixHex(p.paper, tint, 0.1);
+    case 'stone':
+      return mixHex(p.paper, p.shade, 0.5);
+    case 'glow':
+      return mixHex(tint, p.paper, 0.6);
+    case 'stone-dark':
+    case 'crust':
+      return mixHex(p.ink, p.shade, 0.2);
+  }
+}
+
+/** One area's edge details as layers in this style's colours, cut to what the players have seen. */
+function edgeDetailLayers(name: string, details: readonly EdgeDetail[], style: Style, seenOnly: (p: Polygon[]) => Polygon[], seenPolys: Polygon[] | null): Layer[] {
+  const out: Layer[] = [];
+  const alpha = (a: number) => (a < 1 ? { alpha: a } : {});
+  for (const d of details) {
+    const color = terrainToneColour(d.tone, style);
+    if (d.kind === 'fill') {
+      const polygons = seenOnly(d.polygons);
+      if (polygons.length) out.push({ name, kind: 'fill', polygons, color, ...(d.outline ? { stroke: { color: terrainToneColour(d.outline.tone, style), width: d.outline.width } } : {}), ...alpha(d.alpha) });
+    } else if (d.kind === 'stroke') {
+      const lines = seenPolys ? clipPolylines(d.lines, seenPolys, 0.1) : d.lines;
+      if (lines.length) out.push({ name, kind: 'stroke', lines, color, width: d.width, cap: 'round', join: 'round', ...alpha(d.alpha) });
+    } else {
+      const points = seenPolys ? d.points.filter((p) => insidePolygons(seenPolys, p)) : d.points;
+      if (points.length) out.push({ name, kind: 'dots', points, radius: d.radius, color, ...alpha(d.alpha) });
+    }
+  }
+  return out;
 }
 
 function assetItems(props: Prop[], body: RenderOptions['assets']): AssetItem[] {
@@ -359,24 +421,38 @@ export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style
 
   layers.push({ name: 'floor', kind: 'fill', polygons: floor, color: style.floor.color, ...(style.floor.opacity !== undefined ? { opacity: style.floor.opacity } : {}) });
 
-  // Terrain goes over the floor (and over open ground outside it), under the grid.
-  for (const { t, polygons } of terrain) {
+  // Terrain goes over the floor (and over open ground outside it), under the grid, in map order.
+  // Soft edges (terrain-edges.ts, worked out on the whole map, then cut to what the players
+  // have seen): each area's opaque core, the see-through rims of its patches and the details along
+  // its edges. An area with no soft edge, and nothing fading over it, draws exactly as before.
+  const allTerrain = map.objects.filter((o): o is Terrain => o.type === 'terrain');
+  const edges = allTerrain.length ? terrainEdges(allTerrain, fullFloor, seed) : null;
+  const seenOnly = (polys: Polygon[]): Polygon[] => (seenPaths ? polygonsOf(intersectD(polys.flatMap((p) => [p.outer, ...p.holes].map(toPath)), seenPaths, FillRule.NonZero, PRECISION)) : polys);
+  const shownTerrain = new Map(terrain.map((x) => [x.t.id, x.polygons]));
+  for (const t of allTerrain) {
     const info = assetInfo(t.asset);
-    if (info?.palette === 'colour') {
-      // a colour texture: its own colours as the style shows them, at its own size, still lined up with the grid from the origin
-      const colours = colourMap(style);
-      layers.push({ name: `terrain:${t.id}`, kind: 'pattern', polygons, tile: t.asset, body: opts.assets?.(t.asset), palette: style.props, colour: { size: [info.w, info.h], ...(colours ? { colours } : {}) } });
-      continue;
-    }
-    layers.push({
-      name: `terrain:${t.id}`,
+    // a colour texture: its own colours as the style shows them, at its own size, still lined up with the grid from the origin
+    const colours = info?.palette === 'colour' ? colourMap(style) : null;
+    const tile = (name: string, polygons: Polygon[], alpha?: number): Layer => ({
+      name,
       kind: 'pattern',
       polygons,
       tile: t.asset,
       body: opts.assets?.(t.asset),
-      tint: terrainTint(info?.tint, style),
+      ...(info?.palette === 'colour' ? {} : { tint: terrainTint(info?.tint, style) }),
       palette: style.props,
+      ...(info?.palette === 'colour' ? { colour: { size: [info.w, info.h] as [number, number], ...(colours ? { colours } : {}) } } : {}),
+      ...(alpha !== undefined ? { alpha } : {}),
     });
+    const art = edges?.areas.get(t.id);
+    const polygons = art?.core ? seenOnly(art.core) : (shownTerrain.get(t.id) ?? []);
+    if (polygons.length) layers.push(tile(`terrain:${t.id}`, polygons));
+    if (!art) continue;
+    for (const f of art.fades) {
+      const band = seenOnly(f.polygons);
+      if (band.length) layers.push(tile(`terrain-fade:${t.id}`, band, f.alpha));
+    }
+    layers.push(...edgeDetailLayers(`terrain-edge:${t.id}`, art.details, style, seenOnly, seenPolys));
   }
 
   // Uploaded pictures: 'floor' ones (rugs, floor art) right here, under the grid and walls; the rest with the props.

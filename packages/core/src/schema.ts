@@ -122,6 +122,19 @@ export const Prop = z.strictObject({
   gmOnly: z.boolean().optional(),
 });
 
+/**
+ * How a terrain area's outline meets what lies under it (render/terrain-edges.ts):
+ * "hard" a crisp polygon edge, "ragged" a natural wobble, "fade" a band where
+ * it fades into the terrain under it, broken into tongues and patches. Unset:
+ * the material decides (natural ground and water fade, indoor floors stay hard).
+ */
+export const TERRAIN_EDGES = ['hard', 'ragged', 'fade'] as const;
+/** Fade widths in squares: from a quarter square to five (a long, gradual change of ground). */
+export const FADE_WIDTH_MIN = 0.25;
+export const FADE_WIDTH_MAX = 5;
+/** Stacking ranks: where two areas fade into each other, the higher one lies on top. */
+export const STACK_MAX = 9;
+
 /** An area filled with a repeating terrain tile (water, grass, lava…), drawn over the floor and under props. */
 export const Terrain = z.strictObject({
   type: z.literal('terrain'),
@@ -130,6 +143,14 @@ export const Terrain = z.strictObject({
   asset: z.string().min(1).max(100),
   /** Rings cut out of the shape, [[x, y], ...] each: e.g. the rooms inside a forest filled around them. */
   holes: z.array(z.array(Point).min(3, 'needs at least 3 points')).max(2000).optional(),
+  /** Its outline: hard, ragged or fade (unset: by material, see TERRAIN_EDGES). */
+  edge: z.enum(TERRAIN_EDGES).optional(),
+  /** How wide a fade is, in squares (unset: 0.75). */
+  fadeWidth: z.number().min(FADE_WIDTH_MIN, `from ${FADE_WIDTH_MIN} to ${FADE_WIDTH_MAX} squares`).max(FADE_WIDTH_MAX, `from ${FADE_WIDTH_MIN} to ${FADE_WIDTH_MAX} squares`).optional(),
+  /** false: no details along its soft edges (shoreline foam, grass tufts, patches). */
+  edgeDetails: z.boolean().optional(),
+  /** Which area lies on top where two fade into each other, 0–9 (unset: by material: water 0–2, sand and mud 3, dirt and gravel 4, grass 5, snow 6, floors 7). */
+  stack: z.number().int().min(0, `from 0 to ${STACK_MAX}`).max(STACK_MAX, `from 0 to ${STACK_MAX}`).optional(),
 });
 
 export const MARKER_KINDS = ['discover', 'interact', 'trap'] as const;
@@ -294,6 +315,7 @@ export type Stairs = z.infer<typeof Stairs>;
 export type Label = z.infer<typeof Label>;
 export type Prop = z.infer<typeof Prop>;
 export type Terrain = z.infer<typeof Terrain>;
+export type TerrainEdge = (typeof TERRAIN_EDGES)[number];
 export type Marker = z.infer<typeof Marker>;
 export type MarkerKind = (typeof MARKER_KINDS)[number];
 export type CutoutFill = (typeof CUTOUT_FILLS)[number];
