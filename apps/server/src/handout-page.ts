@@ -3,13 +3,15 @@
 // The pictures come from /api/v1/maps/:id/handout.{png,svg}; printing puts the
 // 200 dpi PNG on a page of the chosen paper size, so "Save as PDF" works too.
 // GMs with the editor login also get the Notes tool for handwritten notes on
-// the sheet (/assets/handout.js, apps/web/src/handout.ts).
+// the sheet (/assets/handout.js, apps/web/src/handout.ts). The preview lies on
+// a candle-lit wooden table (handout-table.ts), for the page only.
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { htmlDocument, icon, themeSwitch, topBar } from '@delve/ui';
 import { NotFoundError, type MapStore } from './store.ts';
 import { isLoggedIn, type EditorAuth } from './login.ts';
 import { findScript } from './viewer.ts';
+import { CANDLE_OPTION, SHEET_LIGHT, TABLE_CSS, TABLE_SCRIPT, tableScene } from './handout-table.ts';
 
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -19,9 +21,8 @@ const PAGE_CSS = `
   html, body { height: 100%; }
   body { display: flex; flex-direction: column; }
   main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 320px; }
-  .table { display: grid; place-items: center; padding: 24px; overflow: auto; min-height: 0;
-    background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, #4A3A2A 80%, #fff) 0%, #4A3A2A 70%); }
-  [data-theme="dark"] .table { background: radial-gradient(ellipse at 50% 40%, #3a2e22 0%, #2A2119 70%); }
+  /* the sheet lies on a candle-lit wooden table (handout-table.ts) */
+  .table { display: grid; place-items: center; padding: 24px; overflow: auto; min-height: 0; }
   #sheet { max-width: 100%; max-height: calc(100vh - 110px); filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .45)); transition: opacity .2s; }
   #sheet.loading { opacity: .55; }
   aside { background: var(--color-surface); box-shadow: inset 1px 0 0 var(--color-border); overflow-y: auto; padding: 16px 18px 28px; display: flex; flex-direction: column; gap: 20px; }
@@ -86,7 +87,7 @@ function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewe
   const end = `<a class="btn btn-secondary" href="/maps/${encodeURIComponent(id)}">${icon('layers', { size: 16 })}Back to the map</a>${themeSwitch()}`;
   const body = `${topBar({ crumbs: [{ href: '/', text: 'Library' }, { href: `/maps/${encodeURIComponent(id)}`, text: name }], title: 'Parchment handout', end })}
 <main>
-  <div class="table"><img id="sheet" alt="The handout"></div>
+  ${tableScene(`<div class="table"><img id="sheet" alt="The handout">${SHEET_LIGHT}</div>`)}
   <aside>
     <p class="hand-intro">The players’ map, drawn by hand on old parchment. No room numbers, secret doors stay wall, and no GM notes.</p>
     <section>
@@ -104,6 +105,10 @@ function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewe
       ${check('stains', 'Stains and wear', true)}
       ${check('names', 'Room names', false)}
       ${check('revealed', 'Only what the players have seen', false, ` title="${fogOn ? 'Fog of war is on for this map' : 'Turn fog of war on in the editor to use this'}"`)}
+    </section>
+    <section>
+      <span class="section-label">On the table</span>
+      ${CANDLE_OPTION}
     </section>
     ${notesTool}
     <section>
@@ -225,9 +230,10 @@ function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewe
   update();
 })();
 </script>
+<script>${TABLE_SCRIPT}</script>
 ${notesScript}
 `;
-  return htmlDocument({ title: `${name} · Handout`, body, extra: `<style id="page-size">@page { size: A4 portrait; margin: 0; }</style><style>${PAGE_CSS}</style>` });
+  return htmlDocument({ title: `${name} · Handout`, body, extra: `<style id="page-size">@page { size: A4 portrait; margin: 0; }</style><style>${PAGE_CSS}${TABLE_CSS}</style>` });
 }
 
 export function registerHandoutPage(app: FastifyInstance, store: MapStore, auth?: EditorAuth, version = ''): void {

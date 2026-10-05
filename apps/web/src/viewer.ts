@@ -2,7 +2,7 @@
 // browser, follows every change over the WebSocket, and pans to whatever
 // Claude focuses on. Viewing never needs a login; editing does. The chrome
 // around the map (menus, zoom, storeys, toasts) is shell.ts.
-import { applyOps, buildScene, PRESETS, sceneToSvg, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
+import { applyOps, buildScene, PRESETS, resolveStyle, sceneToSvg, withBackground, type Bounds, type DelveMap, type Op, type Point, type View } from '@delve/core';
 import { artLoader } from './art.ts';
 import { initChat } from './chat.ts';
 import { onControl, SVG_NS } from './ctx.ts';
@@ -120,10 +120,38 @@ function render(): void {
   svg.removeAttribute('height');
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   bounds = scene.bounds;
+  if (previewBg) paintBackground(previewBg);
   if (!vb || !userMoved) vb = { ...bounds };
   applyViewBox();
   updateChrome();
   renderHooks.forEach((f) => f());
+}
+
+// ---------- the background colour's live preview (the editor's colour wheel) ----------
+
+/** While the colour wheel is dragged: the colour shown instead of the map's, painted into the picture without drawing it again. */
+let previewBg: string | null = null;
+
+/** Paint a background colour into the current picture: the stage, the background rect, and what follows it (background grid, hatching ink). */
+function paintBackground(hex: string): void {
+  const m = styleOverride ? { ...map, style: { ...map.style, preset: styleOverride } } : map;
+  const s = resolveStyle({ style: withBackground(m, hex) });
+  stage.style.background = s.background;
+  if (!svg) return;
+  svg.querySelector('g[data-layer="background"] > rect')?.setAttribute('fill', s.background);
+  if (s.backgroundGrid) svg.querySelectorAll('g[data-layer="background-grid"] > path').forEach((p) => p.setAttribute('stroke', s.backgroundGrid!.color));
+  if (s.hatching) svg.querySelectorAll('g[data-layer="hatching"] > path').forEach((p) => p.setAttribute('stroke', s.hatching!.color));
+}
+
+/**
+ * Show `hex` as the background while the user picks one; null ends the
+ * preview. `repaint` false leaves the picture as it is (the change was just
+ * sent, and the map's own redraw follows), so the colour doesn't flash back.
+ */
+function previewBackground(hex: string | null, repaint = true): void {
+  previewBg = hex;
+  if (hex) paintBackground(hex);
+  else if (repaint) render();
 }
 
 function applyViewBox(): void {
@@ -525,6 +553,7 @@ if (initial.edit.loggedIn) {
     view: () => view,
     grid: () => grid,
     toggleGrid,
+    previewBackground,
   });
 }
 

@@ -59,6 +59,7 @@ import {
   type Shape,
 } from '@delve/core';
 import { heightPlan, heightProfile, heightText, parseSquareUnit, stairsUphill, walkableMap, type HeightArea } from '@delve/core';
+import { BACKGROUND_PRESETS, backgroundHints, backgroundOps, shownBackground, styleBackground, withPreset } from '@delve/core';
 import type { IconName } from '@delve/ui';
 import { onControl, type ViewerCtx } from './ctx.ts';
 import { drawMovement, EDGE_OPTIONS, edgeChips, heightBox, heightObject, HEIGHT_HINT, heightValue, loadMovement, movementIcon, movementLegend, parseHeight, PROFILE_OPTIONS, profileChips, saveMovement, type EdgeChoice, type ProfileChoice } from './heights.ts';
@@ -107,6 +108,7 @@ import { initImages } from './images.ts';
 import { artUrl, loadCustomProps, onCustomProps, refreshCustomProps } from './custom-props.ts';
 import { customTile, newPropButton } from './prop-maker.ts';
 import { drawInscriptions, inscriptionFields } from './inscriptions.ts';
+import { colourControl } from './colour-wheel.ts';
 import { DOOR_TILE_NAME, doorTileUrl, doorTileWidth, type DoorStyle } from './door-tiles.ts';
 import { objectBounds, pad } from './logic.ts';
 import { initSegments } from './segments.ts';
@@ -2153,6 +2155,18 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     ctx.toast(body.summary ?? 'Stairs numbered.', 'info');
   }
 
+  /** The colour wheel let go: the map's background (null: the style's own) as one undo step; the preview ends once the server has it. */
+  function commitBackground(hex: string | null): void {
+    void ctx.send(backgroundOps(map(), hex)).then(
+      () => ctx.previewBackground?.(null, false),
+      (e: Error) => {
+        ctx.previewBackground?.(null);
+        ctx.toast(e.message);
+        renderPanel(true);
+      },
+    );
+  }
+
   function mapPane(): HTMLElement {
     const m = map();
     const style = m.style ?? { preset: 'classic-hatching' };
@@ -2198,8 +2212,21 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
         h(
           'div',
           { class: 'ed-presets', role: 'radiogroup', 'aria-label': 'Style preset' },
-          ...Object.entries(PRESETS).map(([k, s]) => h('button', { type: 'button', class: 'ed-preset', role: 'radio', 'aria-checked': String(k === style.preset), onclick: () => k !== style.preset && setMap({ style: { preset: k } }) }, presetSwatch(k), s.name)),
+          // a new style drops the old one's overrides, but the map's own background colour stays
+          ...Object.entries(PRESETS).map(([k, s]) => h('button', { type: 'button', class: 'ed-preset', role: 'radio', 'aria-checked': String(k === style.preset), onclick: () => k !== style.preset && setMap({ style: withPreset(m, k) }) }, presetSwatch(k), s.name)),
         ),
+      ),
+      section(
+        'Background',
+        colourControl({
+          value: shownBackground(m),
+          styleColour: styleBackground(style.preset),
+          styleName: PRESETS[style.preset]?.name ?? 'The style',
+          presets: BACKGROUND_PRESETS,
+          onPreview: (hex) => ctx.previewBackground?.(hex),
+          onCommit: commitBackground,
+          hints: (hex) => backgroundHints(m, hex),
+        }),
       ),
       section(
         'Grid',

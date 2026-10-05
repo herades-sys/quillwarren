@@ -10,6 +10,7 @@ import { doorBetween, doorDirection, doorSegment, isTurned } from '../geometry/d
 import { hashInts, hashString } from '../render/rng.ts';
 import { FORMAT, FORMAT_VERSION, type DelveMap, type Door, type MapObject, type Point, type Shape } from '../schema.ts';
 import { validateMap } from '../validate.ts';
+import { mapBackground } from '../background.ts';
 
 export const DS_PX = 36;
 
@@ -70,6 +71,7 @@ export interface DsExportOptions {
 /** A Dungeon Scrawl document for this map: floor with holes, doors, room numbers and labels. */
 export function toDungeonScrawl(map: DelveMap, opts: DsExportOptions = {}): DsDocument {
   const gm = (opts.view ?? 'gm') === 'gm';
+  const ownBackground = mapBackground(map);
   const id = idMaker(`${map.id}:${map.seed ?? 0}`);
   const nodes: Record<string, Json> = {};
   const geometry: Record<string, DsGeometry> = {};
@@ -260,7 +262,8 @@ export function toDungeonScrawl(map: DelveMap, opts: DsExportOptions = {}): DsDo
     pageTransform: 'default',
     templateLocked: false,
     grid: { type: 'square', cellDiameter: DS_PX, variant: 'dots', visible: true, roughness: 'medium', dotsOptions: { radius: 1.5 }, linesOptions: { width: 1 }, sharedOptions: { colour: colour(0x666666, 0.5) } },
-    background: { colour: colour(0xefeae2) },
+    // the map's own background colour (the editor's colour wheel), else Dungeon Scrawl's usual paper
+    background: { colour: colour(ownBackground ? parseInt(ownBackground.slice(1), 16) : 0xefeae2) },
     lighting: { enabled: false, ambientLight: colour(0x334466), blur: 3 },
     texture: { enabled: false, scale: 1, alpha: 1 },
     backgroundTexture: { enabled: false, scale: 1 },

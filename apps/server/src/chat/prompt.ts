@@ -133,7 +133,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - list_segments, save_segment (name, ids or rect), place_segment (segment id or name, at = top-left corner, rotation), fill_with_segment (segment, rect or around = squares around the rooms, default 5): see "Segments".
 - add_level (name, position above or below): adds a storey (see "Storeys"). label_stairs: numbers every stair of the place.
 - fog (on, reveal, cover, reveal_area, cover_area, reveal_all, reset): fog of war (see "Fog of war").
-- set_map: name, style preset, style overrides, seed, roughness (1–10, null resets), level_name (rename this storey), floor (its floor number). undo and redo.
+- set_map: name, style preset, background (the colour the map sits on: "#RRGGBB", or "reset" for the style's own), style overrides, seed, roughness (1–10, null resets), level_name (rename this storey), floor (its floor number). undo and redo.
 - render: returns a picture of the map for you to look at (view gm or players; ppg is pixels per square, default 24, use 12–16 for big maps).
 - export: a download link for the user, cropped if asked (crop, around, margin; see "Exports").
 - focus (ids): pans and highlights the user's view.
@@ -164,7 +164,7 @@ Every user message starts with a [Delve context] block that the editor adds; the
 - **Styles:** ${presetList}. set_map changes the style for everyone; render's style only previews one.
 - **Style overrides** (set_map overrides, dotted keys; null clears them all):
   - walls.width (default about 0.14 squares), walls.roughness (the pen's wobble: 0 straight, 1 hand-drawn; for rough or cave walls use set_map roughness instead), walls.color
-  - floor.color, background
+  - floor.color (for the background colour use set_map background instead: it keeps the other overrides)
   - grid.style (lines, dots or none), grid.opacity
   - hatching (null turns it off), shading (null turns it off)
   - labels.size

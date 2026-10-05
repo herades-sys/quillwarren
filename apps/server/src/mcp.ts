@@ -57,6 +57,7 @@ import {
 } from '@delve/core';
 import { INSCRIPTION_INKS, INSCRIPTION_MAX, INSCRIPTION_SIZE } from '@delve/core';
 import { FADE_WIDTH_MAX, FADE_WIDTH_MIN, STACK_MAX, TERRAIN_EDGES, terrainEdgeText } from '@delve/core';
+import { backgroundHints, mapBackground, parseBackground, styleBackground, withBackground } from '@delve/core';
 import { errorResponse, newMap, tokenGuard } from './api.ts';
 import { bearer } from './auth.ts';
 import type { ChatTokens } from './chat/tokens.ts';
@@ -91,6 +92,7 @@ Open edges: an archway on the floor's outer edge is drawn as an open end (no hat
 Exports can be cropped: export with crop [x, y, w, h] or around [ids] (plus margin, default 1 square), e.g. rooms 4 and 11 only.
 Fog of war (fog): reveal rooms and corridors by id as the players explore; with fog on, the players' view shows only what's revealed.
 Wall roughness: set_map roughness 1 (smooth) to 10 (caves); rooms, corridors and cutouts can have their own (update {"roughness": 9}). Rows of props (trees along a road): add_props_along.
+Background colour: set_map background "#1A2540" (night blue, forest green #2F4A33, slate #4A525C…) changes the colour around and between the rooms; "reset" goes back to the style's own. Hatching too dark to see on it is drawn in a lighter ink.
 Heights within one map: add_height raises or sinks the ground under a shape (height in the map's units: +10 a ledge, -10 a sunken arena), over rooms or outdoors over terrain; cliff and rock-face edges are crossed only where stairs or a ladder lie across them, slopes and steps are walked over; profile hill rounds an area into a natural hill or ridge, plateau keeps it flat (the default unless the edge is a slope). describe_map lists the heights and how each is reached.
 GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.
 Handout notes (add_inscription): handwritten text on the players' parchment handout ("Here be dragons"), in an old italic hand and a brown, black, faded or red ink; on_map writes it on the normal map too. Players see them; update and delete change them like any object.
@@ -909,11 +911,16 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'set_map',
     {
       title: 'Map settings',
-      description: 'Rename the map, change its style preset, style overrides (e.g. {"walls.width": 0.2}; null clears them), its random seed, its wall roughness (1 smooth to 10 caves; null goes back to the style), or its library category (the shelf on the start page; a storey files its whole place). For a storey: its name (level_name) and floor number (floor).',
+      description: 'Rename the map, change its style preset, its background colour (background: "#RRGGBB", or "reset" for the style\'s own), style overrides (e.g. {"walls.width": 0.2}; null clears them), its random seed, its wall roughness (1 smooth to 10 caves; null goes back to the style), or its library category (the shelf on the start page; a storey files its whole place). For a storey: its name (level_name) and floor number (floor).',
       inputSchema: {
         map: mapId,
         name: z.string().min(1).max(200).optional(),
         style: z.enum(presetNames).optional(),
+        background: z
+          .string()
+          .max(20)
+          .optional()
+          .describe('The colour the map is drawn on, around and between the rooms: "#RRGGBB" (e.g. "#1A2540" night blue, "#2F4A33" forest green, "#4A525C" slate), or "reset" for the style\'s own. Shows in the editor, the exports, the players\' screen and Delve Table; the parchment handout keeps its paper'),
         overrides: z.record(z.string(), z.unknown()).nullable().optional(),
         seed: z.number().int().optional().describe('Changes the hatching and wall wobble'),
         roughness: z.number().int().min(1).max(10).nullable().optional().describe('Wall roughness for the whole map: 1 smooth, 10 extremely rough (caves); null resets'),
@@ -942,7 +949,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           const r = renamePlace(service, a.map, a.name, BY);
           filed += `${filed ? ' ' : ''}Renamed the place to "${r.name}" (${r.changed.length} of its storeys changed).`;
         }
-        const others = ['style', 'overrides', 'seed', 'roughness', 'level_name', 'floor', 'unit', ...(map.level ? [] : ['name' as const])] as const;
+        const others = ['style', 'background', 'overrides', 'seed', 'roughness', 'level_name', 'floor', 'unit', ...(map.level ? [] : ['name' as const])] as const;
         if (filed && others.every((k) => a[k] === undefined)) return text(filed);
         const set: Record<string, unknown> = {};
         let note = '';
@@ -962,12 +969,27 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           if (!map.level) throw new ValidationError(['level_name: this map is not a storey; use add_level to make one']);
           set.level = { ...map.level, ...(set.level as object | undefined), name: a.level_name };
         }
-        if (a.style !== undefined || a.overrides !== undefined) {
+        if (a.style !== undefined || a.overrides !== undefined || a.background !== undefined) {
           const cur = map.style ?? { preset: 'classic-hatching' };
           const overrides = a.overrides === undefined ? cur.overrides : (a.overrides ?? undefined);
-          set.style = { preset: a.style ?? cur.preset, ...(overrides ? { overrides } : {}) };
+          let style: NonNullable<typeof map.style> = { preset: a.style ?? cur.preset, ...(overrides ? { overrides } : {}) };
+          // the background goes in with the other overrides (it outlasts a style change and "overrides": null clears it too)
+          if (a.background !== undefined) {
+            let bg: string | null;
+            try {
+              bg = parseBackground(a.background);
+            } catch (e) {
+              throw new ValidationError([(e as Error).message]);
+            }
+            style = withBackground({ style }, bg);
+            const now = mapBackground({ style });
+            note += now ? ` Background ${now}.` : ` Background: the style's own (${styleBackground(style.preset)}).`;
+            const hints = backgroundHints({ style });
+            if (hints.length) note += ` ${hints.join(' ')}`;
+          }
+          set.style = style;
         }
-        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, overrides, seed, roughness, level_name, floor, unit or category']);
+        if (!Object.keys(set).length && !unset.length) throw new ValidationError(['nothing to change: give name, style, background, overrides, seed, roughness, level_name, floor, unit or category']);
         return change(a.map, [{ op: 'update_map', set, ...(unset.length ? { unset } : {}) }], `${filed ? `${filed} ` : ''}Updated map settings (${[...Object.keys(set), ...unset].join(', ')}).${note}`);
       }),
   );

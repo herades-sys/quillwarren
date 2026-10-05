@@ -1,6 +1,7 @@
 // Style presets. Sizes are in grid squares, so a map looks the same at any
 // export resolution (at Roll20's 70 px per square, 0.1 sq = 7 px).
 import type { ColourMode } from '../assets/colour.ts';
+import { contrastRatio, isDark, mixColours, normalizeHex } from '../colour-math.ts';
 import type { DelveMap } from '../schema.ts';
 
 export interface HatchStyle {
@@ -195,5 +196,35 @@ export function resolveStyle(map: Pick<DelveMap, 'style'>): Style {
   }
   const overrides = map.style?.overrides;
   if (!overrides) return preset;
-  return deepMerge(preset as unknown as Plain, expandDotted(overrides)) as unknown as Style;
+  const expanded = expandDotted(overrides);
+  return onOwnBackground(preset, expanded, deepMerge(preset as unknown as Plain, expanded) as unknown as Style);
+}
+
+/** Below this contrast with the map's own background, the hatching is drawn in a light (or dark) ink instead. */
+export const MIN_HATCH_CONTRAST = 2;
+
+/** The background grid's lines on a background: a shade lighter on dark colours, darker on light ones (old-school blue's #4D86BA on #3674AC). */
+export const backgroundGridColour = (bg: string): string => (isDark(bg) ? mixColours(bg, '#FFFFFF', 0.12) : mixColours(bg, '#000000', 0.1));
+
+/** Hatching that stays readable on a background its own ink vanishes on: the background mixed halfway to white (or black). */
+export const hatchingInkOn = (bg: string): string => (isDark(bg) ? mixColours(bg, '#FFFFFF', 0.5) : mixColours(bg, '#000000', 0.6));
+
+/**
+ * A map's own background colour (style.overrides.background, the editor's
+ * colour wheel): the parts drawn on the background follow it so they stay
+ * readable, unless the overrides set them too. The background grid (old-school
+ * blue) takes a shade of the new colour, and hatching whose ink would vanish
+ * (dark hatching on a dark colour) is drawn in a light ink. The style's own
+ * colour, or no override, leaves the style exactly as it was.
+ */
+function onOwnBackground(preset: Style, expanded: Plain, s: Style): Style {
+  const bg = normalizeHex(expanded.background);
+  if (!bg) return s;
+  // the style's own colour, in any spelling, is no change at all
+  if (bg === normalizeHex(preset.background)) return s.background === preset.background ? s : { ...s, background: preset.background };
+  const out: Style = { ...s, background: bg };
+  if (out.backgroundGrid && !('backgroundGrid' in expanded)) out.backgroundGrid = { ...out.backgroundGrid, color: backgroundGridColour(bg) };
+  const hatchSet = 'hatching' in expanded && !(isPlain(expanded.hatching) && !('color' in expanded.hatching));
+  if (out.hatching && !hatchSet && contrastRatio(out.hatching.color, bg) < MIN_HATCH_CONTRAST) out.hatching = { ...out.hatching, color: hatchingInkOn(bg) };
+  return out;
 }

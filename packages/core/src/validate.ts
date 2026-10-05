@@ -1,6 +1,7 @@
 // validateMap: schema check plus cross-object rules, with messages that name
 // the object id and field, e.g. `r7 (objects[3]) shape.rect[2]: must be greater than 0`.
 import type { z } from 'zod';
+import { isHexColour } from './colour-math.ts';
 import { MapDoc, OBJECT_TYPES, type DelveMap } from './schema.ts';
 
 export class ValidationError extends Error {
@@ -65,6 +66,13 @@ function pick(input: unknown, path: PropertyKey[]): Record<string, unknown> | un
   return cur !== null && typeof cur === 'object' ? (cur as Record<string, unknown>) : undefined;
 }
 
+/** The map's own background colour (style.overrides.background) must be a colour the renderers can draw. */
+function checkStyle(map: DelveMap): string[] {
+  const o = map.style?.overrides;
+  if (!o || !('background' in o) || isHexColour(o.background)) return [];
+  return [`style.overrides.background: must be a colour like "#2F4A33", not ${JSON.stringify(o.background)}`];
+}
+
 /** Cross-object rules the schema can't express. */
 function checkReferences(map: DelveMap): string[] {
   const problems: string[] = [];
@@ -102,7 +110,7 @@ export function validateMap(input: unknown): DelveMap {
     const problems = parsed.error.issues.flatMap(flatten).map((iss) => describeIssue(iss, input));
     throw new ValidationError([...new Set(problems)]);
   }
-  const problems = checkReferences(parsed.data);
+  const problems = [...checkStyle(parsed.data), ...checkReferences(parsed.data)];
   if (problems.length) throw new ValidationError(problems);
   // Return the caller's object, not zod's copy, so identity and key order are kept.
   return input as DelveMap;

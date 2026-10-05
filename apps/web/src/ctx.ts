@@ -44,4 +44,10 @@ export interface ViewerCtx {
   toggleGrid(): void;
   /** Open a GM marker's note box (markers.ts), e.g. right after placing one. */
   openMarker?(id: string): void;
+  /**
+   * Show this background colour while the colour wheel is dragged, without
+   * drawing the map again; null ends it (`repaint` false: the change was just
+   * sent, so the picture keeps the colour until the map's redraw).
+   */
+  previewBackground?(hex: string | null, repaint?: boolean): void;
 }

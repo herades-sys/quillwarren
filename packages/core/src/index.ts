@@ -245,7 +245,24 @@ export {
 } from './heights.ts';
 export { heightProfile, heightSurface, sampleSurface, latticeOver, isolines, ease, MIN_BAND, HILL_LIP, type HeightSurface, type PostGrid, type SurfaceArea, type SurfacePiece } from './surface.ts';
 export { contourInterval, heightDrawing, labelPoint, HEIGHT_TAG_SIZE, type HeightDrawing } from './render/heights.ts';
-export { resolveStyle, PRESETS, type Style, type HatchStyle } from './render/style.ts';
+export { resolveStyle, PRESETS, MIN_HATCH_CONTRAST, backgroundGridColour, hatchingInkOn, type Style, type HatchStyle } from './render/style.ts';
+export {
+  normalizeHex,
+  isHexColour,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsv,
+  hsvToRgb,
+  hexToHsv,
+  hsvToHex,
+  mixColours,
+  relativeLuminance,
+  contrastRatio,
+  isDark,
+  type Rgb,
+  type Hsv,
+} from './colour-math.ts';
+export { BACKGROUND_PRESETS, styleBackground, mapBackground, shownBackground, parseBackground, withBackground, withPreset, backgroundOps, backgroundHints } from './background.ts';
 export { hashString } from './render/rng.ts';
 
 import type { DelveMap } from './schema.ts';
