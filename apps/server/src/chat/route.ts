@@ -2,7 +2,7 @@
 // Claude Code with Delve's MCP tools (through a short-lived chat token), and
 // the answer streams back as JSON lines (see events.ts). Only logged-in
 // editors (or API token holders) can chat, the same people who can edit.
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { ValidationError, type Bounds } from '@delve/core';
@@ -12,6 +12,9 @@ import type { MapService } from '../service.ts';
 import { levelsOf } from '../levels.ts';
 import { CHAT_SYSTEM_PROMPT, chatPrompt } from './prompt.ts';
 import type { ChatTokens } from './tokens.ts';
+
+/** How often an idle chat stream gets a keep-alive newline (proxies cut silent responses, Cloudflare after 100 s). */
+export const HEARTBEAT_MS = 15_000;
 
 export interface ChatConfig {
   /** The chat bridge, e.g. http://127.0.0.1:8792 (DELVE_CHAT_URL). */
@@ -130,8 +133,21 @@ export function registerChat(app: FastifyInstance, { service, token, sessions, t
       return reply.code(res.status === 429 ? 429 : 502).send({ error: body.error ?? `the chat bridge answered ${res.status}` });
     }
     const stream = Readable.fromWeb(res.body as WebReadableStream<Uint8Array>);
-    stream.on('close', done);
-    stream.on('error', done);
-    return reply.type('application/x-ndjson; charset=utf-8').header('cache-control', 'no-store').send(stream);
+    // A bare newline every 15 s while Claude works: a proxy cuts a response that
+    // sends nothing for a while (Cloudflare after 100 s, while Claude writes one
+    // big step), and the page skips empty lines.
+    const out = new PassThrough();
+    const beat = setInterval(() => out.write('\n'), HEARTBEAT_MS);
+    const stop = () => {
+      clearInterval(beat);
+      done();
+    };
+    stream.on('close', stop);
+    stream.on('error', () => {
+      stop();
+      out.end();
+    });
+    stream.pipe(out);
+    return reply.type('application/x-ndjson; charset=utf-8').header('cache-control', 'no-store').send(out);
   });
 }

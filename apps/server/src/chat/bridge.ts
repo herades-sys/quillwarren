@@ -104,7 +104,8 @@ function readJson(req: IncomingMessage, limit: number): Promise<unknown> {
 
 export function createBridge(o: BridgeOptions): Server {
   const maxRuns = o.maxRuns ?? 2;
-  const timeoutMs = o.timeoutMs ?? 5 * 60_000;
+  // big builds (a dungeon of 16 rooms on several storeys) take longer than 5 minutes
+  const timeoutMs = o.timeoutMs ?? 15 * 60_000;
   const defaultModel = o.defaultModel ?? 'sonnet';
   const log = o.log ?? (() => {});
   let running = 0;
