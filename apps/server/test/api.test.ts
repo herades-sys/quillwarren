@@ -233,3 +233,17 @@ describe('live WebSocket', () => {
     rw.ws.terminate();
   });
 });
+
+describe('render size limit', () => {
+  it('refuses a PNG over the size limit with 413 before rendering, and still serves the SVG', async () => {
+    const { id } = await createMap({ name: 'Big', template: 'test-dungeon' });
+    const big = await app.inject({ url: `/api/v1/maps/${id}/render.png?frame=0,0,300,200&ppg=100` });
+    expect(big.statusCode).toBe(413);
+    expect(big.json().error).toBe('too big: 300 × 200 squares at 100 px a square is 30000 × 20000 px; at most 16384 px a side. Lower the px per square, or export a smaller area');
+    const svg = await app.inject({ url: `/api/v1/maps/${id}/render.svg?frame=0,0,300,200&ppg=100` });
+    expect(svg.statusCode).toBe(200);
+    const small = await app.inject({ url: `/api/v1/maps/${id}/render.png?frame=2,3,10,7&ppg=20` });
+    expect(small.statusCode).toBe(200);
+    expect(small.headers['content-disposition']).toMatch(/_8x4\.png"$/);
+  });
+});

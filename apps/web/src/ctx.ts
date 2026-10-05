@@ -13,7 +13,7 @@ export const SVG_NS = 'http://www.w3.org/2000/svg';
 export function onControl(e: Event): boolean {
   return (
     e.target instanceof Element &&
-    e.target.closest('button, a, input, select, textarea, label, [role="menu"], #storeys, .ed-zoom, #ctxbar, #flyout, .ed-float-bottom') !== null
+    e.target.closest('button, a, input, select, textarea, label, [role="menu"], #storeys, .ed-zoom, #ctxbar, #flyout, .ed-float-bottom, .snip-bar, .snip-hint') !== null
   );
 }
 

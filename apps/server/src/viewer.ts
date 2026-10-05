@@ -113,6 +113,8 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
         chatModel: chat ? (chat.model ?? 'sonnet') : null,
         levels: levelSiblings(store.list(), id).reverse(),
         account: user ? { name: user.name, role: user.role } : null,
+        // snip an area to a PNG: admin and GM accounts (and open-edit development servers)
+        snip: user?.role === 'admin' || user?.role === 'gm' || auth.sessions.open,
       };
       return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(editorPage(info, id, rev, map, opts));
     } catch (e) {

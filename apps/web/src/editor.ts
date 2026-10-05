@@ -226,7 +226,7 @@ interface Drag {
   rawCur?: Point;
 }
 
-export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): string | null } {
+export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): string | null; suspend(on: boolean): void } {
   const rail = document.getElementById('rail')!;
   const ctxbar = document.getElementById('ctxbar')!;
   const flyout = document.getElementById('flyout')!;
@@ -248,6 +248,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   let hoverStep = 1;
   let corridorFrom: string | null = null;
   let spaceDown = false;
+  /** While snipping an area to export (snip.ts), the tools and their marks step aside. */
+  let suspended = false;
   /** A brush stroke with the Prop tool: the path so far, a seed so the preview and the result agree, and the snap step. */
   let stroke: { path: Point[]; seed: number; step: number } | null = null;
   let focusField: string | null = null;
@@ -509,7 +511,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   // ---------- pointer ----------
 
   function onDown(e: PointerEvent): void {
-    if (onControl(e)) return; // the storey, zoom and context-bar buttons keep their clicks
+    if (suspended || onControl(e)) return; // the storey, zoom and context-bar buttons keep their clicks
     if (e.pointerType === 'touch') {
       touches.add(e.pointerId);
       if (touches.size > 1) {
@@ -660,6 +662,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   }
 
   function onMove(e: PointerEvent): void {
+    if (suspended) return;
     const p = ctx.toMap(e.clientX, e.clientY);
     if (!p) return;
     hover = snapPoint(p, step(e));
@@ -689,6 +692,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
   function onUp(e: PointerEvent): void {
     touches.delete(e.pointerId);
+    if (suspended) return;
     if (tap && e.pointerId === tap.id) {
       // a tap on empty ground (touch): pick the open area under it, or clear the selection
       const t = tap;
@@ -1088,7 +1092,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
 
   const typing = (t: EventTarget | null) => t instanceof HTMLElement && Boolean(t.closest('input, select, textarea'));
   window.addEventListener('keydown', (e) => {
-    if (typing(e.target)) return;
+    if (suspended || typing(e.target)) return;
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (mod && key === 'z') {
@@ -2316,5 +2320,19 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   renderTools();
   renderPanel();
   // The chat panel tells Claude what's selected ("this room").
-  return { selection: () => [...selection], tool: () => tool };
+  /** Snip mode on or off: half-done drags and strokes are dropped, and the editor's marks hide until it ends. */
+  function suspend(on: boolean): void {
+    suspended = on;
+    drag = null;
+    stroke = null;
+    sketch = null;
+    tap = null;
+    hover = null;
+    hoverRaw = null;
+    hideTip();
+    layer.style.display = on ? 'none' : '';
+    if (!on) draw();
+  }
+
+  return { selection: () => [...selection], tool: () => tool, suspend };
 }

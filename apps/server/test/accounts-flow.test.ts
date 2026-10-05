@@ -523,3 +523,27 @@ describe('development open-edit servers', () => {
     await open.close();
   });
 });
+
+describe('the Snip button (export an area as a PNG)', () => {
+  const hasSnip = (html: string) => html.includes('id="snip-btn"') && html.includes('data-act="snip"') && html.includes('"snip":true');
+
+  it('is there for admin and GM accounts only', async () => {
+    const made = await app.inject({ method: 'POST', url: '/api/v1/maps', headers: { authorization: `Bearer ${TOKEN}` }, payload: { name: 'Crypt' } });
+    expect(made.statusCode).toBe(201);
+    const page = async (cookie?: string) => (await get(`/maps/${made.json().id as string}`, cookie)).body;
+    // the shared password edits, but has no account: no snip
+    expect(hasSnip(await page(legacyCookie()))).toBe(false);
+    const admin = await bootstrap();
+    const gm = await addAccount(admin.cookie, 'Bo');
+    expect(hasSnip(await page())).toBe(false);
+    expect(hasSnip(await page(admin.cookie))).toBe(true);
+    expect(hasSnip(await page(gm.cookie))).toBe(true);
+  });
+
+  it('is there on development open-edit servers', async () => {
+    const open = buildApp({ version: 't', started: 'now' }, { openEdit: true, token: TOKEN });
+    const made = await open.inject({ method: 'POST', url: '/api/v1/maps', headers: { authorization: `Bearer ${TOKEN}` }, payload: { name: 'Crypt' } });
+    expect(hasSnip((await open.inject({ url: `/maps/${made.json().id as string}` })).body)).toBe(true);
+    await open.close();
+  });
+});

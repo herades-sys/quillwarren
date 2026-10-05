@@ -1,5 +1,5 @@
 // Shared by the preview page and the map API: query -> scene -> SVG or PNG.
-import { buildScene, cropScene, handoutSvg, MAX_CROP, resolveStyle, sceneToSvg, wholeSquares, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
+import { buildScene, cropScene, handoutSvg, MAX_CROP, renderSizeProblem, resolveStyle, sceneToSvg, wholeSquares, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
 import { assets } from './assets.ts';
 import { svgToPng } from './png.ts';
 
@@ -21,6 +21,8 @@ export interface RenderQuery {
 }
 
 export class RenderQueryError extends Error {}
+/** A PNG bigger than core's MAX_RENDER_SIDE / MAX_RENDER_PIXELS: answered with 413, before resvg runs. */
+export class RenderTooBigError extends RenderQueryError {}
 
 export const asView = (v: unknown): View => (v === 'players' ? 'players' : 'gm');
 
@@ -78,7 +80,13 @@ export function exportName(map: DelveMap, preset: string, view: View, scene: Sce
 
 export async function render(map: DelveMap, q: RenderQuery, ext: 'svg' | 'png') {
   const scene = sceneFor(map, q);
-  const svg = sceneToSvg(scene, { ppg: parsePpg(q.ppg) });
+  const ppg = parsePpg(q.ppg);
+  if (ext === 'png') {
+    const { w, h } = sizeInSquares(scene);
+    const problem = renderSizeProblem(w, h, ppg);
+    if (problem) throw new RenderTooBigError(`too big: ${problem}. Lower the px per square, or export a smaller area`);
+  }
+  const svg = sceneToSvg(scene, { ppg });
   const preset = q.style ?? map.style?.preset ?? 'classic-hatching';
   const name = exportName(map, preset, asView(q.view), scene, ext);
   return ext === 'svg'

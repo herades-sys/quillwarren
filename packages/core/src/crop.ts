@@ -84,6 +84,26 @@ export function cropFrame(map: DelveMap, r: CropRequest): Bounds | null {
 /** "x0,y0,x1,y1": the render route's frame query. */
 export const frameQuery = (b: Bounds): string => `${b.x0},${b.y0},${b.x1},${b.y1}`;
 
+// ---------- how big a PNG may be ----------
+
+/**
+ * The largest PNG the render route makes: a whole city at Roll20's 70 px a square
+ * still fits (Feyvale, 157 × 106 squares, is 81 megapixels), but 1000 squares at
+ * 300 px would ask resvg for a picture that takes the whole server down.
+ */
+export const MAX_RENDER_SIDE = 16_384;
+export const MAX_RENDER_PIXELS = 100_000_000;
+
+/** Why a picture of w × h squares at `ppg` px a square is too big to render, or null when it fits. */
+export function renderSizeProblem(w: number, h: number, ppg: number): string | null {
+  const pw = Math.round(w * ppg);
+  const ph = Math.round(h * ppg);
+  const what = `${w} × ${h} squares at ${ppg} px a square is ${pw} × ${ph} px`;
+  if (pw > MAX_RENDER_SIDE || ph > MAX_RENDER_SIDE) return `${what}; at most ${MAX_RENDER_SIDE} px a side`;
+  if (pw * ph > MAX_RENDER_PIXELS) return `${what} (${Math.round((pw * ph) / 1e6)} megapixels); at most ${MAX_RENDER_PIXELS / 1e6}`;
+  return null;
+}
+
 // ---------- cutting a scene down to its frame ----------
 
 const boxPath = (b: Bounds): PathD => [

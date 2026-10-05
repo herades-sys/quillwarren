@@ -59,6 +59,7 @@ export const SHORTCUTS: [string, string][] = [
   ['PgUp / PgDn', 'Storey up / down'],
   ['Shift P', 'GM / Players view'],
   ['Shift G', 'Grid on / off'],
+  ['Shift S', 'Snip an area: save it as a PNG'],
   ['Ctrl .', 'Show / hide Claude'],
   ['/', 'Focus Claude chat'],
   ['Alt', 'Half squares while drawing'],
@@ -69,7 +70,7 @@ export const SHORTCUTS: [string, string][] = [
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null;
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && Boolean(t.closest('input, select, textarea, [contenteditable="true"]'));
 
-export function initShell(o: { mapId: string; edit: boolean; view: View; hooks: ShellHooks }) {
+export function initShell(o: { mapId: string; edit: boolean; snip?: boolean; view: View; hooks: ShellHooks }) {
   const body = document.body;
   const toasts = $('toasts')!;
   const banner = $('players-banner');
@@ -311,7 +312,7 @@ export function initShell(o: { mapId: string; edit: boolean; view: View; hooks: 
   function openShortcuts(): void {
     if (!shortcuts) return;
     const list = $('shortcuts-list')!;
-    if (!list.childElementCount) list.replaceChildren(...SHORTCUTS.filter(([k]) => o.edit || ['Ctrl 0', 'PgUp / PgDn', 'Shift P', 'Shift G', 'Esc', '?'].includes(k)).map(([k, t]) => h('div', {}, h('kbd', {}, k), t)));
+    if (!list.childElementCount) list.replaceChildren(...SHORTCUTS.filter(([k]) => (k !== 'Shift S' || o.snip) && (o.edit || ['Ctrl 0', 'PgUp / PgDn', 'Shift P', 'Shift G', 'Esc', '?'].includes(k))).map(([k, t]) => h('div', {}, h('kbd', {}, k), t)));
     shortcuts.hidden = false;
     shortcuts.querySelector<HTMLElement>('[data-close]')?.focus();
   }

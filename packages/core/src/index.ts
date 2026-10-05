@@ -128,7 +128,7 @@ export { inkBody, flattenPath } from './assets/ink.ts';
 export { objectBounds, insidePolygons, clipPolylines } from './geometry/objects.ts';
 export { openingsOf, openWallRings, cutSegments, floorTest } from './geometry/openings.ts';
 export { outerArchways, archwayEnds, openAreas, type OuterArchway } from './render/open-ends.ts';
-export { tightBounds, selectionBounds, unionOf, wholeSquares, cropFrame, frameQuery, cropScene, clipLinesToBox, MAX_CROP, type CropRequest } from './crop.ts';
+export { tightBounds, selectionBounds, unionOf, wholeSquares, cropFrame, frameQuery, cropScene, clipLinesToBox, MAX_CROP, MAX_RENDER_SIDE, MAX_RENDER_PIXELS, renderSizeProblem, type CropRequest } from './crop.ts';
 export { roughFloor, drawnFloor, hasRoughness, amplitudeOf, ROUGHNESS_AMPLITUDE } from './geometry/rough.ts';
 export { scatterAlong, type ScatterOptions, type Placement } from './scatter.ts';
 export { isObstacle, propsOverlap, blockingProps, freeSpot, keepClear, overlapReport, OVERLAP_TOLERANCE, type Placed } from './placement.ts';

@@ -10,6 +10,7 @@ import { initEditor } from './editor.ts';
 import { initMarkers } from './markers.ts';
 import { ago, changedIds, countOps, easeInOut, lerpBounds, objectBounds, pad, unionBounds, zoomAt } from './logic.ts';
 import { initShell, type Storey } from './shell.ts';
+import { initSnip } from './snip.ts';
 
 interface Initial {
   id: string;
@@ -21,6 +22,8 @@ interface Initial {
   account: { name: string; role: 'admin' | 'gm' } | null;
   /** Only for logged-in editors on a server with the chat bridge set up. */
   chat?: { enabled: boolean; model: string };
+  /** Snip an area to a PNG (snip.ts): admin and GM accounts only. */
+  snip?: boolean;
 }
 type Incoming =
   | { type: 'hello'; rev: number; map: DelveMap }
@@ -77,6 +80,7 @@ const handled = new WeakSet<Event>();
 const shell = initShell({
   mapId,
   edit: initial.edit.loggedIn,
+  snip: Boolean(initial.snip),
   view,
   hooks: {
     setView: (v) => setView(v),
@@ -451,7 +455,39 @@ drawHighlights();
 connect();
 shell.setStoreys(storeys);
 
-let editor: { selection(): string[]; tool(): string | null } | null = null;
+let editor: { selection(): string[]; tool(): string | null; suspend(on: boolean): void } | null = null;
+
+function toScreen([x, y]: Point): { x: number; y: number } | null {
+  const ctm = svg?.getScreenCTM();
+  if (!ctm) return null;
+  const p = new DOMPoint(x, y).matrixTransform(ctm);
+  return { x: p.x, y: p.y };
+}
+
+// before the markers and the editor: while snipping, its capture listeners take the clicks first
+if (initial.snip) {
+  initSnip({
+    mapId,
+    stage,
+    overlay,
+    shell,
+    handled,
+    map: () => map,
+    view: () => view,
+    setView: (v) => setView(v),
+    style: () => styleOverride,
+    toMap,
+    toScreen,
+    squaresPerPx,
+    viewBox: () => (vb ? { ...vb } : null),
+    mapBounds: () => (bounds ? { ...bounds } : null),
+    selection: () => editor?.selection() ?? [],
+    suspendEditor: (on) => editor?.suspend(on),
+    onRender: (cb) => renderHooks.push(cb),
+    onView: (cb) => viewHooks.push(cb),
+  });
+}
+
 // before the editor: its capture listeners must see marker clicks first
 const markers = initMarkers({
   stage,
@@ -459,12 +495,7 @@ const markers = initMarkers({
   map: () => map,
   view: () => view,
   toMap,
-  toScreen: ([x, y]) => {
-    const ctm = svg?.getScreenCTM();
-    if (!ctm) return null;
-    const p = new DOMPoint(x, y).matrixTransform(ctm);
-    return { x: p.x, y: p.y };
-  },
+  toScreen,
   squaresPerPx,
   canEdit: initial.edit.loggedIn,
   send,

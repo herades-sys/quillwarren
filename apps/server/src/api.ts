@@ -25,7 +25,7 @@ import { bearer, checkToken, readCookie, sameOrigin, SESSION_COOKIE, type Sessio
 import { addLevel, levelsOf } from './levels.ts';
 import { renamePlace, renameStorey, setCategory } from './library.ts';
 import { LiveHub, type LiveMessage } from './live.ts';
-import { render, renderHandout, RenderQueryError, type HandoutQuery, type RenderQuery } from './render.ts';
+import { render, renderHandout, RenderQueryError, RenderTooBigError, type HandoutQuery, type RenderQuery } from './render.ts';
 import { handoutFrameHeader } from './render.ts';
 import type { MapService } from './service.ts';
 import { labelStairs, labelStairsSummary } from './stair-labels.ts';
@@ -52,6 +52,7 @@ export function errorResponse(e: unknown): { status: number; body: ErrorBody } {
   if (e instanceof StaleError) return { status: 409, body: { error: e.message, rev: e.rev } };
   if (e instanceof ConflictError) return { status: 409, body: { error: e.message } };
   if (e instanceof ValidationError) return { status: 400, body: { error: e.message, problems: e.problems } };
+  if (e instanceof RenderTooBigError) return { status: 413, body: { error: e.message } };
   if (e instanceof OpError || e instanceof RenderQueryError || e instanceof ConnectError || e instanceof DsImportError || e instanceof ZipError || e instanceof CityImportError) {
     return { status: 400, body: { error: e.message } };
   }

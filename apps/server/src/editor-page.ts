@@ -23,6 +23,8 @@ export interface EditorPageOpts {
   levels: { id: string; name: string; level?: Level }[];
   /** Who is logged in, for the avatar (null: the shared password, or open edit). */
   account: { name: string; role: 'admin' | 'gm' } | null;
+  /** Snip an area to a PNG (the Snip button, Shift S): admin and GM accounts, and open-edit development servers. */
+  snip: boolean;
 }
 
 /** "AN" for Ana, "MV" for Mara Venn. */
@@ -35,6 +37,9 @@ const ic = (name: IconName, size = 18): string => icon(name, { size });
 
 /** The Claude panel's "Show Claude's plan" toggle: a checklist, drawn like the design's icons (24 grid, 1.7 stroke). */
 const PLAN_ICON = '<svg class="icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5l1.6 1.6L8.5 5.2M4 12.5l1.6 1.6 2.9-2.9M4.8 18.5h3M12 6.7h8M12 12.7h8M12 18.5h8"/></svg>';
+
+/** Snip (export an area): crop marks, drawn like the design's icons. */
+const SNIP_ICON = '<svg class="icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v12.5a1.5 1.5 0 0 0 1.5 1.5H21M3 7h12.5A1.5 1.5 0 0 1 17 8.5V21"/></svg>';
 
 export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap, o: EditorPageOpts): string {
   const { view, style } = o;
@@ -53,6 +58,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
     edit: { loggedIn: o.loggedIn, passwordSet: o.passwordSet },
     account: o.account,
     ...(chat ? { chat } : {}),
+    ...(o.snip ? { snip: true } : {}),
   }).replace(/</g, '\\u003c');
   const q = `view=${view}${style ? `&style=${encodeURIComponent(style)}` : ''}`;
   const loginHref = `/login?next=${encodeURIComponent(`/maps/${id}`)}`;
@@ -79,10 +85,15 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
         .map(([key, icn, label, sub, dl]) => menuItem(icn, '', '#', label, sub, dl, ` data-crop="${key}"`))
         .join('')}</div>`
     : '';
-  const exportItems = exports.map((e) => menuItem(...e)).join('') + cropGroup;
+  // Snip an area: the first item, for admin and GM accounts (apps/web/src/snip.ts runs it)
+  const snipItem = o.snip
+    ? `<button class="menu-item has-icon" role="menuitem" type="button" data-act="snip">${SNIP_ICON}<span class="spacer"><span>Snip an area…</span><span class="menu-item-sub">Drag a box over the map, save it as a PNG</span></span><kbd>Shift S</kbd></button>`
+    : '';
+  const exportItems = snipItem + exports.map((e) => menuItem(...e)).join('') + cropGroup;
   const moreItems = [
     menuItem('3d', '', `/maps/${enc}/3d`, '3D view', 'All storeys stacked', ''),
     menuItem('screen', '', `/maps/${enc}/screen`, 'Players’ screen', 'Opens in a new window', '', ' target="_blank" rel="noopener"'),
+    snipItem,
     exports.map((e) => menuItem(e[0], '', e[2], e[3], e[4], e[5])).join(''),
     cropGroup,
     edit ? `<button class="menu-item has-icon" role="menuitem" type="button" data-act="map-settings">${ic('settings', 17)}<span class="spacer">Map settings</span></button>` : '',
@@ -113,6 +124,7 @@ ${viewSeg('view', '')}
   <span class="vsep ed-wide"></span>
   <a class="btn btn-plain ed-wide" id="view-3d" href="/maps/${enc}/3d" title="All storeys stacked in 3D · Shift 3">${ic('3d', 17)}3D</a>
   <a class="btn btn-primary ed-wide" id="screen-link" href="/maps/${enc}/screen" target="_blank" rel="noopener" title="Open the players' screen in a new window">${ic('screen', 17)}Players’ screen</a>
+  ${o.snip ? `<button class="btn btn-plain ed-wide" type="button" id="snip-btn" aria-pressed="false" title="Snip an area and save it as a PNG · Shift S">${SNIP_ICON}Snip</button>` : ''}
   <div class="ed-menu-wrap ed-wide"><button class="btn btn-secondary" type="button" id="export-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu">${ic('download', 17)}Export${icon('chevron-down', { size: 14, className: 'text-muted' })}</button>
     <div class="menu ed-menu" role="menu" id="export-menu" hidden>${exportItems}</div></div>
   <button class="btn btn-icon ed-storey-btn" type="button" id="storey-btn" aria-label="Change storey" aria-haspopup="menu" aria-expanded="false"${o.levels.length > 1 ? '' : ' hidden'}><span class="ed-storey-chip" id="storey-chip"></span></button>
@@ -481,6 +493,23 @@ export const EDITOR_CSS = `
   @keyframes ed-pulse { 50% { stroke-opacity: .25; fill-opacity: .05; } }
   @keyframes ed-fade { to { stroke-opacity: 0; fill-opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .hl-focus, .hl-change { animation: none; } }
+
+  /* snip an area (apps/web/src/snip.ts): the veil, the box, the hint on top and the bar under the box */
+  #stage.snipping { cursor: crosshair; }
+  .ed .snip-veil { fill: rgba(8, 10, 18, .55); }
+  .ed .snip-box { fill: none; stroke: var(--color-accent); stroke-width: 2px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+  body.snipping #ctxbar, body.snipping #flyout { display: none; }
+  body.snipping #rail, body.snipping #panel { pointer-events: none; opacity: .5; }
+  .snip-hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; max-width: calc(100% - 24px); padding: 6px 12px; border-radius: 999px; background: var(--color-surface); color: var(--color-text-muted); box-shadow: var(--shadow-md); font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .snip-bar { position: absolute; z-index: 6; display: grid; gap: 6px; max-width: calc(100% - 24px); padding: 8px 10px; border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-lg); cursor: default; }
+  .snip-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .snip-row .spacer { flex: 1; }
+  .snip-size { font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
+  .snip-size.is-bad, .snip-problem { color: var(--color-danger); }
+  .snip-problem { font-size: var(--text-sm); }
+  .snip-ppg .input { height: var(--control-sm); }
+  .snip-bar .check { font-size: var(--text-sm); }
+  #snip-btn[aria-pressed="true"] { background: var(--tint-accent-bg); color: var(--color-accent); }
 
   .ed-phonebar { display: none; }
 
