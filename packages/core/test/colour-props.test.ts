@@ -191,7 +191,8 @@ describe('colour terrain textures', () => {
     expect(t1?.kind === 'pattern' && t1.tint).toBeUndefined();
     const svg = sceneToSvg(scene, { idPrefix: 'm-' });
     // one pattern for both areas, so they join without a seam, at x 0 y 0 like the ink tiles
-    expect(svg.match(/<pattern id="m-tile-c-water-calm-[^"]*" patternUnits="userSpaceOnUse" x="0" y="0" width="3" height="3">/g)).toHaveLength(1);
+    // (their soft edges paint it once more through see-through copies, ids ending -a<opacity>, see terrain-edges.ts)
+    expect(svg.match(/<pattern id="m-tile-c-water-calm-[^"]*-c[0-9a-z]*" patternUnits="userSpaceOnUse" x="0" y="0" width="3" height="3">/g)).toHaveLength(1);
     expect(svg).toContain(COLOUR_PALETTE.water);
     // the ink tile keeps its tint and its 2×2 pattern
     expect(svg).toMatch(/<pattern id="m-tile-water-shallow-[0-9A-F]+" patternUnits="userSpaceOnUse" x="0" y="0" width="2" height="2">/);

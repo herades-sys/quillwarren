@@ -74,8 +74,8 @@ describe('MCP add_terrain: edges', () => {
     expect(png.statusCode).toBe(200);
     const svg = await app.inject({ url: `/api/v1/maps/${id}/render.svg` });
     expect(svg.body).toContain('data-layer="terrain-fade:t2"');
-    expect(svg.body).toContain('fill-opacity="0.3"');
-  });
+    // see-through: a copy of the tile at its opacity (not fill-opacity, which resvg draws too dark along the edge)
+    expect(svg.body).toMatch(/<pattern id="tile-c-ground-sand-[^"]*-a300"[^>]*><rect [^>]*fill="url\(#tile-c-ground-sand-[^"]*\)" opacity="0.3"\/><\/pattern>/);  });
 });
 
 describe('PNG stress: terrain edges through resvg', () => {

@@ -54,9 +54,16 @@ const patternId = (prefix: string, tile: string, p: Palette): string =>
   `${prefix}tile-${tile.replace(/[^A-Za-z0-9_-]/g, '_')}-${(p.ink + p.paper + p.shade).replace(/#/g, '')}`;
 
 type PatternLayer = Extract<Layer, { kind: 'pattern' }>;
-/** A pattern layer's id: a colour texture's also names the colours it is drawn in, which differ between styles with the same inks. */
+/** A see-through pattern layer's opacity, if any. */
+const seeThrough = (l: PatternLayer): number | null => (l.alpha !== undefined && l.alpha < 1 ? l.alpha : null);
+
+/**
+ * A pattern layer's id: a colour texture's also names the colours it is drawn in, which differ between styles with the same inks;
+ * a see-through one (a terrain's fade) its opacity, which is drawn into its own copy of the tile.
+ */
 const patternKey = (prefix: string, l: PatternLayer): string =>
-  `${patternId(prefix, l.tile, l.palette)}${l.colour ? `-c${l.colour.colours ? hashString([...l.colour.colours.values()].join('')).toString(36) : ''}` : ''}`;
+  `${patternId(prefix, l.tile, l.palette)}${l.colour ? `-c${l.colour.colours ? hashString([...l.colour.colours.values()].join('')).toString(36) : ''}` : ''}` +
+  (seeThrough(l) !== null ? `-a${Math.round(seeThrough(l)! * 1000)}` : '');
 
 /** A prop: the body is in asset units (100 per square) with its footprint's top-left at 0,0. */
 function assetSvg(it: AssetItem, palette: Palette, colours: ReadonlyMap<string, string> | undefined): string {
@@ -144,11 +151,12 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
     case 'pattern': {
       const d = polygonsD(layer.polygons);
       if (!d) return '';
-      const a = alphaAttr('fill', layer.alpha);
-      const tile = layer.body ? `<path d="${d}" fill="url(#${patternKey(tiles, layer)})" fill-rule="evenodd"${a}/>` : '';
+      // see-through: the tint by fill-opacity, the tile by its own see-through copy (resvg draws a pattern
+      // with fill-opacity too dark along its anti-aliased edge, which outlined every step of a fade)
+      const tile = layer.body ? `<path d="${d}" fill="url(#${patternKey(tiles, layer)})" fill-rule="evenodd"/>` : '';
       // a colour texture covers its tile edge to edge: no tint under it
       if (layer.tint === undefined) return tile ? g(tile) : '';
-      return g(`<path d="${d}" fill="${layer.tint}" fill-rule="evenodd"${a}/>${tile}`);
+      return g(`<path d="${d}" fill="${layer.tint}" fill-rule="evenodd"${alphaAttr('fill', layer.alpha)}/>${tile}`);
     }
     case 'markers':
       return g(
@@ -187,11 +195,18 @@ function patternDefs(scene: Scene, prefix: string): string {
   const out = new Map<string, string>();
   for (const l of scene.layers) {
     if (l.kind !== 'pattern' || !l.body) continue;
-    const id = patternKey(prefix, l);
-    if (out.has(id)) continue;
     const [w, h] = l.colour?.size ?? [2, 2];
-    const body = l.colour ? recolour(l.body, l.colour.colours ?? null) : recolor(l.body, l.palette);
-    out.set(id, `<pattern id="${esc(id)}" patternUnits="userSpaceOnUse" x="0" y="0" width="${n(w)}" height="${n(h)}"><g transform="scale(0.01)">${body}</g></pattern>`);
+    const tile = (id: string, inner: string) => `<pattern id="${esc(id)}" patternUnits="userSpaceOnUse" x="0" y="0" width="${n(w)}" height="${n(h)}">${inner}</pattern>`;
+    const plain = { ...l, alpha: undefined };
+    const id = patternKey(prefix, plain);
+    if (!out.has(id)) {
+      const body = l.colour ? recolour(l.body, l.colour.colours ?? null) : recolor(l.body, l.palette);
+      out.set(id, tile(id, `<g transform="scale(0.01)">${body}</g>`));
+    }
+    // a see-through copy paints the tile once more, at its opacity (the art itself stays in the document once)
+    const a = seeThrough(l);
+    const seen = patternKey(prefix, l);
+    if (a !== null && !out.has(seen)) out.set(seen, tile(seen, `<rect width="${n(w)}" height="${n(h)}" fill="url(#${esc(id)})" opacity="${n(a)}"/>`));
   }
   return [...out.values()].join('');
 }

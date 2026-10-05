@@ -27,7 +27,7 @@
 //   never wobbles past a wall or fades through it into the next room.
 // Everything is seeded (map seed + area id) and cached per terrain state, so
 // redraws never shift and only terrain (or wall) edits work it out again.
-import { EndType, FillRule, inflatePathsD, intersectD, JoinType, type PathD, type PathsD } from 'clipper2-ts';
+import { differenceD, EndType, FillRule, inflatePathsD, intersectD, JoinType, type PathD, type PathsD } from 'clipper2-ts';
 import { assetInfo } from '../assets/catalog.ts';
 import { polygonsOf } from '../geometry/floor.ts';
 import { terrainArea } from '../geometry/terrain.ts';
@@ -310,6 +310,53 @@ function fadeNoise(x: number, y: number, seed: number, width: number): number {
   return Math.tanh(3.5 * (0.35 * noise(x * ft, y * ft, seed + 4) + 0.45 * billow + 0.2 * noise(x * 5.5, y * 5.5, seed + 5)));
 }
 
+/**
+ * Value noise in an outline's own directions: `l` squares along a closed ring
+ * `len` long (wrapped, so it joins up where the ring starts) at `f` cells per
+ * square, and `b` (already in cells) across it.
+ */
+function ringNoise(l: number, len: number, f: number, b: number, seed: number): number {
+  const period = Math.max(1, Math.round(len * f));
+  const a = (((l / len) * period) % period + period) % period;
+  const ix = Math.floor(a);
+  const iy = Math.floor(b);
+  const fx = a - ix;
+  const fy = b - iy;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const jx = (ix + 1) % period;
+  const p = lattice(seed, ix, iy);
+  const q = lattice(seed, jx, iy);
+  const r = lattice(seed, ix, iy + 1);
+  const s = lattice(seed, jx, iy + 1);
+  const top = p + (q - p) * sx;
+  return top + (r + (s - r) * sx - top) * sy;
+}
+
+/** Where a sample lies in its outline's own directions: `l` along a ring `len` long, `s` across (signed distance). */
+interface EdgeFrame {
+  l: number;
+  len: number;
+  s: number;
+}
+
+/**
+ * A long fade's breakup at `u` across it (-1 its full side, 1 its far side): big
+ * soft tongues about the fade's width, clumps that get smaller towards the far
+ * side (two sizes, the smaller taking over), and a little grit. Part of each is
+ * laid along the outline (`e`), so tongues and clumps stretch a little along
+ * the edge. Spread out to about -1…1 like fadeNoise.
+ */
+function longNoise(x: number, y: number, e: EdgeFrame, seed: number, width: number, u: number): number {
+  const ft = 1 / (0.9 * width);
+  const tongue = 0.55 * noise(x * ft, y * ft, seed + 21) + 0.45 * ringNoise(e.l, e.len, ft * 0.6, e.s * ft * 1.4, seed + 22);
+  // clumps, a little longer along the edge than across it
+  const clump = (f: number, k: number) => (2 * Math.abs(0.55 * ringNoise(e.l, e.len, f * 0.65, e.s * f * 1.25, seed + k) + 0.45 * noise(x * f, y * f, seed + k + 1)) - 0.55) / 1.1;
+  const t = smoothstep((u + 1) / 2);
+  const clumps = (t < 1 ? (1 - t) * clump(1.3, 23) : 0) + (t > 0 ? t * clump(2.9, 25) : 0);
+  return Math.tanh(2.6 * (0.45 * tongue + 0.42 * clumps + 0.13 * noise(x * 6, y * 6, seed + 27)));
+}
+
 // ---------- constants ----------
 
 /** The lattice the soft edges are sampled on, in squares (7 px at Roll20's 70 per square). */
@@ -320,30 +367,61 @@ const B = 8;
 const STEP = 0.2;
 /** How far a ragged edge wanders, in squares. */
 const RAGGED = 0.14;
+/** One of the levels a soft edge is cut into, the opaque core last; all but the core are drawn see-through. */
+interface Level {
+  /** How far out from the opaque edge its outline lies, in squares (a rim round every patch). */
+  off: number;
+  alpha: number;
+  /** The coverage it stands for (with the levels before it), and where across a long fade it starts (the ramp half way from the level before). */
+  cover: number;
+  from: number;
+}
+/** A short fade's or a ragged edge's: two soft rims round every patch. Alone the outer rim shows 30 % of the area, with the inner one 65 %. */
+const SHORT_LEVELS: readonly Level[] = [
+  { off: 0.11, alpha: 0.3, cover: 0.3, from: 0.15 },
+  { off: 0.05, alpha: 0.5, cover: 0.65, from: 0.48 },
+  { off: 0, alpha: 1, cover: 1, from: 0.83 },
+];
 /**
- * The levels a soft edge is cut into: a soft rim around every patch (drawn
- * see-through, `off` squares out from the opaque edge) and the opaque core last.
- * Alone the outer rim shows 30 % of the area, with the inner one 65 %.
+ * An area with a long fade gets more see-through steps: each stands for a
+ * coverage (10 %, 24 %… up to the opaque core), and across a long fade they are
+ * spread evenly over its width, broken up by longNoise so they interleave
+ * instead of running in rings. Where such an area's edge is short or ragged
+ * they close up into a rim like SHORT_LEVELS'.
  */
-const LEVELS = [
-  { off: 0.11, alpha: 0.3 },
-  { off: 0.05, alpha: 0.5 },
-  { off: 0, alpha: 1 },
-] as const;
+const LONG_LEVELS: readonly Level[] = [0.1, 0.24, 0.4, 0.58, 0.78, 1].map((cover, k, all) => ({
+  off: [0.11, 0.09, 0.07, 0.05, 0.025, 0][k]!,
+  // the same texture over itself: each step adds what makes the total `cover`
+  alpha: Math.round((1 - (1 - cover) / (1 - (k ? all[k - 1]! : 0))) * 1000) / 1000,
+  cover,
+  // a step starts where the even ramp is half way from the step before, so the steps sit on the ramp, not under it
+  from: (cover + (k ? all[k - 1]! : 0)) / 2,
+}));
+/** How far a fade of this width is a long one (0 up to 1 square, 1 from 2.5 on): its patches give way to see-through steps. */
+const longness = (hw: number): number => smoothstep((2 * hw - 1) / 1.5);
+/** A long fade's noise, as a share of its half width: each step's outline wanders about as far as the next one or two. */
+const LONG_AMP = 0.4;
+/** Where a long fade's steps lie, as a share of its half width: with the noise on top the whole change spans about the fade's width. */
+const LONG_SPREAD = 0.8;
 /** Within this far of a wall every edge stays as drawn; full softness from WALL_CLEAR + WALL_RAMP on. */
 const WALL_CLEAR = 0.12;
 const WALL_RAMP = 0.45;
 /** Bits of a level smaller than this (square squares) are left out. */
 const MIN_AREA = 0.003;
+/** The same for the faintest steps of a long fade. */
+const FAINT_MIN_AREA = 0.03;
 /** Contours are simplified to within this, in squares. */
 const SIMPLIFY = 0.012;
 
-/** The noise amplitude of a fade of this width: the patches thin out across the width. */
-const fadeAmp = (width: number): number => 1.05 * (width / 2) + 0.04;
+/** The noise amplitude of a fade of this width: short ones are all patches thinning out across the width; long ones mostly see-through steps. */
+function fadeAmp(width: number): number {
+  const lam = longness(width / 2);
+  return (1 - lam) * (1.05 * (width / 2) + 0.04) + lam * LONG_AMP * (width / 2);
+}
 /** How much wider the see-through rims are for a fade half `hw` wide (1 up to the default fade). */
 const rimScale = (hw: number): number => 1 + 0.6 * Math.max(0, hw - DEFAULT_FADE_WIDTH / 2);
-/** How far past the outline an edge's patches (and their rims) may reach. */
-const reachOf = (p: { amp: number; hw: number }): number => p.amp * 1.05 + LEVELS[0].off * rimScale(p.hw) + 2.5 * H;
+/** How far past the outline an edge's patches, rims and steps may reach (and how deep inside it the area under it must run on). */
+const reachOf = (p: { amp: number; hw: number }): number => p.amp * 1.05 + longness(p.hw) * LONG_SPREAD * 1.1 * p.hw + SHORT_LEVELS[0]!.off * rimScale(p.hw) + 2.5 * H;
 
 // ---------- areas and their outlines ----------
 
@@ -500,19 +578,35 @@ function outlineOf(area: Area): { points: OutlinePoint[]; closed: true }[] {
 // ---------- the soft edges of one area ----------
 
 interface FieldResult {
-  /** Rings of each level (LEVELS order), in squares. */
+  /** The levels it was cut into (SHORT_LEVELS, or LONG_LEVELS for an area with a long fade). */
+  set: readonly Level[];
+  /** Rings of each level, in squares. */
   levels: Ring[][];
 }
 
 /**
  * Sample the area's field near its outline and cut it into the levels. The
  * field at p is -s(p) (s: signed distance to the outline, < 0 inside) plus the
- * nearest outline point's noise, shifted out a little for the see-through rims.
+ * nearest outline point's noise, shifted out a little for the see-through rims,
+ * and across a long fade's width for its see-through steps.
  */
 function softLevels(area: Area, outline: { points: OutlinePoint[] }[]): FieldResult {
-  // the outline's segments, each with the values of its two ends
-  const segs: { a: OutlinePoint; b: OutlinePoint }[] = [];
-  for (const ring of outline) for (let i = 0; i < ring.points.length; i++) segs.push({ a: ring.points[i]!, b: ring.points[(i + 1) % ring.points.length]! });
+  // the outline's segments, each with the values of its two ends, where it starts along its ring and the ring's length
+  const segs: { a: OutlinePoint; b: OutlinePoint; l: number; len: number; ring: number }[] = [];
+  const ringLen: number[] = [];
+  for (const ring of outline) {
+    let l = 0;
+    const r = ringLen.length;
+    for (let i = 0; i < ring.points.length; i++) {
+      const a = ring.points[i]!;
+      const b = ring.points[(i + 1) % ring.points.length]!;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      segs.push({ a, b, l, len, ring: r });
+      l += len;
+    }
+    ringLen.push(l);
+  }
+  const set = outline.some((r) => r.points.some((p) => longness(p.hw) > 0)) ? LONG_LEVELS : SHORT_LEVELS;
   const n = segs.length;
   const ax = new Float64Array(n);
   const ay = new Float64Array(n);
@@ -572,11 +666,11 @@ function softLevels(area: Area, outline: { points: OutlinePoint[] }[]): FieldRes
     return (lo & 1) === 1;
   };
 
-  const K = LEVELS.length;
-  const next: Map<number, number>[] = LEVELS.map(() => new Map());
-  const at: Map<number, Point>[] = LEVELS.map(() => new Map());
+  const K = set.length;
+  const next: Map<number, number>[] = set.map(() => new Map());
+  const at: Map<number, Point>[] = set.map(() => new Map());
   const S = B + 1;
-  const vals: Float64Array[] = LEVELS.map(() => new Float64Array(S * S));
+  const vals: Float64Array[] = set.map(() => new Float64Array(S * S));
   const BIG = 1e3;
 
   for (const key of blocks) {
@@ -590,16 +684,14 @@ function softLevels(area: Area, outline: { points: OutlinePoint[] }[]): FieldRes
     const by0 = j0 * H;
     const bx1 = (i0 + B) * H;
     const by1 = (j0 + B) * H;
+    // (every segment within the area's widest reach: a lattice point shared by two blocks must find the same
+    // nearest segment from both, or its value, and with it the contour, would differ between them)
     const near: [number, number][] = [];
-    let blockReach = 0;
     for (const s of grid.near(bx0 - maxReach, by0 - maxReach, bx1 + maxReach, by1 + maxReach)) {
       const gx = Math.max(0, Math.min(ax[s]!, bx[s]!) - bx1, bx0 - Math.max(ax[s]!, bx[s]!));
       const gy = Math.max(0, Math.min(ay[s]!, by[s]!) - by1, by0 - Math.max(ay[s]!, by[s]!));
       const lb = gx * gx + gy * gy;
-      if (lb < reach[s]! * reach[s]!) {
-        near.push([lb, s]);
-        if (reach[s]! > blockReach) blockReach = reach[s]!;
-      }
+      if (lb < maxReach * maxReach) near.push([lb, s]);
     }
     near.sort((p, q) => p[0] - q[0]);
     const cand = Int32Array.from(near, (p) => p[1]);
@@ -612,12 +704,14 @@ function softLevels(area: Area, outline: { points: OutlinePoint[] }[]): FieldRes
       for (let u = 0; u <= B; u++) {
         const i = i0 + u;
         const x = i * H;
-        // farther from the outline than any edge here reaches: plainly inside or outside
-        let best = blockReach * blockReach;
+        // farther from the outline than any edge of it reaches: plainly inside or outside
+        let best = maxReach * maxReach;
         let bs = -1;
         let bt = 0;
+        // (the nearest segment, the lowest one on a tie: a lattice point on the edge of two blocks must get
+        // the same value from both, and the value depends on which segment it goes by)
         for (let c = 0; c < cand.length; c++) {
-          if (bound[c]! >= best) break;
+          if (bound[c]! > best) break;
           const s = cand[c]!;
           const dx = bx[s]! - ax[s]!;
           const dy = by[s]! - ay[s]!;
@@ -627,7 +721,7 @@ function softLevels(area: Area, outline: { points: OutlinePoint[] }[]): FieldRes
           const ex = ax[s]! + dx * t - x;
           const ey = ay[s]! + dy * t - y;
           const d2 = ex * ex + ey * ey;
-          if (d2 < best) {
+          if (d2 < best || (d2 === best && bs >= 0 && s < bs)) {
             best = d2;
             bs = s;
             bt = t;
@@ -647,22 +741,44 @@ function softLevels(area: Area, outline: { points: OutlinePoint[] }[]): FieldRes
         const width = seg.a.width + (seg.b.width - seg.a.width) * bt;
         let base = isIn ? d : -d;
         let soft = 0;
+        let lam = 0;
         if (amp > 0) {
           // ragged wobble where there is no band, the fade's tongues and patches where there is
+          // (a long fade's own breakup, laid partly along the outline, the longer it is)
           const f = smoothstep(hw / 0.15);
-          const nz = (f < 1 ? (1 - f) * raggedNoise(x, y, area.seed) : 0) + (f > 0 ? f * fadeNoise(x, y, area.seed, width) : 0);
+          lam = set === LONG_LEVELS ? longness(hw) : 0;
+          let fade = 0;
+          if (f > 0) {
+            if (lam < 1) fade += (1 - lam) * fadeNoise(x, y, area.seed, width);
+            if (lam > 0) fade += lam * longNoise(x, y, { l: seg.l + bt * seg.len, len: ringLen[seg.ring]!, s: -base }, area.seed, width, Math.max(-1, Math.min(1, -base / hw)));
+          }
+          const nz = (f < 1 ? (1 - f) * raggedNoise(x, y, area.seed) : 0) + (f > 0 ? f * fade : 0);
           base += sign * amp * nz;
           // the rims widen with the fade, so a long fade is softer as well as patchier
           soft = smoothstep(amp / 0.05) * rimScale(hw);
         }
         // the rims a little irregular (and each its own way), so they read as a soft brush, not an outline
         const grit = soft > 0 ? 0.025 * noise(x * 6, y * 6, area.seed + 11) : 0;
-        for (let k = 0; k < K; k++) vals[k]![o] = base + (LEVELS[k]!.off + (k === K - 1 ? 0 : k === 0 ? grit : -0.7 * grit)) * soft;
+        if (set === SHORT_LEVELS) {
+          for (let k = 0; k < K; k++) vals[k]![o] = base + (set[k]!.off + (k === K - 1 ? 0 : k === 0 ? grit : -0.7 * grit)) * soft;
+          continue;
+        }
+        // a long fade: its steps spread evenly over the width (full at -0.8 hw, none at +0.8 hw), each wandering a little its own way
+        const spread = lam * LONG_SPREAD * hw;
+        const na = lam > 0 ? noise(x * 3, y * 3, area.seed + 13) : 0;
+        const nb = lam > 0 ? noise(x * 3, y * 3, area.seed + 17) : 0;
+        for (let k = 0; k < K; k++) {
+          const last = k === K - 1;
+          const own = last ? 0 : grit * Math.cos(k * 2.4);
+          const step = last ? 0 : 0.12 * spread * (na * Math.cos(k * 2.4) + nb * Math.sin(k * 2.4));
+          vals[k]![o] = base + (1 - lam) * (set[k]!.off + own) * soft + spread * (1 - 2 * set[k]!.from) + step;
+        }
       }
     }
     for (let k = 0; k < K; k++) marchBlock(vals[k]!, i0, j0, next[k]!, at[k]!);
   }
-  return { levels: LEVELS.map((_, k) => traceRings(next[k]!, at[k]!)) };
+  // (the faintest steps of a long fade drop their smallest bits: faint specks far out read as dirt on the map, not as a fade)
+  return { set, levels: set.map((lv, k) => traceRings(next[k]!, at[k]!, set === LONG_LEVELS && lv.cover < 0.3 ? FAINT_MIN_AREA : MIN_AREA)) };
 }
 
 // ---------- marching squares ----------
@@ -739,7 +855,7 @@ function marchBlock(v: Float64Array, i0: number, j0: number, next: Map<number, n
 }
 
 /** Join the contour pieces into closed rings (pieces that run off the sampled blocks are left out: there are none by construction). */
-function traceRings(next: Map<number, number>, at: Map<number, Point>): Ring[] {
+function traceRings(next: Map<number, number>, at: Map<number, Point>, minArea: number): Ring[] {
   const rings: Ring[] = [];
   const seen = new Set<number>();
   for (const start of next.keys()) {
@@ -755,7 +871,7 @@ function traceRings(next: Map<number, number>, at: Map<number, Point>): Ring[] {
     }
     if (closed && ring.length >= 3) {
       const r = simplifyRing(ring, SIMPLIFY);
-      if (r.length >= 3 && Math.abs(ringArea(r)) >= MIN_AREA) rings.push(r);
+      if (r.length >= 3 && Math.abs(ringArea(r)) >= minArea) rings.push(r);
     }
   }
   return rings;
@@ -919,6 +1035,12 @@ class DetailSink {
   }
 }
 
+/** Across a long fade, details scatter over most of its width instead of lining the drawn edge (a short one keeps them there, without drawing a random number). */
+function scatter(q: { p: OutlinePoint }, r: () => number): number {
+  const sp = longness(q.p.hw) * q.p.hw;
+  return sp > 0 ? (r() - 0.5) * 1.4 * sp : 0;
+}
+
 /** Details for one run: V is the area whose outline it is, E the one under it. */
 function runDetails(run: Run, v: Area, e: Area, sink: DetailSink, isLater: (x: number, y: number) => boolean): void {
   const cum = new Float64Array(run.points.length);
@@ -935,6 +1057,8 @@ function runDetails(run: Run, v: Area, e: Area, sink: DetailSink, isLater: (x: n
   const keep = (p: Point) => !isLater(p[0], p[1]);
 
   if (run.recipe === 'shore' || run.recipe === 'lava') {
+    // along a long fade the shore is a wide, gradual one: fainter, shorter bits of foam and wet band
+    const lam = longness(Math.max(...run.points.map((p) => p.hw)));
     const lava = run.recipe === 'lava';
     const wSide = lava ? sideOf((m) => m === 'lava') : sideOf((m) => WATERY.has(m));
     const water = wSide < 0 ? v : e;
@@ -959,15 +1083,16 @@ function runDetails(run: Run, v: Area, e: Area, sink: DetailSink, isLater: (x: n
         } else if (cur) band.push([...cur.inner, ...cur.outer.reverse()]), (cur = null);
       } else if (cur) band.push([...cur.inner, ...cur.outer.reverse()]), (cur = null);
       // a wide, gradual shore has no clear waterline: fewer and shorter bits of foam
-      const dash = noise(q.x * 2.2, q.y * 2.2, salt + 2) > -0.1 + 0.45 * smoothstep(q.p.hw - 0.4);
+      const dash = noise(q.x * 2.2, q.y * 2.2, salt + 2) > -0.1 + 0.45 * smoothstep(q.p.hw - 0.4) + 0.2 * lam;
       const fp = pt(q, wSide * (0.07 + 0.03 * noise(q.x * 4, q.y * 4, salt + 3)) + (r() - 0.5) * 0.01);
       if (dash && keep(fp)) (line ??= []).push(fp);
       else if (line) foam.push(line), (line = null);
     }
     if (cur && cur.inner.length > 1) band.push([...cur.inner, ...cur.outer.reverse()]);
     if (line) foam.push(line);
-    for (const ring of band) if (ring.length >= 4) sink.fill(lava ? toneOf(land, 'crust') : toneOf(water, 'light'), lava ? 0.45 : 0.55, ring);
-    for (const l of foam) sink.stroke(toneOf(water, lava ? 'glow' : 'foam'), 0.8, lava ? 0.03 : 0.028, l);
+    const faint = (a: number) => Math.round(a * (1 - 0.5 * lam) * 100) / 100;
+    for (const ring of band) if (ring.length >= 4) sink.fill(lava ? toneOf(land, 'crust') : toneOf(water, 'light'), faint(lava ? 0.45 : 0.55), ring);
+    for (const l of foam) sink.stroke(toneOf(water, lava ? 'glow' : 'foam'), faint(0.8), lava ? 0.03 : 0.028, l);
     if (lava) return;
     // pebbles on the land side, in little clusters
     for (let l = 0.2; l < total; ) {
@@ -975,7 +1100,7 @@ function runDetails(run: Run, v: Area, e: Area, sink: DetailSink, isLater: (x: n
       const r = spotRandom(salt, q.x, q.y, 2);
       const count = 1 + Math.floor(r() * 3);
       for (let c = 0; c < count; c++) {
-        const p = pt(q, -wSide * (0.06 + r() * 0.24), (r() - 0.5) * 0.35);
+        const p = pt(q, -wSide * (0.06 + r() * 0.24) + scatter(q, r), (r() - 0.5) * 0.35);
         if (!keep(p)) continue;
         const rad = 0.03 + r() * 0.035;
         sink.fill(toneOf(land, 'stone'), 1, blob(p[0], p[1], rad, r, 1.3, r() * Math.PI), { tone: toneOf(land, 'stone-dark'), width: 0.012 });
@@ -993,7 +1118,7 @@ function runDetails(run: Run, v: Area, e: Area, sink: DetailSink, isLater: (x: n
     for (let l = 0.1; l < total; ) {
       const q = along(run, cum, l, v.seed);
       const r = spotRandom(salt, q.x, q.y, 3);
-      const root = pt(q, -gSide * (r() * 0.08), (r() - 0.5) * 0.1);
+      const root = pt(q, -gSide * (r() * 0.08) + scatter(q, r), (r() - 0.5) * 0.1);
       if (keep(root)) {
         const blades = 3 + Math.floor(r() * 3);
         // pointing out of the grass: along -gSide·n, fanned
@@ -1016,7 +1141,7 @@ function runDetails(run: Run, v: Area, e: Area, sink: DetailSink, isLater: (x: n
     for (let l = 0.05; l < total; ) {
       const q = along(run, cum, l, v.seed);
       const r = spotRandom(salt, q.x, q.y, 4);
-      const p = pt(q, gSide * (0.04 + r() ** 1.6 * 0.45), (r() - 0.5) * 0.2);
+      const p = pt(q, gSide * (0.04 + r() ** 1.6 * 0.45) + scatter(q, r), (r() - 0.5) * 0.2);
       if (keep(p)) sink.dot(toneOf(bare, r() < 0.5 ? 'main' : 'dark'), 0.85, r() < 0.6 ? 0.018 : 0.03, p);
       l += 0.1 + r() * 0.22;
     }
@@ -1028,7 +1153,7 @@ function runDetails(run: Run, v: Area, e: Area, sink: DetailSink, isLater: (x: n
     const q = along(run, cum, l, v.seed);
     const r = spotRandom(salt, q.x, q.y, 5);
     const into = r() < 0.5 ? 1 : -1;
-    const p = pt(q, into * (0.08 + r() * 0.3), (r() - 0.5) * 0.3);
+    const p = pt(q, into * (0.08 + r() * 0.3) + scatter(q, r), (r() - 0.5) * 0.3);
     if (keep(p)) sink.fill(toneOf(into > 0 ? v : e, 'main'), 0.7, blob(p[0], p[1], 0.05 + r() * 0.1, r, 1 + r() * 0.8, r() * Math.PI));
     l += 0.6 + r() * 1.2;
   }
@@ -1094,7 +1219,7 @@ interface AreaPart {
 }
 
 /** How far around its outline an area's work looks: its widest possible fade's reach, the probes and the details. */
-const LOOK = (maxWidth: number): number => fadeAmp(maxWidth) * 1.05 + LEVELS[0].off * rimScale(maxWidth / 2) + 1;
+const LOOK = (maxWidth: number): number => reachOf({ amp: fadeAmp(maxWidth), hw: maxWidth / 2 }) + 1;
 /** The coarse cells used to find the areas near an outline, in squares. */
 const CELL = 4;
 
@@ -1245,8 +1370,11 @@ function areaPart(v: Area, others: readonly Area[], walls: SegmentGrid, key: str
   }
   if (!outline.some((r) => r.points.some((p) => p.amp > 1e-4 || p.hw > 1e-4))) return { key, core: null, fades: [], under: [], details: [] };
 
-  // where its soft edge lies over another area, that one runs on under it
+  // where its soft edge lies over another area, that one runs on under it: only where nothing drawn
+  // before it lies under it there (else what really lies there shows through, as it should), and only
+  // straight in from that stretch of the outline
   const byIndex = new Map(others.map((o) => [o.index, o]));
+  const earlier = others.filter((o) => o.index < v.index).flatMap((o) => o.paths);
   const under: [string, PathsD][] = [];
   for (const ring of outline) {
     const pts = ring.points;
@@ -1254,8 +1382,10 @@ function areaPart(v: Area, others: readonly Area[], walls: SegmentGrid, key: str
     const flush = () => {
       if (run && run.line.length > 1) {
         // (a coarser precision is plenty: this lies under the soft edge, never at a visible edge of its own)
-        const band = inflatePathsD([run.line], run.reach, JoinType.Round, EndType.Round, 2, 3);
-        const inside = intersectD(band, v.paths, FillRule.NonZero, 3);
+        const all = run.line.length > pts.length;
+        const band = inflatePathsD([run.line], run.reach, JoinType.Round, all ? EndType.Joined : EndType.Butt, 2, 3);
+        let inside = intersectD(band, v.paths, FillRule.NonZero, 3);
+        if (inside.length && earlier.length) inside = differenceD(inside, earlier, FillRule.NonZero, 3);
         if (inside.length) under.push([byIndex.get(run.below)!.t.id, inside]);
       }
       run = null;
@@ -1274,13 +1404,13 @@ function areaPart(v: Area, others: readonly Area[], walls: SegmentGrid, key: str
     flush();
   }
 
-  const { levels } = softLevels(v, outline);
+  const { set, levels } = softLevels(v, outline);
   const core = levels[levels.length - 1]!.map(toPath);
   const fades: AreaEdges['fades'] = [];
-  for (let k = 0; k < LEVELS.length - 1; k++) {
-    // the rims without the core (the texture over itself would only add to what's opaque already)
+  for (let k = 0; k < set.length - 1; k++) {
+    // the rims and steps without the core (the texture over itself would only add to what's opaque already)
     const band = polygonsOf(levels[k]!.map(toPath), core);
-    if (band.length) fades.push({ alpha: LEVELS[k]!.alpha, polygons: band });
+    if (band.length) fades.push({ alpha: set[k]!.alpha, polygons: band });
   }
   // details, left out where a later area lies over them
   const sink = new DetailSink();

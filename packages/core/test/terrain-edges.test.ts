@@ -26,6 +26,7 @@ import {
   terrainPolygons,
   validateMap,
   visiblePolygons,
+  type AreaEdges,
   type DelveMap,
   type Layer,
   type MapObject,
@@ -51,6 +52,22 @@ const points = (polys: readonly Polygon[]) => polys.flatMap((p) => [...p.outer, 
 const layersOf = (map: DelveMap, id: string, opts = {}) => buildScene(map, { assets: body, ...opts }).layers.filter((l) => l.name.endsWith(`:${id}`));
 const patterns = (layers: Layer[]) => layers.filter((l): l is Extract<Layer, { kind: 'pattern' }> => l.kind === 'pattern');
 const edgesOf = (map: DelveMap) => terrainEdges(map.objects.filter((o): o is Terrain => o.type === 'terrain'), computeFloor(map), map.seed ?? 0);
+
+/** How much of an area shows at p: all of it in its core, else what its see-through steps over p add up to. */
+const coverage = (e: AreaEdges, p: Point): number => {
+  if (e.core && insidePolygons(e.core, p)) return 1;
+  let rest = 1;
+  for (const f of e.fades) if (insidePolygons(f.polygons, p)) rest *= 1 - f.alpha;
+  return 1 - rest;
+};
+
+/** The coverage at `d` squares out from the long sides of a rect area (negative: inside), along both sides: its mean and spread. */
+function across(e: AreaEdges, [rx, ry, w, h]: [number, number, number, number], d: number): { mean: number; sd: number } {
+  const v: number[] = [];
+  for (let x = rx + 2; x < rx + w - 2; x += 0.1) v.push(coverage(e, [x, ry - d]), coverage(e, [x, ry + h + d]));
+  const mean = v.reduce((a, b) => a + b, 0) / v.length;
+  return { mean, sd: Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length) };
+}
 
 /** Distance from p to a rectangle's outline. */
 const toRect = ([x, y]: Point, [rx, ry, w, h]: [number, number, number, number]): number => {
@@ -153,34 +170,75 @@ describe('hard, ragged and fade edges', () => {
     expect(Math.max(...points([...faded.core!, ...faded.fades.flatMap((f) => f.polygons)]).map((p) => toRect(p, rect)))).toBeLessThan(0.4);
   });
 
-  it('fades sand into grass over the width, in patches, with the grass running on under it', () => {
+  const sandIn = (width?: number) => {
     const rect: [number, number, number, number] = [10, 6, 20, 12];
-    const fadeOf = (width?: number) => {
-      const map = mapOf([terrain('t1', 'c-ground-grass-short', { rect: [0, 0, 40, 24] }), terrain('t2', 'c-ground-sand', { rect }, width ? { fadeWidth: width } : {})]);
-      return { map, e: edgesOf(map) };
-    };
-    const { map, e } = fadeOf(3);
-    const sand = e.areas.get('t2')!;
-    // see-through rims, patches out beyond a square and grass in the cracks a square inside
-    expect(sand.fades.length).toBeGreaterThan(0);
-    expect(sand.fades.every((f) => f.alpha > 0 && f.alpha < 1)).toBe(true);
-    const out = points(sand.core!).filter((p) => !(p[0] > rect[0] && p[0] < rect[0] + rect[2] && p[1] > rect[1] && p[1] < rect[1] + rect[3]));
-    expect(Math.max(...out.map((p) => toRect(p, rect)))).toBeGreaterThan(1);
-    expect(Math.max(...out.map((p) => toRect(p, rect)))).toBeLessThan(3);
-    expect(sand.core!.length + sand.core!.reduce((s, p) => s + p.holes.length, 0)).toBeGreaterThan(5);
-    const cracks: Point[] = [];
-    for (let x = rect[0] + 0.05; x < rect[0] + rect[2]; x += 0.1) for (const y of [rect[1] + 0.7, rect[1] + rect[3] - 0.7]) if (!insidePolygons(sand.core!, [x, y])) cracks.push([x, y]);
-    expect(cracks.length).toBeGreaterThan(5);
+    const map = mapOf([terrain('t1', 'c-ground-grass-short', { rect: [0, 0, 40, 24] }), terrain('t2', 'c-ground-sand', { rect }, width ? { fadeWidth: width } : {})]);
+    return { rect, map, e: edgesOf(map), sand: edgesOf(map).areas.get('t2')! };
+  };
+
+  it('fades sand into grass in patches over a short width, with soft rims and the grass running on under it', () => {
+    const { rect, map, e, sand } = sandIn();
+    // two see-through rims round the patches
+    expect(sand.fades.map((f) => f.alpha)).toEqual([0.3, 0.5]);
+    // patches out a little past the edge, cracks a little inside it: either all sand or none at most spots
+    const reach = Math.max(...points(sand.core!).filter((p) => !(p[0] > rect[0] && p[0] < rect[0] + rect[2] && p[1] > rect[1] && p[1] < rect[1] + rect[3])).map((p) => toRect(p, rect)));
+    expect(reach).toBeGreaterThan(0.2);
+    expect(reach).toBeLessThan(0.8);
+    expect(across(sand, rect, 0).sd).toBeGreaterThan(0.35);
+    expect(across(sand, rect, -0.5).mean).toBeGreaterThan(0.97);
+    expect(across(sand, rect, 0.6).mean).toBeLessThan(0.03);
     // the grass runs on under it (here it is drawn whole there anyway), so nothing but grass or sand shows near the edge
     const grass = e.areas.get('t1')!.core ?? terrainPolygons(map.objects[0] as Terrain);
-    for (let y = rect[1] + 0.5; y < rect[1] + rect[3]; y += 0.5) expect(insidePolygons(grass, [rect[0] + 0.8, y])).toBe(true);
-    // the default fade is narrower
-    const narrow = fadeOf().e.areas.get('t2')!;
-    const reach = (c: Polygon[]) => Math.max(...points(c).filter((p) => !(p[0] > rect[0] && p[0] < rect[0] + rect[2] && p[1] > rect[1] && p[1] < rect[1] + rect[3])).map((p) => toRect(p, rect)));
-    expect(reach(narrow.core!)).toBeLessThan(0.8);
-    // in the scene: core, then the rims (see-through), then the details
+    for (let y = rect[1] + 0.5; y < rect[1] + rect[3]; y += 0.5) expect(insidePolygons(grass, [rect[0] + 0.3, y])).toBe(true);
+    // in the scene: core, then the rims (see-through), then the details; a rim is a see-through copy of the tile
     expect(layersOf(map, 't2').map((l) => `${l.name.split(':')[0]}:${l.kind}`).slice(0, 3)).toEqual(['terrain:pattern', 'terrain-fade:pattern', 'terrain-fade:pattern']);
-    expect(renderSvg(map, { assets: body })).toMatch(/fill="url\(#tile-c-ground-sand-[^"]+\)" fill-rule="evenodd" fill-opacity="0\.3"/);
+    const svg = renderSvg(map, { assets: body });
+    expect(svg).toMatch(/<pattern id="tile-c-ground-sand-[^"]*-a300"[^>]*><rect [^>]*fill="url\(#tile-c-ground-sand-[^"]*\)" opacity="0.3"\/><\/pattern>/);
+    expect(svg).toMatch(/fill="url\(#tile-c-ground-sand-[^"]+-a300\)" fill-rule="evenodd"\/>/);
+  });
+
+  it('turns a long fade into a gradual change: coverage falling evenly across the width, mottled, not a straight gradient', () => {
+    for (const width of [3, 5]) {
+      const { rect, sand } = sandIn(width);
+      const hw = width / 2;
+      // more see-through steps, every one see-through
+      expect(sand.fades.length, `${width}`).toBe(5);
+      expect(sand.fades.every((f) => f.alpha > 0 && f.alpha < 1)).toBe(true);
+      const at = (k: number) => across(sand, rect, k * hw);
+      // all sand well inside, none well outside, about half at the drawn edge, falling steadily in between
+      expect(at(-1.2).mean, `${width}`).toBeGreaterThan(0.97);
+      expect(at(1.2).mean, `${width}`).toBeLessThan(0.03);
+      expect(at(0).mean, `${width}`).toBeGreaterThan(0.4);
+      expect(at(0).mean, `${width}`).toBeLessThan(0.6);
+      const profile = [-0.8, -0.4, 0, 0.4, 0.8].map((k) => at(k).mean);
+      for (let k = 1; k < profile.length; k++) expect(profile[k]!, `${width}: ${profile.map((v) => v.toFixed(2))}`).toBeLessThan(profile[k - 1]! - 0.08);
+      // mottled: it varies along the edge, but most spots are part way, not a splatter of all or nothing
+      const mid = at(0);
+      expect(mid.sd, `${width}`).toBeGreaterThan(0.05);
+      expect(mid.sd, `${width}`).toBeLessThan(0.25);
+    }
+  });
+
+  it('leaves few isolated bits far out on a long fade', () => {
+    const { rect, sand } = sandIn(5);
+    const pieces = [...sand.core!, ...sand.fades.flatMap((f) => f.polygons)];
+    // pieces lying wholly past most of the fade's width: a few faint ones at most
+    const far = pieces.filter((p) => p.outer.every((q) => toRect(q, rect) > 0.9 * 2.5 && !(q[0] > rect[0] && q[0] < rect[0] + rect[2] && q[1] > rect[1] && q[1] < rect[1] + rect[3])));
+    expect(far.length).toBeLessThan(6);
+    expect(far.every((p) => sand.core!.indexOf(p) < 0)).toBe(true);
+  });
+
+  it('keeps a short fade as it was when an area elsewhere on the map has a long one', () => {
+    const { rect, sand } = sandIn();
+    // a field with a long fade to dirt further down the map
+    const both = mapOf([
+      terrain('t1', 'c-ground-grass-short', { rect: [0, 0, 40, 24] }),
+      terrain('t2', 'c-ground-sand', { rect }),
+      terrain('t3', 'c-ground-grass-short', { rect: [0, 32, 40, 20] }),
+      terrain('t4', 'c-ground-dirt', { rect: [10, 38, 20, 8] }, { fadeWidth: 5 }),
+    ]);
+    expect(edgesOf(both).areas.get('t4')!.fades.length).toBe(5);
+    expect(JSON.stringify(edgesOf(both).areas.get('t2'))).toBe(JSON.stringify(sand));
   });
 
   it('runs an area on under a later one that fades over it, so no gap opens between neighbours', () => {
