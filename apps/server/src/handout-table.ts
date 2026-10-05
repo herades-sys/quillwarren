@@ -5,8 +5,9 @@
 // - The wood is drawn once on a canvas in code (planks with grain, knots and
 //   seams from a fixed seed; no image files), again only when the page's size
 //   changes.
-// - The candle is drawn in code too (SVG: a brass holder, the wax with drips,
-//   the wick; the flame and its halo are layers of their own).
+// - The candle is drawn in code too, seen from straight above like the map (SVG:
+//   a brass dish, the candle's top with drips, the wick; the flame and its halo
+//   are layers of their own).
 // - The light: a warm pool on the table around the flame, the table dark
 //   towards its edges, and a light overlay on the sheet itself (warmer and
 //   brighter on the candle's side, darker on the far side), cut to the
@@ -36,54 +37,58 @@ export const SHEET_LIGHT = '<div class="sheet-light" id="sheet-light" aria-hidde
 /** The option that turns the light off. */
 export const CANDLE_OPTION = `<label class="candle-option" for="candle"><span><span class="candle-option-name">Candle light</span><span class="candle-option-hint">Only on this page: prints and downloads are the plain sheet. Off for true colours.</span></span><button class="switch" type="button" role="switch" id="candle" aria-checked="true"></button></label>`;
 
-// The candle in a three-quarter view, 96 × 168 (the flame and halo are separate layers, see FLAME_SVG).
-const CANDLE_SVG = `<svg class="candle-art" viewBox="0 0 96 168" width="96" height="168">
+// The candle seen from straight above, like the map on the table, 120 × 120:
+// a brass dish with a ring handle, the socket, the candle's top with its
+// melt pool and drips over the rim, and the wick in the middle (60, 60).
+// The flame and its halo are separate layers, see FLAME_SVG.
+const CANDLE_SVG = `<svg class="candle-art" viewBox="0 0 120 120" width="120" height="120">
   <defs>
-    <radialGradient id="cd-contact" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#000" stop-opacity=".55"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
-    <linearGradient id="cd-brass" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#5a3c14"/><stop offset=".3" stop-color="#b8862f"/><stop offset=".55" stop-color="#f0cf7a"/><stop offset=".75" stop-color="#b8862f"/><stop offset="1" stop-color="#4a3010"/></linearGradient>
-    <radialGradient id="cd-dish" cx="62%" cy="30%" r="75%"><stop offset="0" stop-color="#f6dc93"/><stop offset=".45" stop-color="#c79a42"/><stop offset="1" stop-color="#6b4818"/></radialGradient>
-    <linearGradient id="cd-wax" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#b9a47c"/><stop offset=".35" stop-color="#efe3c4"/><stop offset=".62" stop-color="#fbf3dd"/><stop offset="1" stop-color="#cbb790"/></linearGradient>
-    <linearGradient id="cd-glow" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ffcf7a" stop-opacity=".55"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></linearGradient>
-    <radialGradient id="cd-pool" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#fff2c8"/><stop offset=".7" stop-color="#f3dca3"/><stop offset="1" stop-color="#d8c08c"/></radialGradient>
+    <radialGradient id="cd-contact" cx="50%" cy="50%" r="50%"><stop offset=".72" stop-color="#000" stop-opacity=".5"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+    <radialGradient id="cd-dish" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#8a6224"/><stop offset=".55" stop-color="#c99b45"/><stop offset=".8" stop-color="#f0cf7a"/><stop offset=".9" stop-color="#b8862f"/><stop offset="1" stop-color="#5a3c14"/></radialGradient>
+    <radialGradient id="cd-socket" cx="50%" cy="50%" r="50%"><stop offset=".7" stop-color="#d8ae58"/><stop offset=".86" stop-color="#f3d68a"/><stop offset="1" stop-color="#7a5420"/></radialGradient>
+    <radialGradient id="cd-wax" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#fff9e8"/><stop offset=".55" stop-color="#f6ecd2"/><stop offset=".9" stop-color="#e2d2ab"/><stop offset="1" stop-color="#c9b58a"/></radialGradient>
+    <radialGradient id="cd-pool" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#fff4cf"/><stop offset=".6" stop-color="#f8e2a4"/><stop offset="1" stop-color="#e8c97e"/></radialGradient>
   </defs>
-  <ellipse cx="50" cy="152" rx="46" ry="12" fill="url(#cd-contact)"/>
-  <!-- the holder: a dish with a rim and a ring handle -->
-  <path d="M88 132c4 7-14 16-40 16S4 139 8 132" fill="#4a3010"/>
-  <ellipse cx="48" cy="132" rx="40" ry="12" fill="url(#cd-brass)"/>
-  <ellipse cx="48" cy="130.5" rx="36" ry="9.5" fill="url(#cd-dish)"/>
-  <path d="M84 128c9-2 12 3 9 7s-9 4-11 2" fill="none" stroke="#7a5420" stroke-width="3.2" stroke-linecap="round"/>
-  <path d="M84 128c9-2 12 3 9 7" fill="none" stroke="#f0cf7a" stroke-width="1.1" stroke-linecap="round" opacity=".8"/>
+  <circle cx="60" cy="61" r="57" fill="url(#cd-contact)"/>
+  <!-- the ring handle, then the dish with its rim -->
+  <circle cx="14" cy="98" r="9" fill="none" stroke="#5a3c14" stroke-width="5"/>
+  <circle cx="14" cy="98" r="9" fill="none" stroke="#e4bd66" stroke-width="2"/>
+  <path d="M22 92l10-8" stroke="#8a6224" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="60" cy="60" r="44" fill="url(#cd-dish)"/>
+  <circle cx="60" cy="60" r="44" fill="none" stroke="#4a3010" stroke-width="1.4"/>
+  <circle cx="60" cy="60" r="36" fill="none" stroke="#7a5420" stroke-width="1" opacity=".6"/>
   <!-- the socket the candle stands in -->
-  <path d="M30 127v-7c0-3 8-4.5 18-4.5s18 1.5 18 4.5v7c0 3-8 4.5-18 4.5s-18-1.5-18-4.5z" fill="url(#cd-brass)"/>
-  <ellipse cx="48" cy="120" rx="18" ry="4.5" fill="#d8ae58"/>
-  <!-- the wax, a little worn down, with drips -->
-  <path d="M33 120V58c0-2.5 6.7-4.5 15-4.5S63 55.5 63 58v62c0 2.2-6.7 4-15 4s-15-1.8-15-4z" fill="url(#cd-wax)"/>
-  <path d="M33 58c0 2.6 6.7 4.6 15 4.6S63 60.6 63 58v14c0 2.6-6.7 4.6-15 4.6S33 74.6 33 72z" fill="url(#cd-glow)"/>
-  <ellipse cx="48" cy="58" rx="15" ry="4.4" fill="url(#cd-pool)"/>
-  <path d="M34.5 59.5c-.5 6 .3 11 2.2 12.6 1.7 1.4 3.2-.4 3-4.6l-.3-6.3z" fill="#f7eed6"/>
-  <path d="M44 62.3c-.4 9 .2 19.5 2.2 22.2 1.8 2.3 3.6.3 3.4-5.2-.2-6.4-.4-11.6-.5-17z" fill="#fbf4e2"/>
-  <path d="M56.5 61.6c.2 5.5.9 9.3 2.6 10.3 1.6 1 2.6-1 2.2-4.4l-.5-6.7z" fill="#f4e9cf"/>
-  <path d="M60.8 59.5c.6 14 1.6 33 .7 41.5-.4 3.4-2.6 3.8-3.2.6-.9-4.6-.6-17.8-.5-25" fill="#e9dcbc" opacity=".85"/>
-  <path d="M35 64c.4 12-.4 24 .5 34" fill="none" stroke="#fff8e8" stroke-width="1.4" stroke-linecap="round" opacity=".45"/>
+  <circle cx="60" cy="60" r="24" fill="url(#cd-socket)"/>
+  <!-- wax that ran down onto the dish -->
+  <path d="M77 74c5 3 9 4 10 7s-2 4-5 3-5-4-7-7z" fill="#efe2c2"/>
+  <path d="M43 76c-3 4-5 8-3 10s4-1 5-4 1-5 0-7z" fill="#f2e7cb"/>
+  <!-- the candle's top: wax, the drips over the rim, the melt pool -->
+  <circle cx="60" cy="60" r="19" fill="url(#cd-wax)"/>
+  <path d="M74 70c3 3 6 6 5 8s-4 1-6-2-2-5-1-6z" fill="#f4e9cd"/>
+  <path d="M47 72c-1 4-3 7-1 8s3-2 3-5z" fill="#f7eedb"/>
+  <path d="M41 55c-4-1-7 0-7 2s3 3 7 1z" fill="#f2e6c8"/>
+  <circle cx="60" cy="60" r="19" fill="none" stroke="#bfa877" stroke-width="1"/>
+  <circle cx="60" cy="60" r="12.5" fill="url(#cd-pool)"/>
+  <ellipse cx="56" cy="56" rx="5" ry="2.6" fill="#fffdf4" opacity=".7" transform="rotate(-35 56 56)"/>
   <!-- the wick -->
-  <path d="M48 58.5c0-2.6.5-4.6 1.7-6.8" fill="none" stroke="#1d130b" stroke-width="1.7" stroke-linecap="round"/>
+  <circle cx="60" cy="60" r="1.8" fill="#1d130b"/>
 </svg>`;
 
-// The flame: a teardrop in warm layers with a bluish foot, drawn upright around the wick's tip.
-const FLAME_SVG = `<svg viewBox="0 0 30 56" width="30" height="56">
+// The flame from above: a bright core in warm layers around the wick, 30 × 30, centred on it.
+const FLAME_SVG = `<svg viewBox="0 0 30 30" width="30" height="30">
   <defs>
-    <radialGradient id="fl-outer" cx="50%" cy="72%" r="62%"><stop offset="0" stop-color="#fff6d5"/><stop offset=".35" stop-color="#ffd86e"/><stop offset=".75" stop-color="#ff9a2e" stop-opacity=".85"/><stop offset="1" stop-color="#ff7a1a" stop-opacity="0"/></radialGradient>
-    <radialGradient id="fl-core" cx="50%" cy="70%" r="55%"><stop offset="0" stop-color="#ffffff"/><stop offset=".6" stop-color="#fff3c2"/><stop offset="1" stop-color="#ffe08a" stop-opacity="0"/></radialGradient>
+    <radialGradient id="fl-outer" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffe9a8"/><stop offset=".4" stop-color="#ffc85a" stop-opacity=".9"/><stop offset=".75" stop-color="#ff8f2a" stop-opacity=".45"/><stop offset="1" stop-color="#ff7a1a" stop-opacity="0"/></radialGradient>
+    <radialGradient id="fl-core" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#fff6d6"/><stop offset="1" stop-color="#ffe08a" stop-opacity="0"/></radialGradient>
   </defs>
-  <path d="M15 2C10 14 4.5 24 4.5 35.5 4.5 45 9 52 15 52s10.5-7 10.5-16.5C25.5 24 20 14 15 2z" fill="url(#fl-outer)"/>
-  <path d="M15 17c-3 7.5-5.8 14-5.8 21 0 5.5 2.6 9.5 5.8 9.5s5.8-4 5.8-9.5c0-7-2.8-13.5-5.8-21z" fill="url(#fl-core)"/>
-  <ellipse cx="15" cy="48.5" rx="3" ry="2.4" fill="#7fa6ff" opacity=".4"/>
+  <circle cx="15" cy="15" r="14" fill="url(#fl-outer)"/>
+  <ellipse cx="14.4" cy="14.2" rx="5.6" ry="6.8" fill="url(#fl-core)" transform="rotate(-30 14.4 14.2)"/>
+  <circle cx="15" cy="15" r="1.3" fill="#2a1a0e" opacity=".55"/>
 </svg>`;
 
 export const TABLE_CSS = `
   /* the table (handout-table.ts): wood, light and the candle behind and beside the sheet */
   .scene { position: relative; display: grid; min-height: 0; overflow: hidden; background: #2a1a0e; isolation: isolate;
-    --fx: 62px; --fy: 40px; }
+    --fx: 76px; --fy: 70px; }
   .scene > .wood, .scene > .vignette, .scene > .pool { position: absolute; pointer-events: none; }
   .scene > .wood { inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
   /* the light falls off from the flame (top right): dark at the far edges */
@@ -103,12 +108,12 @@ export const TABLE_CSS = `
   .sheet-light > div { position: absolute; inset: 0; }
   .sheet-light > .warm { background: radial-gradient(circle farthest-side at 100% 0, rgba(255, 200, 120, .34) 0, rgba(255, 186, 104, .16) 45%, rgba(255, 180, 100, 0) 100%); will-change: opacity; }
   .sheet-light > .shade { background: linear-gradient(225deg, rgba(40, 18, 0, 0) 35%, rgba(30, 12, 0, .2) 75%, rgba(20, 8, 0, .34) 100%); }
-  .candle { position: absolute; z-index: 2; top: 10px; right: 16px; width: 96px; height: 168px; pointer-events: none; }
+  .candle { position: absolute; z-index: 2; top: 10px; right: 16px; width: 120px; height: 120px; pointer-events: none; }
   .candle-art { position: absolute; inset: 0; display: block; }
-  /* the flame stands on the wick's tip (49.7, 51.7 in the candle's drawing) */
-  .candle > .flame { position: absolute; left: 34.7px; top: 2px; width: 30px; height: 56px; transform-origin: 50% 90%; will-change: transform; }
+  /* seen from above, the flame sits on the wick in the candle's middle (60, 60) */
+  .candle > .flame { position: absolute; left: 45px; top: 45px; width: 30px; height: 30px; transform-origin: 50% 50%; will-change: transform; }
   .candle > .flame svg { display: block; }
-  .candle > .halo { position: absolute; left: 4px; top: -14px; width: 92px; height: 92px; border-radius: 50%; will-change: opacity, transform;
+  .candle > .halo { position: absolute; left: 10px; top: 10px; width: 100px; height: 100px; border-radius: 50%; will-change: opacity, transform;
     background: radial-gradient(circle closest-side, rgba(255, 214, 140, .62) 0, rgba(255, 190, 100, .28) 40%, rgba(255, 170, 80, 0) 100%); }
   /* the flicker: transform and opacity only, out of step with each other */
   @media (prefers-reduced-motion: no-preference) {
@@ -117,13 +122,14 @@ export const TABLE_CSS = `
     .scene > .pool { animation: hd-pool 3.7s ease-in-out infinite; }
     .sheet-light > .warm { animation: hd-warm 2.9s ease-in-out infinite; }
   }
+  /* from above a flame doesn't sway sideways: it trembles and breathes around the wick */
   @keyframes hd-flame {
-    0%, 100% { transform: scale(1, 1) skewX(0deg); }
-    14% { transform: scale(.96, 1.05) skewX(-2.5deg); }
-    29% { transform: scale(1.03, .97) skewX(1.5deg); }
-    47% { transform: scale(.98, 1.03) skewX(-1deg); }
-    63% { transform: scale(1.02, .95) skewX(2.5deg); }
-    81% { transform: scale(.97, 1.04) skewX(-1.5deg); }
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    17% { transform: translate(.6px, -.8px) scale(1.06, .96); }
+    34% { transform: translate(-.5px, .4px) scale(.95, 1.04); }
+    52% { transform: translate(.3px, .6px) scale(1.04); }
+    69% { transform: translate(-.7px, -.3px) scale(.96); }
+    86% { transform: translate(.4px, -.5px) scale(1.03, .97); }
   }
   @keyframes hd-halo { 0%, 100% { opacity: .9; transform: scale(1); } 23% { opacity: 1; transform: scale(1.05); } 51% { opacity: .8; transform: scale(.97); } 76% { opacity: .95; transform: scale(1.02); } }
   @keyframes hd-pool { 0%, 100% { opacity: .92; transform: scale(1); } 19% { opacity: 1; transform: scale(1.015); } 44% { opacity: .84; transform: scale(.99); } 71% { opacity: .97; transform: scale(1.01); } }
@@ -138,8 +144,8 @@ export const TABLE_CSS = `
   .candle-option-hint { color: var(--color-text-muted); font-size: var(--text-sm); line-height: 1.45; }
   .candle-option .switch { margin-top: 2px; }
   @media (max-width: 820px) {
-    .scene > .table { padding: 112px 14px 20px; }
-    .scene { --fx: 42px; --fy: 26px; }
+    .scene > .table { padding: 100px 14px 20px; }
+    .scene { --fx: 51px; --fy: 45px; }
     .candle { top: 4px; right: 10px; transform: scale(.68); transform-origin: 100% 0; }
   }
 `;
