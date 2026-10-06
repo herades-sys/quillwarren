@@ -3,9 +3,12 @@
 // events (and no tool events), the MCP tool `plan`, the prompt, and one whole
 // fake run through the bridge (a fake `claude` replaying a recorded stream)
 // and the /chat endpoint. Nothing here runs the real Claude.
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// Also the fallbacks when Claude keeps no plan up to date or has none (guessed
+// active steps, finishing on a good end, the activity list), with replays of
+// two real chats (fixtures/chat, shrunk from Claude Code's transcripts).
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Server } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -13,7 +16,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.ts';
 import { createBridge } from '../src/chat/bridge.ts';
-import { PLAN_STATUSES, planFromInput, StreamTranslator, type ChatEvent, type PlanStep } from '../src/chat/events.ts';
+import { ACTIVITY_AFTER, ACTIVITY_LABELS, activityKind, PLAN_STATUSES, planFromInput, StreamTranslator, type ChatEvent, type PlanStep } from '../src/chat/events.ts';
 import { parsePartialJson } from '../src/chat/partial-json.ts';
 import { CHAT_SYSTEM_PROMPT } from '../src/chat/prompt.ts';
 
@@ -209,8 +212,9 @@ describe('plan calls in the stream', () => {
       { type: 'tool', id: 'a1', name: 'add_terrain', input: { map: 'm' } },
     ]);
     expect(t.feed(JSON.stringify(result('u1', 'Updated task #4 status')))).toEqual([]); // no tool_done for task calls
+    // finishing the road with nothing else active makes the forest active until Claude drops it
     expect(t.feed(call('m3', [['u2', 'TaskUpdate', { taskId: '4', status: 'completed' }], ['u3', 'TaskUpdate', { taskId: '5', status: 'deleted' }], ['u4', 'TaskUpdate', { taskId: '99', status: 'completed' }], ['l1', 'TaskList', {}]]))).toEqual([
-      { type: 'plan', steps: [step('Lay the road', 'done'), step('Plant the forest', 'pending')] },
+      { type: 'plan', steps: [step('Lay the road', 'done'), step('Plant the forest', 'active')] },
       { type: 'plan', steps: [step('Lay the road', 'done'), step('Plant the forest', 'skipped')] },
     ]);
   });
@@ -223,6 +227,205 @@ describe('plan calls in the stream', () => {
     ]);
     expect(plans(evs)).toEqual([]);
     expect(evs).toEqual([{ type: 'tool', id: 'r', name: 'add_room', input: { steps: PLAN_1.steps } }]);
+  });
+});
+
+// ---------- when Claude keeps no plan up to date, or has none ----------
+
+/** One Claude Code assistant line with these tool calls ([id, name, input]). */
+const calls = (id: string, tools: [string, string, unknown][]) =>
+  JSON.stringify({ type: 'assistant', session_id: SESSION, message: { id, content: tools.map(([toolId, name, input]) => ({ type: 'tool_use', id: toolId, name, input })) } });
+const res = (toolId: string, text: string) => JSON.stringify(result(toolId, text));
+const OK = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, num_turns: 3, duration_ms: 10, session_id: SESSION, result: 'ok' });
+const FAILED = JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 3, duration_ms: 10, session_id: SESSION, result: 'boom' });
+const statuses = (evs: ChatEvent[]) => plans(evs).map((p) => p.steps.map((s) => s.status).join(','));
+const feedAll = (t: StreamTranslator, lines: string[]) => lines.flatMap((l) => t.feed(l));
+
+/** A run with three tasks created (numbers 1 to 3) and their results in. */
+function threeTasks(): StreamTranslator {
+  const t = new StreamTranslator();
+  t.feed(calls('c', [['k1', 'TaskCreate', { subject: 'Build the rooms' }], ['k2', 'TaskCreate', { subject: 'Furnish them' }], ['k3', 'TaskCreate', { subject: 'Write the notes' }]]));
+  for (const n of [1, 2, 3]) t.feed(res(`k${n}`, `Task #${n} created successfully: x`));
+  return t;
+}
+const work = (t: StreamTranslator, id: string, name: string, input: unknown = {}) => t.feed(calls(`m-${id}`, [[id, `mcp__delve__${name}`, input]]));
+
+/**
+ * Two real chats from the editor, shrunk from Claude Code's transcripts (tool
+ * calls, task calls, the kinds of objects apply_ops added, results cut short):
+ * Sonnet creating 4 tasks and updating them late, and 11 messages with 148
+ * tool calls and no tasks.
+ */
+const fixture = (name: string) => readFileSync(resolve(import.meta.dirname, '../../../fixtures/chat', name), 'utf8').split('\n').filter(Boolean);
+/** The runs in a transcript: each starts with a message the user wrote (the bridge has one translator per message). */
+const runsOf = (lines: string[]) =>
+  lines.reduce<string[][]>((runs, l) => {
+    const m = JSON.parse(l) as { type: string; message?: { content?: unknown } };
+    if (m.type === 'user' && typeof m.message?.content === 'string') runs.push([]);
+    runs.at(-1)?.push(l);
+    return runs;
+  }, []);
+const TASKS_RUN = fixture('tasks-without-updates.jsonl');
+const ACTIVITY_RUN = runsOf(fixture('no-tasks-11-runs.jsonl'))[0]!;
+
+describe('when Claude does not keep its tasks up to date', () => {
+  it('makes the first pending task active when the work starts, before the tool event', () => {
+    const t = threeTasks();
+    const evs = work(t, 'a1', 'list_assets', { category: 'furniture' });
+    expect(evs.map((e) => e.type)).toEqual(['plan', 'tool']);
+    expect(statuses(evs)).toEqual(['active,pending,pending']);
+    expect(plans(work(t, 'a2', 'apply_ops', { ops: [] }))).toEqual([]); // more work in the same step changes nothing
+  });
+
+  it('moves on to the next task when one is completed and none is active', () => {
+    const t = threeTasks();
+    work(t, 'a1', 'render');
+    expect(statuses(t.feed(calls('m2', [['u1', 'TaskUpdate', { taskId: '1', status: 'completed' }]])))).toEqual(['done,active,pending']);
+    expect(statuses(t.feed(calls('m3', [['u2', 'TaskUpdate', { taskId: '2', status: 'completed' }]])))).toEqual(['done,done,active']);
+    expect(statuses(t.feed(calls('m4', [['u3', 'TaskUpdate', { taskId: '3', status: 'completed' }]])))).toEqual(['done,done,done']);
+  });
+
+  it('lets what Claude says win over a guess', () => {
+    const t = threeTasks();
+    work(t, 'a1', 'render'); // guessed: task 1
+    // Claude starts task 2 itself: the guessed task 1 goes back to pending
+    expect(statuses(t.feed(calls('m2', [['u1', 'TaskUpdate', { taskId: '2', status: 'in_progress' }]])))).toEqual(['pending,active,pending']);
+    // a task completed while another is active guesses nothing
+    expect(statuses(t.feed(calls('m3', [['u2', 'TaskUpdate', { taskId: '1', status: 'completed' }]])))).toEqual(['done,active,pending']);
+    expect(plans(work(t, 'a2', 'render'))).toEqual([]);
+  });
+
+  it('counts an update sent together with its TaskCreate, once the number is known', () => {
+    const t = new StreamTranslator();
+    const evs = t.feed(calls('m1', [['k1', 'TaskCreate', { subject: 'A' }], ['k2', 'TaskCreate', { subject: 'B' }], ['u1', 'TaskUpdate', { taskId: '7', status: 'in_progress' }]]));
+    expect(statuses(evs)).toEqual(['pending', 'pending,pending']);
+    expect(t.feed(res('k1', 'Task #7 created successfully: A'))).toEqual([{ type: 'plan', steps: [{ title: 'A', status: 'active' }, { title: 'B', status: 'pending' }] }]);
+    expect(t.feed(res('k2', 'Task #8 created successfully: B'))).toEqual([]);
+    expect(t.feed(res('u1', 'Updated task #7 status'))).toEqual([]);
+    // a task from an earlier message (never created in this run) is left alone
+    expect(t.feed(calls('m2', [['u2', 'TaskUpdate', { taskId: '3', status: 'completed' }]]))).toEqual([]);
+  });
+
+  it('finishes every open step when the run ends well, and keeps them after an error or a stop', () => {
+    const good = threeTasks();
+    work(good, 'a1', 'render');
+    good.feed(calls('m2', [['u1', 'TaskUpdate', { taskId: '3', status: 'deleted' }]]));
+    const end = good.feed(OK);
+    expect(end.map((e) => e.type)).toEqual(['plan', 'done']);
+    expect(statuses(end)).toEqual(['done,done,skipped']); // a dropped task stays dropped
+    const bad = threeTasks();
+    work(bad, 'a1', 'render');
+    expect(bad.feed(FAILED).map((e) => e.type)).toEqual(['done']); // the card keeps task 1 as where it ended
+    // a stop ends the stream without a result, so nothing changes either
+  });
+
+  it('does the same for the plan tool', () => {
+    const t = new StreamTranslator();
+    const plan = (id: string, a: PlanStep['status'], b: PlanStep['status']) => t.feed(calls(id, [[id, 'mcp__delve__plan', { steps: [{ title: 'A', status: a }, { title: 'B', status: b }] }]]));
+    expect(statuses(plan('p1', 'pending', 'pending'))).toEqual(['pending,pending']);
+    expect(statuses(work(t, 'a1', 'add_room'))).toEqual(['active,pending']);
+    expect(statuses(plan('p2', 'done', 'pending'))).toEqual(['done,active']);
+    expect(statuses(t.feed(OK))).toEqual(['done,done']);
+  });
+});
+
+describe('the activity list, when Claude has no plan', () => {
+  const step = (title: string, status: PlanStep['status']) => ({ title, status });
+
+  it('starts after a few tool calls, with the phases so far', () => {
+    const t = new StreamTranslator();
+    expect(ACTIVITY_AFTER).toBe(4);
+    for (const [i, name] of ['list_assets', 'list_assets', 'add_terrain'].entries()) expect(plans(work(t, `a${i}`, name))).toEqual([]);
+    const evs = work(t, 'a3', 'add_props_along');
+    expect(evs.map((e) => e.type)).toEqual(['plan', 'tool']);
+    expect(plans(evs)).toEqual([{ type: 'plan', mode: 'activity', steps: [step('Looking through the props', 'done'), step('Painting terrain', 'done'), step('Placing props', 'active')] }]);
+  });
+
+  it('makes calls of one kind in a row one phase, and a kind that comes back takes up its step again', () => {
+    const t = new StreamTranslator();
+    for (const [i, name] of ['add_room', 'connect', 'render', 'add_prop', 'add_prop', 'render', 'focus'].entries()) work(t, `b${i}`, name);
+    const back = work(t, 'b7', 'add_room');
+    expect(plans(back)).toEqual([
+      {
+        type: 'plan',
+        mode: 'activity',
+        steps: [step('Building rooms and corridors', 'active'), step('Checking the map', 'done'), step('Placing props', 'done'), step('Showing the result', 'done')],
+      },
+    ]);
+    expect(plans(work(t, 'b8', 'connect'))).toEqual([]); // the same phase: nothing new to show
+  });
+
+  it('names apply_ops by what it adds most, and notes as notes', () => {
+    const add = (type: string) => ({ op: 'add', object: { type } });
+    expect(activityKind('apply_ops', { ops: [{ op: 'batch', ops: [add('room'), add('room'), add('door')] }] })).toBe('build');
+    expect(activityKind('apply_ops', { ops: [add('prop'), add('prop'), add('terrain')] })).toBe('props');
+    expect(activityKind('apply_ops', { ops: [add('height')] })).toBe('heights');
+    expect(activityKind('apply_ops', { ops: [{ op: 'delete', ids: ['r1'] }] })).toBe('adjust');
+    expect(activityKind('apply_ops', { ops: [{ op: 'update', id: 'r1', set: { notes: 'x' } }] })).toBe('labels');
+    expect(activityKind('update', { id: 'r1', set: { notes: 'Two ogres' } })).toBe('labels');
+    expect(activityKind('update', { id: 'd1', set: { style: 'locked' } })).toBe('adjust');
+    expect(activityKind('add_door', {})).toBe('doors');
+    expect(activityKind('describe_map', {})).toBe('check');
+    expect(activityKind('a_tool_from_later', {})).toBe('adjust');
+    expect(ACTIVITY_LABELS.show).toBe('Showing the result');
+  });
+
+  it('gives way to tasks that come later', () => {
+    const t = new StreamTranslator();
+    for (const i of [0, 1, 2, 3]) work(t, `c${i}`, 'render');
+    expect(plans(t.feed(calls('k', [['k1', 'TaskCreate', { subject: 'Fix the doors' }]])))).toEqual([{ type: 'plan', steps: [step('Fix the doors', 'pending')] }]);
+    expect(plans(t.feed(OK))).toEqual([{ type: 'plan', steps: [step('Fix the doors', 'done')] }]);
+  });
+
+  it('finishes on a good end, keeps where it was after an error, and stays away from short runs', () => {
+    const run = () => {
+      const t = new StreamTranslator();
+      for (const [i, name] of ['add_room', 'add_room', 'add_door', 'render'].entries()) work(t, `d${i}`, name);
+      return t;
+    };
+    expect(plans(run().feed(OK))).toEqual([{ type: 'plan', mode: 'activity', steps: [step('Building rooms and corridors', 'done'), step('Adding doors and stairs', 'done'), step('Checking the map', 'done')] }]);
+    expect(plans(run().feed(FAILED))).toEqual([]);
+    const short = new StreamTranslator();
+    work(short, 'e0', 'render');
+    expect(plans(short.feed(OK))).toEqual([]);
+  });
+});
+
+describe('replays of real chats (fixtures/chat)', () => {
+  it('tasks created and then left alone: the card follows the work and ends with every step done', () => {
+    const t = new StreamTranslator();
+    const evs = feedAll(t, TASKS_RUN);
+    // the four tasks, then step 1 active at the first lookup (Claude only said so 75 s and 9 lookups later)
+    const firstTool = evs.findIndex((e) => e.type === 'tool');
+    expect(statuses(evs.slice(0, firstTool))).toEqual(['pending', 'pending,pending', 'pending,pending,pending', 'pending,pending,pending,pending', 'active,pending,pending,pending']);
+    // the transcript was copied mid-run: the last task is under way
+    expect(statuses(evs).at(-1)).toBe('done,done,done,active');
+    const end = t.feed(OK);
+    expect(plans(end)).toEqual([
+      {
+        type: 'plan',
+        steps: ['Build ground floor rooms and corridors', 'Build 1st floor and 2nd floor boss room', 'Add stairs, labels and connections', 'Add terrain and colour props'].map((title) => ({ title, status: 'done' })),
+      },
+    ]);
+    expect(end.at(-1)).toMatchObject({ type: 'done', ok: true });
+  });
+
+  it('a long chat without tasks: every run with a few tool calls shows what Claude is doing', () => {
+    const seen = runsOf(fixture('no-tasks-11-runs.jsonl')).map((run) => {
+      const evs = feedAll(new StreamTranslator(), [...run, OK]);
+      const tools = evs.filter((e) => e.type === 'tool').length;
+      const ps = plans(evs);
+      if (tools < ACTIVITY_AFTER) expect(ps).toEqual([]);
+      else {
+        expect(ps.every((p) => p.mode === 'activity')).toBe(true);
+        expect(ps.slice(0, -1).every((p) => p.steps.filter((s) => s.status === 'active').length === 1)).toBe(true);
+        expect(ps.at(-1)!.steps.every((s) => s.status === 'done')).toBe(true);
+      }
+      return { tools, phases: ps.at(-1)?.steps.map((s) => s.title) ?? [] };
+    });
+    expect(seen.map((s) => s.tools)).toEqual([56, 49, 11, 11, 0, 1, 5, 4, 2, 0, 9]); // 148 tool calls in 11 messages
+    expect(seen[0]!.phases).toEqual(['Looking through the props', 'Painting terrain', 'Shaping heights', 'Checking the map', 'Placing props', 'Adjusting the map', 'Showing the result']);
+    expect(seen[1]!.phases).toEqual(['Adjusting the map', 'Shaping heights', 'Placing props', 'Placing saved pieces', 'Checking the map', 'Showing the result']);
   });
 });
 
@@ -282,7 +485,17 @@ describe('the plan tool', () => {
 
 describe('what Claude is told about plans', () => {
   it('asks for a plan for 3 or more steps, kept current, and none for small requests', () => {
-    for (const s of ['# Showing your plan (the task list)', '3 or more steps', 'one task per step with TaskCreate', 'to "in_progress" when you start it and to "completed" when it is done', '"deleted"', 'Small requests', 'in the user\'s language']) {
+    for (const s of [
+      '# Showing your plan (the task list)',
+      '3 or more steps',
+      'one TaskCreate call per step',
+      'TaskUpdate {"taskId": "1", "status": "in_progress"} in the same message as the step\'s first tool call',
+      'TaskUpdate {"taskId": "1", "status": "completed"} in the same message as the next step\'s first tool call',
+      'Example, "Build a crypt',
+      '"deleted"',
+      'Small requests',
+      'in the user\'s language',
+    ]) {
       expect(CHAT_SYSTEM_PROMPT).toContain(s);
     }
   });
@@ -293,9 +506,12 @@ describe('what Claude is told about plans', () => {
 const FAKE_CLAUDE = `#!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 if (process.argv.includes('--version')) { console.log('9.9.9 (Claude Code)'); process.exit(0); }
-const lines = readFileSync(new URL('./stream.jsonl', import.meta.url), 'utf8').split('\\n').filter(Boolean);
-process.stdin.resume();
+let stdin = '';
+process.stdin.on('data', (d) => (stdin += d));
 process.stdin.on('end', async () => {
+  // "STREAM=<name>" in the message picks <name>.jsonl next to this file
+  const name = /STREAM=(\\w+)/.exec(stdin)?.[1] ?? 'stream';
+  const lines = readFileSync(new URL('./' + name + '.jsonl', import.meta.url), 'utf8').split('\\n').filter(Boolean);
   for (const l of lines) {
     process.stdout.write(l + '\\n');
     await new Promise((r) => setTimeout(r, 1));
@@ -315,6 +531,9 @@ describe('a whole fake run with a plan', () => {
     writeFileSync(bin, FAKE_CLAUDE);
     chmodSync(bin, 0o755);
     writeFileSync(join(dir, 'stream.jsonl'), RECORDED.map((l) => JSON.stringify(l)).join('\n'));
+    // the two real chats (fixtures/chat), each run ending well
+    writeFileSync(join(dir, 'tasks.jsonl'), [...TASKS_RUN, OK].join('\n'));
+    writeFileSync(join(dir, 'activity.jsonl'), [...ACTIVITY_RUN, OK].join('\n'));
     bridge = createBridge({ claudeBin: bin, dir: join(dir, 'home'), timeoutMs: 10_000 });
     await new Promise<void>((r) => bridge.listen(0, '127.0.0.1', r));
     const bridgeUrl = `http://127.0.0.1:${(bridge.address() as { port: number }).port}`;
@@ -332,10 +551,37 @@ describe('a whole fake run with a plan', () => {
     const id = (await app.inject({ method: 'POST', url: '/api/v1/maps', headers: auth, payload: { template: 'test-dungeon' } })).json().id as string;
     const res = await app.inject({ method: 'POST', url: `/api/v1/maps/${id}/chat`, headers: auth, payload: { message: 'Make the chapter house an octagon with a round table and six chairs' } });
     expect(res.statusCode).toBe(200);
-    const evs = res.body.trim().split('\n').map((l) => JSON.parse(l) as ChatEvent);
+    const evs = res.body.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as ChatEvent);
     expect(evs).toEqual(translate(RECORDED)); // the bridge and the route pass the translator's events through untouched
     const kinds = evs.map((e) => (e.type === 'tool' ? `tool:${e.name}` : e.type)).filter((k, i, all) => k !== all[i - 1]);
     expect(kinds).toEqual(['start', 'plan', 'tool:resize', 'tool_done', 'plan', 'tool:add_prop', 'tool_done', 'tool:add_props_along', 'tool_done', 'plan', 'text', 'done']);
     expect(plans(evs).at(-1)!.steps.every((s) => s.status === 'done')).toBe(true);
+  });
+
+  const chat = async (message: string) => {
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const id = (await app.inject({ method: 'POST', url: '/api/v1/maps', headers: auth, payload: {} })).json().id as string;
+    const res = await app.inject({ method: 'POST', url: `/api/v1/maps/${id}/chat`, headers: auth, payload: { message } });
+    expect(res.statusCode).toBe(200);
+    return res.body.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as ChatEvent);
+  };
+
+  it('replays the chat whose tasks were never updated: step 1 starts with the work, and all 4 end done', async () => {
+    const evs = await chat('STREAM=tasks Create a 3-story dungeon battle map');
+    expect(evs).toEqual(feedAll(new StreamTranslator(), [...TASKS_RUN, OK]));
+    const ps = plans(evs);
+    expect(ps.find((p) => p.steps.some((s) => s.status === 'active'))!.steps.map((s) => s.status)).toEqual(['active', 'pending', 'pending', 'pending']);
+    expect(ps.at(-1)!.steps.map((s) => s.status)).toEqual(['done', 'done', 'done', 'done']);
+    expect(evs.at(-1)).toMatchObject({ type: 'done', ok: true });
+  });
+
+  it('replays a chat without tasks as the activity list', async () => {
+    const evs = await chat('STREAM=activity Make me a battle map');
+    expect(evs).toEqual(feedAll(new StreamTranslator(), [...ACTIVITY_RUN, OK]));
+    const ps = plans(evs);
+    expect(ps.length).toBeGreaterThan(3);
+    expect(ps.every((p) => p.mode === 'activity')).toBe(true);
+    expect(ps.at(-1)!.steps.map((s) => `${s.status}:${s.title}`)).toEqual(['Looking through the props', 'Painting terrain', 'Shaping heights', 'Checking the map', 'Placing props', 'Adjusting the map', 'Showing the result'].map((t) => `done:${t}`));
+    expect(evs.filter((e) => e.type === 'tool')).toHaveLength(56);
   });
 });

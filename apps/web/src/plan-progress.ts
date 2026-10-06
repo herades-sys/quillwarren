@@ -9,6 +9,11 @@
 // least a quarter step while it runs). Before the first step is done there is
 // nothing to go by ("estimating…"); with every step done or skipped Claude is
 // only answering ("finishing…").
+//
+// mode "activity": Claude has no plan of its own, so the server lists what it
+// has been doing (chat/events.ts). There is no total to go by, so the card
+// shows the time so far instead of an estimate, and a bar that only says
+// "working".
 
 export type PlanStatus = 'pending' | 'active' | 'done' | 'skipped';
 export interface PlanStep {
@@ -31,6 +36,8 @@ export interface PlanState {
   /** When the reply ended, and how. */
   ended?: number;
   outcome?: 'done' | 'stopped' | 'failed';
+  /** "activity": the steps are what Claude has been doing, not a plan (no total, no estimate). */
+  mode?: 'activity';
 }
 
 const STATUSES: readonly string[] = ['pending', 'active', 'done', 'skipped'];
@@ -60,9 +67,11 @@ export function cleanSteps(steps: unknown): PlanStep[] {
 /**
  * A new plan from Claude (it replaces the whole list). Steps keep their times
  * by title, or by position when a step was renamed; a step that becomes active
- * starts now, one that is done or skipped ends now.
+ * starts now, one that is done or skipped ends now. A plan of the other mode
+ * (Claude's tasks after the activity list) starts over.
  */
-export function applyPlan(prev: PlanState | undefined, raw: unknown, note: string | undefined, now: number): PlanState {
+export function applyPlan(prev: PlanState | undefined, raw: unknown, note: string | undefined, now: number, mode?: 'activity'): PlanState {
+  if (prev && prev.mode !== mode) prev = undefined;
   const steps = cleanSteps(raw);
   const old = prev?.steps ?? [];
   const used = new Set<number>();
@@ -106,6 +115,7 @@ export function applyPlan(prev: PlanState | undefined, raw: unknown, note: strin
     tools: sameActive ? (prev?.tools ?? 0) : 0,
     ...(prev?.ended !== undefined ? { ended: prev.ended } : {}),
     ...(prev?.outcome ? { outcome: prev.outcome } : {}),
+    ...(mode ? { mode } : {}),
   };
 }
 
@@ -201,6 +211,12 @@ const steps = (n: number) => `${n} step${n === 1 ? '' : 's'}`;
 /** The line a finished reply keeps: "4 steps · 1 min 12 s", "Stopped at step 3 of 5 · 48 s". since: when the reply started. */
 export function planSummary(p: PlanState, since?: number): string {
   const time = durationText((p.ended ?? p.started) - (since ?? p.started));
+  if (p.mode === 'activity') {
+    // no plan, so no "step 3 of 5": what Claude did, or what it was doing when it ended
+    if (p.outcome === 'done') return `What Claude did · ${steps(p.steps.length)} · ${time}`;
+    const doing = p.steps.find((s) => s.status === 'active');
+    return `${p.outcome === 'stopped' ? 'Stopped' : 'Ended'}${doing ? ` while ${doing.title.charAt(0).toLowerCase()}${doing.title.slice(1)}` : ''} · ${time}`;
+  }
   const { total, done, skipped, current } = planProgress(p, p.ended ?? p.started);
   if (p.outcome !== 'done') return `${p.outcome === 'stopped' ? 'Stopped' : 'Ended'} at step ${current} of ${total} · ${time}`;
   if (done + skipped < total) return `${done} of ${steps(total)} done · ${time}`;
@@ -210,4 +226,11 @@ export function planSummary(p: PlanState, since?: number): string {
 /** "Step 2 of 5" while working; "5 of 5 steps" once all are finished. */
 export function stepText(pr: PlanProgress): string {
   return pr.done + pr.skipped >= pr.total ? `${pr.total} of ${steps(pr.total)}` : `Step ${pr.current} of ${pr.total}`;
+}
+
+/** The working card's head: [title, the right-hand text]. A plan: "Step 2 of 5" and the estimate; activity: what it is and the time so far. since: when the reply started. */
+export function cardHead(p: PlanState, now: number, since?: number): [string, string] {
+  if (p.mode === 'activity') return ['What Claude is doing', `${durationText(now - (since ?? p.started))} so far`];
+  const pr = planProgress(p, now);
+  return [stepText(pr), leftText(pr.left)];
 }

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACTIVE_CAP,
   applyPlan,
+  cardHead,
   cleanSteps,
   durationText,
   finishPlan,
@@ -196,5 +197,42 @@ describe('when the reply ends', () => {
     expect(durationText(60 * S)).toBe('1 min');
     expect(durationText(72 * S)).toBe('1 min 12 s');
     expect(durationText(12 * 60 * S + 5 * S)).toBe('12 min');
+  });
+});
+
+describe('the activity list (Claude without a plan of its own)', () => {
+  const L = 'Looking through the props';
+  const P = 'Placing props';
+  const K = 'Checking the map';
+  /** Sent at 10 s (the reply started at 0 s): lookups done, props being placed. */
+  const activity = () => applyPlan(undefined, plan([L, 'done'], [P, 'active']), undefined, 10 * S, 'activity');
+
+  it('shows the time so far instead of an estimate', () => {
+    const p = activity();
+    expect(p.mode).toBe('activity');
+    expect(cardHead(p, 72 * S, 0)).toEqual(['What Claude is doing', '1 min 12 s so far']);
+    // a plan of Claude's own keeps its step count and estimate
+    expect(cardHead(run(), 45 * S)).toEqual(['Step 3 of 4', 'about 40 s left']);
+  });
+
+  it('keeps its times while the phases change', () => {
+    let p = activity();
+    p = applyPlan(p, plan([L, 'done'], [P, 'done'], [K, 'active']), undefined, 30 * S, 'activity');
+    expect(p.started).toBe(10 * S);
+    expect(p.times).toEqual([{ start: 10 * S, end: 10 * S }, { start: 10 * S, end: 30 * S }, { start: 30 * S }]);
+  });
+
+  it("starts over when Claude's own tasks replace it", () => {
+    const tasks = applyPlan(activity(), plan([A, 'pending'], [B, 'pending']), undefined, 50 * S);
+    expect(tasks.mode).toBeUndefined();
+    expect(tasks.started).toBe(50 * S);
+    expect(tasks.times).toEqual([{}, {}]);
+  });
+
+  it('sums up what Claude did, or what it was doing when it ended', () => {
+    const p = activity();
+    expect(planSummary(finishPlan(applyPlan(p, plan([L, 'done'], [P, 'done'], [K, 'done']), undefined, 60 * S, 'activity'), 'done', 72 * S), 0)).toBe('What Claude did · 3 steps · 1 min 12 s');
+    expect(planSummary(finishPlan(p, 'stopped', 48 * S), 0)).toBe('Stopped while placing props · 48 s');
+    expect(planSummary(finishPlan(p, 'failed', 48 * S), 0)).toBe('Ended while placing props · 48 s');
   });
 });

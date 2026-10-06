@@ -6,11 +6,13 @@
 // "working" with a Stop button while a reply runs. For bigger requests Claude
 // sends a plan (the MCP tool `plan`): a step list with a progress bar and a time
 // estimate at the top of its reply (plan-progress.ts), which a finished reply
-// keeps as a one-line summary. The header's checklist button hides it.
+// keeps as a one-line summary. Without a plan of Claude's own, the server sends
+// an activity list (mode "activity"): what Claude is doing, with the time so far
+// instead of an estimate. The header's checklist button hides it.
 import type { Bounds } from '@delve/core';
 import type { IconName } from '@delve/ui';
 import { h, iconEl } from './dom.ts';
-import { applyPlan, finishPlan, leftText, planProgress, planSummary, stepText, withTool, type PlanState, type PlanStep } from './plan-progress.ts';
+import { applyPlan, cardHead, finishPlan, planProgress, planSummary, withTool, type PlanState, type PlanStep } from './plan-progress.ts';
 import type { Shell } from './shell.ts';
 
 export interface ChatHost {
@@ -47,7 +49,7 @@ type ChatEv =
   | { type: 'text'; text: string }
   | { type: 'tool'; id: string; name: string; input: unknown }
   | { type: 'tool_done'; id: string; ok: boolean; text: string }
-  | { type: 'plan'; steps: PlanStep[]; note?: string }
+  | { type: 'plan'; steps: PlanStep[]; note?: string; mode?: 'activity' }
   | { type: 'usage'; fiveHour?: number; sevenDay?: number; status?: string; resetsAt?: number }
   | { type: 'done'; session: string; ok: boolean; turns: number; ms: number; error?: string }
   | { type: 'error'; error: string; code?: string };
@@ -392,15 +394,26 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
 
   function updateCard(p: PlanState): void {
     if (!card) return;
-    const pr = planProgress(p, Date.now());
-    const pct = Math.round(pr.fraction * 1000) / 10;
-    const left = leftText(pr.left);
-    card.count.textContent = stepText(pr);
-    card.eta.textContent = left;
-    card.fill.style.width = `${pct}%`;
-    card.bar.setAttribute('aria-valuenow', String(Math.round(pct)));
-    card.bar.setAttribute('aria-valuetext', `${pr.done + pr.skipped} of ${pr.total} steps finished, ${left}`);
-    const sig = JSON.stringify([p.steps, p.note ?? '']);
+    const now = Date.now();
+    const [title, right] = cardHead(p, now, replying?.at);
+    card.count.textContent = title;
+    card.eta.textContent = right;
+    card.el.dataset.mode = p.mode ?? 'plan';
+    if (p.mode === 'activity') {
+      // no total to measure against: the bar only says that Claude is working
+      card.eta.title = 'Time since you sent the message';
+      card.fill.style.width = '';
+      card.bar.removeAttribute('aria-valuenow');
+      card.bar.setAttribute('aria-valuetext', `Working: ${p.steps.find((s) => s.status === 'active')?.title ?? 'finishing'}, ${right}`);
+    } else {
+      const pr = planProgress(p, now);
+      const pct = Math.round(pr.fraction * 1000) / 10;
+      card.eta.title = 'An estimate from the steps so far';
+      card.fill.style.width = `${pct}%`;
+      card.bar.setAttribute('aria-valuenow', String(Math.round(pct)));
+      card.bar.setAttribute('aria-valuetext', `${pr.done + pr.skipped} of ${pr.total} steps finished, ${right}`);
+    }
+    const sig = JSON.stringify([p.steps, p.note ?? '', p.mode ?? '']);
     if (sig !== card.sig) {
       card.sig = sig;
       card.list.replaceChildren(stepList(p, true));
@@ -579,7 +592,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
               break;
             }
             case 'plan':
-              reply.plan = applyPlan(reply.plan, ev.steps, ev.note, Date.now());
+              reply.plan = applyPlan(reply.plan, ev.steps, ev.note, Date.now(), ev.mode === 'activity' ? 'activity' : undefined);
               break;
             case 'tool':
               if (ev.name === 'plan') break; // the plan card shows it (the server leaves these out anyway)

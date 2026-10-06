@@ -461,6 +461,11 @@ export const EDITOR_CSS = `
   .ed-plan-bar { height: 4px; border-radius: 2px; background: var(--color-surface-3); overflow: hidden; }
   .ed-plan-fill { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--color-accent); }
   @media (prefers-reduced-motion: no-preference) { .ed-plan-fill { transition: width .9s var(--ease); } }
+  /* activity (Claude has no plan of its own): no total, so the bar only says "working" */
+  .ed-plan[data-mode="activity"] .ed-plan-fill { width: 30%; }
+  @media (prefers-reduced-motion: no-preference) { .ed-plan[data-mode="activity"] .ed-plan-fill { transition: none; animation: ed-plan-busy 1.8s ease-in-out infinite; } }
+  @media (prefers-reduced-motion: reduce) { .ed-plan[data-mode="activity"] .ed-plan-fill { width: 100%; opacity: .4; } }
+  @keyframes ed-plan-busy { from { transform: translateX(-100%); } to { transform: translateX(335%); } }
   .ed-plan-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
   .ed-plan-steps[hidden] { display: none; }
   .ed-plan-step { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; color: var(--color-text); }
