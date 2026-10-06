@@ -163,10 +163,11 @@ export function clipLinesToBox(lines: readonly Polyline[], b: Bounds): Polyline[
 
 /**
  * The scene with everything outside `b` (plus a little) left out: polygons and
- * lines cut at the box, props, labels and badges outside it dropped. A cropped
- * picture then holds only what it shows, which keeps it small and keeps resvg
- * clear of geometry far outside the page (with a blur filter on the same sheet
- * that has made it panic, which kills the server).
+ * lines cut at the box (the reveal too), props, labels and badges outside it
+ * dropped. A cropped picture then holds only what it shows, which keeps it small
+ * and keeps resvg clear of clipped or see-through groups far outside the page:
+ * past twice the picture's size it panics, which kills the server (docs/API.md,
+ * "resvg's layer limit"). Every picture of a frame goes through here.
  */
 export function cropScene(scene: Scene, frame: Bounds): Scene {
   const b = { x0: frame.x0 - 0.5, y0: frame.y0 - 0.5, x1: frame.x1 + 0.5, y1: frame.y1 + 0.5 };
@@ -199,5 +200,5 @@ export function cropScene(scene: Scene, frame: Bounds): Scene {
   });
   const clips: Record<string, Polygon[]> = {};
   for (const [k, v] of Object.entries(scene.clips)) clips[k] = cutPolygons(v, b);
-  return { ...scene, layers, clips };
+  return { ...scene, layers, clips, ...(scene.reveal ? { reveal: { ...scene.reveal, polygons: cutPolygons(scene.reveal.polygons, b) } } : {}) };
 }

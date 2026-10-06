@@ -1,12 +1,15 @@
 // SVG -> PNG with resvg, using the bundled OFL fonts so exports look the same
-// everywhere (no reliance on whatever fonts a machine happens to have).
-// decodePng reads a PNG back into pixels, for tracing pictures on the command line.
+// everywhere (no reliance on whatever fonts a machine happens to have), kept
+// inside resvg's layer limit (see roomFor). decodePng reads a PNG back into
+// pixels, for tracing pictures on the command line; encodePng writes one.
 // resvg is a native addon: it's loaded on first use, and the release ships it
 // in release/node_modules (see scripts/build-release.sh).
 import { existsSync } from 'node:fs';
-import { inflateSync } from 'node:zlib';
+import { crc32, deflateSync, inflateSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { MAX_RENDER_PIXELS, MAX_RENDER_SIDE } from '@delve/core';
+import type { ResvgRenderOptions } from '@resvg/resvg-js';
 
 /** Served name -> [npm package path, file]: labels in IM FELL English (the italic is for pages), room numbers in Marcellus SC. */
 const FONTS = {
@@ -28,7 +31,16 @@ export const FONT_FILES: Record<string, string> = Object.fromEntries(
 export const LABEL_FONT_FILE = FONT_FILES['im-fell-english.ttf']!;
 
 type ResvgClass = typeof import('@resvg/resvg-js').Resvg;
+type Rendered = { asPng(): Buffer; readonly pixels: Buffer; readonly width: number; readonly height: number };
+type RenderAsync = (svg: string, opts: object) => Promise<Rendered>;
 let resvg: Promise<ResvgClass> | undefined;
+let renderAsync: Promise<RenderAsync | null> | undefined;
+
+const OPTIONS: ResvgRenderOptions = {
+  font: { fontFiles: Object.values(FONT_FILES), loadSystemFonts: false, defaultFontFamily: 'IM FELL English' },
+  shapeRendering: 2, // geometricPrecision: anti-aliased edges
+  textRendering: 1, // optimizeLegibility
+};
 
 // Uploaded map pictures (images.ts) are drawn as <image href="/api/v1/images/<src>">.
 // resvg can't fetch, and hands over only http(s) links for us to resolve (it
@@ -44,14 +56,41 @@ export function addImageSource(read: (src: string) => Buffer | null): () => void
   return () => imageSources.delete(read);
 }
 
+/** The picture as a PNG. Blocks while resvg draws: big pictures for many people go through svgToPngAsync. */
 export async function svgToPng(svg: string): Promise<Buffer> {
   resvg ??= import('@resvg/resvg-js').then((m) => m.Resvg);
   const Resvg = await resvg;
-  const r = new Resvg(svg.replace(IMAGE_HREF, (_m, src: string) => `href="${IMAGE_HOST}${src}"`), {
-    font: { fontFiles: Object.values(FONT_FILES), loadSystemFonts: false, defaultFontFamily: 'IM FELL English' },
-    shapeRendering: 2, // geometricPrecision: anti-aliased edges
-    textRendering: 1, // optimizeLegibility
-  });
+  const r = parse(Resvg, svg);
+  const room = roomFor(svg, r.getBBox());
+  if (!room) return r.render().asPng();
+  return cutOut(parse(Resvg, room.svg).render(), room);
+}
+
+/**
+ * The same, drawn in resvg's thread pool (renderAsync) so the server keeps
+ * answering meanwhile; pictures with uploaded pictures in them (only the
+ * blocking renderer can fetch those) and ones that need a bigger canvas
+ * (roomFor) go through svgToPng.
+ */
+export async function svgToPngAsync(svg: string): Promise<Buffer> {
+  if (svg.includes('href="/api/v1/images/')) return svgToPng(svg);
+  renderAsync ??= import('@resvg/resvg-js').then(
+    (m) => ((m as { renderAsync?: RenderAsync }).renderAsync ?? (m as { default?: { renderAsync?: RenderAsync } }).default?.renderAsync ?? null),
+    () => null,
+  );
+  const draw = await renderAsync;
+  resvg ??= import('@resvg/resvg-js').then((m) => m.Resvg);
+  // the check needs resvg's bounding box: a parse here (a 5 MB map takes ~50 ms), the drawing in the pool
+  if (!draw || roomFor(svg, new (await resvg)(svg, OPTIONS).getBBox())) return svgToPng(svg);
+  return (await draw(svg, OPTIONS)).asPng();
+}
+
+/** A picture too big to draw safely (roomFor), even on its own canvas. */
+export class PictureTooBigError extends Error {}
+
+/** The parsed SVG, with uploaded pictures handed to resvg. */
+function parse(Resvg: ResvgClass, svg: string): InstanceType<ResvgClass> {
+  const r = new Resvg(svg.replace(IMAGE_HREF, (_m, src: string) => `href="${IMAGE_HOST}${src}"`), OPTIONS);
   for (const href of new Set(r.imagesToResolve())) {
     const src = href.startsWith(IMAGE_HOST) ? href.slice(IMAGE_HOST.length) : '';
     let bytes: Buffer | null = null;
@@ -62,7 +101,112 @@ export async function svgToPng(svg: string): Promise<Buffer> {
       // resvg reads PNG, JPEG and GIF only: a WebP picture is left out of the PNG (browsers still show it)
     }
   }
-  return r.render().asPng();
+  return r;
+}
+
+// ---------- resvg's layer limit ----------
+//
+// resvg draws each group with an opacity, clip-path, mask or filter on a layer
+// of its own, and keeps every layer within twice the picture's width and height
+// of the picture's top-left corner ("4x the canvas"), measured in the layer
+// above it, which starts where that layer's own content starts. A layer wholly
+// outside makes resvg panic (geom.rs fit_to_rect, `unwrap` on `None`), and the
+// panic aborts the whole process: the server. One partly outside is cut
+// quietly. So a picture only a square or two thin with something reaching far
+// past it (stairs or a height tone a few squares off a thin crop, a big tree
+// beside a thin Delve Table page, a turned stain's filter region on a long thin
+// handout) kills the server. Such a picture is drawn on a bigger canvas that
+// holds all of it and cut back out: the same picture, none of the panic.
+
+/** Pixels of room left at the limit: resvg widens each layer by 2 px, and its box is approximate. */
+const SLACK = 4;
+
+/** A bigger canvas: the SVG drawn onto it, and where the picture (width × height px) sits on it. */
+interface Room {
+  svg: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The bigger canvas a picture needs, or null when it is fine as it is: when
+ * the picture and everything in it (resvg's bounding box, clipped parts and
+ * all) span at most twice its width and height, every layer stays inside the
+ * limit wherever it is nested. Filter regions are not in that box: keep them
+ * to the picture (docs/API.md, "resvg's layer limit"). Only SVGs whose root has a whole px
+ * width and height (and no preserveAspectRatio) are checked: all of ours.
+ */
+export function roomFor(svg: string, box: { x: number; y: number; width: number; height: number } | undefined): Room | null {
+  const root = /<svg\b[^>]*>/.exec(svg);
+  if (!root || !box) return null;
+  const tag = root[0];
+  const attr = (name: string) => new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1];
+  const W = Number(attr('width'));
+  const H = Number(attr('height'));
+  if (!Number.isInteger(W) || !Number.isInteger(H) || W <= 0 || H <= 0 || attr('preserveAspectRatio') !== undefined) return null;
+  const given = attr('viewBox');
+  const vb = given === undefined ? [0, 0, W, H] : given.trim().split(/[\s,]+/).map(Number);
+  if (vb.length !== 4 || !vb.every(Number.isFinite) || !(vb[2]! > 0 && vb[3]! > 0)) return null;
+  // the viewBox drawn into W × H px, centred: preserveAspectRatio's default (xMidYMid meet)
+  const s = Math.min(W / vb[2]!, H / vb[3]!);
+  const ox = (W - vb[2]! * s) / 2 - vb[0]! * s;
+  const oy = (H - vb[3]! * s) / 2 - vb[1]! * s;
+  const x0 = Math.min(0, ox + box.x * s);
+  const y0 = Math.min(0, oy + box.y * s);
+  const x1 = Math.max(W, ox + (box.x + box.width) * s);
+  const y1 = Math.max(H, oy + (box.y + box.height) * s);
+  if (x1 - x0 <= 2 * W - SLACK && y1 - y0 <= 2 * H - SLACK) return null;
+  // a canvas around all of it in whole px; the same scale, so the picture lands on whole px too
+  const gx = Math.floor(x0) - SLACK;
+  const gy = Math.floor(y0) - SLACK;
+  const gw = Math.ceil(x1) + SLACK - gx;
+  const gh = Math.ceil(y1) + SLACK - gy;
+  if (gw > MAX_RENDER_SIDE || gh > MAX_RENDER_SIDE || gw * gh > MAX_RENDER_PIXELS) {
+    throw new PictureTooBigError(`too big to draw: what this ${W} × ${H} px picture holds reaches ${gw} × ${gh} px; draw a bigger area or fewer px per square`);
+  }
+  const viewBox = `viewBox="${(gx - ox) / s} ${(gy - oy) / s} ${gw / s} ${gh / s}"`;
+  let grown = tag.replace(/\swidth="[^"]*"/, ` width="${gw}"`).replace(/\sheight="[^"]*"/, ` height="${gh}"`);
+  grown = given === undefined ? grown.replace(/^<svg\b/, `<svg ${viewBox}`) : grown.replace(/\sviewBox="[^"]*"/, ` ${viewBox}`);
+  return { svg: svg.slice(0, root.index) + grown + svg.slice(root.index + tag.length), x: -gx, y: -gy, width: W, height: H };
+}
+
+/** The picture cut back out of the bigger canvas, as a PNG (resvg's pixels are premultiplied, a PNG's are not). */
+function cutOut(img: Rendered, room: Room): Buffer {
+  const src = img.pixels;
+  const rgba = new Uint8Array(room.width * room.height * 4);
+  for (let y = 0; y < room.height; y++) {
+    for (let x = 0; x < room.width; x++) {
+      const i = ((y + room.y) * img.width + x + room.x) * 4;
+      const o = (y * room.width + x) * 4;
+      const a = src[i + 3]!;
+      if (!a) continue;
+      for (let c = 0; c < 3; c++) rgba[o + c] = a === 255 ? src[i + c]! : Math.min(255, Math.round((src[i + c]! * 255) / a));
+      rgba[o + 3] = a;
+    }
+  }
+  return encodePng(room.width, room.height, rgba);
+}
+
+/** An RGBA PNG (8 bit, not interlaced, no row filters), written with node:zlib only. */
+export function encodePng(width: number, height: number, rgba: Uint8Array): Buffer {
+  const stride = width * 4;
+  const rows = Buffer.alloc((stride + 1) * height);
+  for (let y = 0; y < height; y++) rows.set(rgba.subarray(y * stride, (y + 1) * stride), y * (stride + 1) + 1);
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), body.length + 4);
+    return out;
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr.set([8, 6, 0, 0, 0], 8); // 8 bit RGBA
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 }
 
 /** Width and height from a PNG's IHDR chunk. */

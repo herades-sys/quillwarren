@@ -4,6 +4,8 @@
 // legend (legend.ts) in a free corner.
 // Pure SVG, so resvg (PNG) and browsers draw it alike. No feDisplacementMap:
 // resvg panics (and takes the process down) when its regions round unevenly.
+// Every filter region is the sheet itself, on an element with no transform of
+// its own: a turned region can reach past resvg's limit on a thin sheet.
 // Units are points (1/72 inch), so the sheet prints at its true paper size.
 import type { DelveMap, Room } from '../schema.ts';
 import { computeFloor } from '../geometry/floor.ts';
@@ -351,7 +353,10 @@ export function handoutSvg(map: DelveMap, o: HandoutOptions = {}): Handout {
       const cy = M + rand() * (H - 2 * M);
       const rr = 22 + rand() * 26;
       const c = 2 * Math.PI * rr;
-      stains += `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(rr)}" fill="#8A5A2A" fill-opacity="0.05" stroke="#6A4219" stroke-opacity="0.2" stroke-width="${n(2 + rand() * 1.5)}" stroke-dasharray="${n(c * (0.6 + rand() * 0.3))} ${n(c)}" transform="rotate(${n(rand() * 360)} ${n(cx)} ${n(cy)})" filter="url(#hp-soft)"/>`;
+      // the blur goes on a plain group around the turned ring: on the ring itself the filter region (the
+      // sheet) turns with it, and on a long thin sheet it then reaches past resvg's limit of twice the
+      // picture's size, which makes resvg panic and kills the server (docs/API.md, "resvg's layer limit")
+      stains += `<g filter="url(#hp-soft)"><circle cx="${n(cx)}" cy="${n(cy)}" r="${n(rr)}" fill="#8A5A2A" fill-opacity="0.05" stroke="#6A4219" stroke-opacity="0.2" stroke-width="${n(2 + rand() * 1.5)}" stroke-dasharray="${n(c * (0.6 + rand() * 0.3))} ${n(c)}" transform="rotate(${n(rand() * 360)} ${n(cx)} ${n(cy)})"/></g>`;
     }
     const bx = M + rand() * (W - 2 * M);
     const by = M + rand() * (H - 2 * M);

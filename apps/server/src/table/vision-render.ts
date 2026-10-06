@@ -4,37 +4,16 @@
 // explored fog with everything else black (core RenderOptions.reveal: one SVG
 // clipPath around every layer, so the PNG holds no pixel of what wasn't seen;
 // the SVG itself never leaves the server). Rendered in resvg's thread pool when
-// the map has no uploaded pictures (those need the blocking path in png.ts), and
-// cached per map rev, door state and explored version, so a page is drawn once
-// per change however many players ask.
-import { buildScene, resolveStyle, sceneToSvg, type DelveMap, type Polygon } from '@delve/core';
+// it can (png.ts svgToPngAsync), and cached per map rev, door state and
+// explored version, so a page is drawn once per change however many players ask.
+import { buildScene, cropScene, resolveStyle, sceneToSvg, type DelveMap, type Polygon } from '@delve/core';
 import type { Explored, Page } from '@delve/table';
 import { assets } from '../assets.ts';
-import { FONT_FILES, svgToPng } from '../png.ts';
+import { svgToPngAsync } from '../png.ts';
 import { ROLL20_PPG } from '../render.ts';
 import { withTableDoors } from './vision.ts';
 
 const KEEP = 24;
-
-type RenderAsync = (svg: string, opts: object) => Promise<{ asPng(): Buffer }>;
-let renderAsync: Promise<RenderAsync | null> | undefined;
-
-async function pngOf(svg: string): Promise<Buffer> {
-  // uploaded pictures are fetched through resvg's image hooks, which only the blocking renderer has
-  if (svg.includes('href="/api/v1/images/')) return svgToPng(svg);
-  renderAsync ??= import('@resvg/resvg-js').then(
-    (m) => ((m as { renderAsync?: RenderAsync }).renderAsync ?? (m as { default?: { renderAsync?: RenderAsync } }).default?.renderAsync ?? null),
-    () => null,
-  );
-  const r = await renderAsync;
-  if (!r) return svgToPng(svg);
-  const out = await r(svg, {
-    font: { fontFiles: Object.values(FONT_FILES), loadSystemFonts: false, defaultFontFamily: 'IM FELL English' },
-    shapeRendering: 2,
-    textRendering: 1,
-  });
-  return out.asPng();
-}
 
 export interface VisionPictureInput {
   gameId: string;
@@ -53,7 +32,9 @@ export function visionSvg(i: VisionPictureInput): string {
   const frame = { x0, y0, x1: x0 + i.page.width, y1: y0 + i.page.height };
   const reveal: Polygon[] | undefined = i.view === 'players' && !i.explored.all ? i.explored.polys : undefined;
   const scene = buildScene(map, { view: i.view, grid: false, assets: assets.body, frame, ...(reveal ? { reveal } : {}) }, resolveStyle(map));
-  return sceneToSvg(scene, { ppg: i.page.cellPx || ROLL20_PPG });
+  // only what the page shows (core cropScene, as the render route does): on a page a square or two thin,
+  // height tones or stairs a few squares off it made resvg panic, which kills the server (docs/API.md, "resvg's layer limit")
+  return sceneToSvg(cropScene(scene, scene.bounds), { ppg: i.page.cellPx || ROLL20_PPG });
 }
 
 export class VisionPictures {
@@ -80,7 +61,7 @@ export class VisionPictures {
       this.cache.set(key, hit);
       return hit;
     }
-    const made = pngOf(visionSvg(i));
+    const made = svgToPngAsync(visionSvg(i));
     made.catch(() => this.cache.delete(key));
     this.cache.set(key, made);
     while (this.cache.size > KEEP) this.cache.delete(this.cache.keys().next().value!);

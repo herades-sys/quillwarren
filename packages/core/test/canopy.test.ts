@@ -23,7 +23,7 @@ import {
   type Layer,
 } from '../src/index.ts';
 import { clearing, grove } from './canopy-maps.ts';
-import { hardTerrain, legendKeep } from './legend-maps.ts';
+import { hardTerrain, legendKeep, oldStains } from './legend-maps.ts';
 import { testMap } from './fixtures.ts';
 
 const ASSET_DIR = resolve(import.meta.dirname, '../../../delve-props-design-system/assets');
@@ -39,7 +39,7 @@ function fingerprint(map: DelveMap): string {
     for (const view of ['gm', 'players'] as const) h.update(renderSvg(styled, { view, assets: body }));
   }
   h.update(renderSvg({ ...map, fog: { on: true, revealed: [] } }, { view: 'gm', fog: 'dim', assets: body }));
-  h.update(handoutSvg(map, { assets: body }).svg);
+  h.update(oldStains(handoutSvg(map, { assets: body }).svg));
   return h.digest('hex').slice(0, 16);
 }
 

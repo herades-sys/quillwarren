@@ -77,4 +77,21 @@ describe('parchment handout', () => {
   it('draws the same sheet every time', () => {
     expect(handoutSvg(testMap()).svg).toBe(handoutSvg(testMap()).svg);
   });
+
+  it('keeps every filter region to the sheet, on elements with no transform of their own (resvg)', () => {
+    // a turned stain took its filter region (the sheet) round with it, and on a long thin sheet that
+    // reached past resvg's layer limit: resvg panicked, which killed the server (docs/API.md, "resvg's layer limit")
+    const sheets = [
+      handoutSvg(testMap()),
+      handoutSvg(testMap(), { paper: 'a3', orientation: 'landscape' }),
+      handoutSvg({ ...testMap(), seed: 248053257 }, { paper: 'fit', orientation: 'landscape', crop: { x0: 80, y0: -1, x1: 117, y1: 1 } }),
+      handoutSvg(testMap(), { paper: 'fit', crop: { x0: 3, y0: 0, x1: 4, y1: 40 } }),
+    ];
+    for (const h of sheets) {
+      const filtered = h.svg.match(/<[a-z]+ [^>]*filter="url\(#[^)]+\)"[^>]*>/g) ?? [];
+      expect(filtered.length).toBeGreaterThan(5);
+      for (const tag of filtered) expect(tag, tag).not.toMatch(/ transform=/);
+      for (const f of h.svg.match(/<filter [^>]*>/g)!) expect(f).toContain(`filterUnits="userSpaceOnUse" x="0" y="0" width="${Math.round(h.width * 100) / 100}" height="${Math.round(h.height * 100) / 100}"`);
+    }
+  });
 });

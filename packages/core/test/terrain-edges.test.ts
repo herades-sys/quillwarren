@@ -37,7 +37,7 @@ import {
 import { toPath } from '../src/geometry/shapes.ts';
 import { clearTerrainEdgeCaches, edgeRecipe, MATERIAL_STACK, pairEdge, terrainEdges, terrainMaterial } from '../src/render/terrain-edges.ts';
 import { testMap } from './fixtures.ts';
-import { legendKeep } from './legend-maps.ts';
+import { legendKeep, oldStains } from './legend-maps.ts';
 
 const ASSET_DIR = resolve(import.meta.dirname, '../../../delve-props-design-system/assets');
 const body = (id: string) => (assetInfo(id) ? parseAssetSvg(readFileSync(resolve(ASSET_DIR, assetInfo(id)!.file), 'utf8'), assetInfo(id)).body : undefined);
@@ -361,7 +361,7 @@ describe('maps without terrain', () => {
       for (const preset of Object.keys(PRESETS).sort()) for (const view of ['gm', 'players'] as const) h.update(renderSvg({ ...map, style: { preset } }, { view, assets: body }));
       h.update(renderSvg({ ...map, fog: { on: true, revealed: [] } }, { view: 'gm', fog: 'dim', assets: body }));
       h.update(renderSvg({ ...map, fog: { on: true, revealed: ['r1'] } }, { view: 'players', fog: 'hide', assets: body }));
-      h.update(handoutSvg(map, { assets: body }).svg);
+      h.update(oldStains(handoutSvg(map, { assets: body }).svg));
       return h.digest('hex').slice(0, 16);
     };
     const keep = legendKeep();

@@ -27,7 +27,7 @@ import {
   type MapObject,
 } from '../src/index.ts';
 import { testMap } from './fixtures.ts';
-import { hardTerrain, legendKeep } from './legend-maps.ts';
+import { hardTerrain, legendKeep, oldStains } from './legend-maps.ts';
 
 const ASSET_DIR = resolve(import.meta.dirname, '../../../delve-props-design-system/assets');
 const body = (id: string) => (assetInfo(id) ? parseAssetSvg(readFileSync(resolve(ASSET_DIR, assetInfo(id)!.file), 'utf8'), assetInfo(id)).body : undefined);
@@ -226,10 +226,10 @@ describe('handout legend: on and off', () => {
       ['bb6e5f925414c92e', fogged, { revealedOnly: true }],
       ['1580c027047fefd3', keep, { crop: { x0: 9, y0: 0, x1: 17, y1: 6 } }],
     ];
-    for (const [want, map, o] of old) expect(hash(handoutSvg(map, { ...o, assets: body, legend: false }).svg)).toBe(want);
+    for (const [want, map, o] of old) expect(hash(oldStains(handoutSvg(map, { ...o, assets: body, legend: false }).svg))).toBe(want);
     expect(hash(handoutSvg(keep, { title: '', compass: false, scaleBar: false, frame: false, stains: false, legend: false }).svg)).toBe('04242008df587712');
-    expect(hash(handoutSvg(testMap()).svg)).toBe('db5dae6a7cb69c7e');
-    expect(hash(handoutSvg(testMap(), { paper: 'fit' }).svg)).toBe('f94850a32a8209dc');
+    expect(hash(oldStains(handoutSvg(testMap()).svg))).toBe('db5dae6a7cb69c7e');
+    expect(hash(oldStains(handoutSvg(testMap(), { paper: 'fit' }).svg))).toBe('f94850a32a8209dc');
   });
 
   it('draws the same legend every time', () => {

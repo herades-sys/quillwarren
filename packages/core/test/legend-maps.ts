@@ -53,3 +53,10 @@ export function legendKeep(extra: Partial<DelveMap> = {}): DelveMap {
 export function hardTerrain(map: DelveMap): DelveMap {
   return { ...map, objects: map.objects.map((o) => (o.type === 'terrain' ? { ...o, edge: 'hard' as const } : o)) };
 }
+
+/**
+ * A handout sheet with its stains written as they were before the blur moved
+ * onto a plain group around each ring (docs/API.md, "resvg's layer limit"). Hashes taken before then hold for it, so they still show that
+ * nothing else on the sheet moved.
+ */
+export const oldStains = (svg: string): string => svg.replace(/<g filter="url\(#hp-soft\)">(<circle [^>]*?)\/><\/g>/g, '$1 filter="url(#hp-soft)"/>');
