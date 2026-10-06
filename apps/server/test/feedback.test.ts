@@ -158,7 +158,9 @@ describe('sending', () => {
     const page = await get('/feedback?from=%2Fmaps%2Fmap_x', gm);
     expect(page.statusCode).toBe(200);
     expect(page.headers['cache-control']).toBe('no-store');
-    expect(page.body).toContain('<form class="panel fb-form" method="post" action="/feedback">');
+    expect(page.body).toContain('<form class="panel req-form" method="post" action="/feedback">');
+    // no fb- class names: ad blockers (Opera GX) hide .fb-page and friends as Facebook widgets
+    expect(page.body).not.toMatch(/class="[^"]*\bfb-/);
     expect(page.body).toContain('name="about" value="/maps/map_x"');
     expect(page.body).toContain('name="name" value="Gil"');
     expect(page.body).toContain('Sent as <strong>Gil · GM</strong>');
