@@ -289,7 +289,8 @@ export async function detectApi(baseUrl: string): Promise<{ api: 'ollama' | 'ope
  * MCP's JSON Schema (draft-07 from zod) cut down to what local tool parsers
  * understand: type, description, enum, properties, required, one items schema.
  * Tuples ([x, y, w, h]) become arrays of one type with the count in the
- * description; unions take their first non-null branch; limits are dropped.
+ * description; unions take their first non-null branch, except number-or-text
+ * (lengths with units, "5 m"), which keeps no type; limits are dropped.
  */
 export function simplifySchema(s: unknown): JsonSchema {
   if (!s || typeof s !== 'object') return {};
@@ -297,6 +298,9 @@ export function simplifySchema(s: unknown): JsonSchema {
   for (const k of ['anyOf', 'oneOf'] as const) {
     const branches = x[k];
     if (Array.isArray(branches) && branches.length) {
+      // a number or text with a unit ("5 m"): no type at all, so the model may send either and neither counts as repaired
+      const kinds = new Set(branches.map((b) => (b as Json)?.type).filter((t) => t !== 'null'));
+      if (kinds.size === 2 && kinds.has('string') && (kinds.has('number') || kinds.has('integer'))) return typeof x.description === 'string' ? { description: x.description } : {};
       const branch = (branches.find((b) => (b as Json)?.type !== 'null') ?? branches[0]) as Json;
       return simplifySchema({ ...branch, ...(typeof x.description === 'string' ? { description: x.description } : {}) });
     }
@@ -345,6 +349,17 @@ export interface ToolPick {
   params?: string[];
   /** Replaces parameter descriptions. */
   paramDescriptions?: Record<string, string>;
+  /** Parameters whose nested fields lose their descriptions (the parameter's own says what they are): keeps object-valued ones small. */
+  bare?: string[];
+}
+
+/** A schema without the descriptions below its top. */
+function stripNested(s: JsonSchema, top = true): JsonSchema {
+  const out: JsonSchema = { ...s };
+  if (!top) delete out.description;
+  if (s.properties) out.properties = Object.fromEntries(Object.entries(s.properties).map(([k, v]) => [k, stripNested(v, false)]));
+  if (s.items) out.items = stripNested(s.items, false);
+  return out;
 }
 
 /**
@@ -368,7 +383,8 @@ export function toToolDefs(tools: readonly McpToolInfo[], opts: { only?: Record<
     const properties: Record<string, JsonSchema> = {};
     for (const k of keep) {
       const d = pick.paramDescriptions?.[k];
-      properties[k] = d ? { ...props[k], description: d } : props[k]!;
+      const p = pick.bare?.includes(k) ? stripNested(props[k]!) : props[k]!;
+      properties[k] = d ? { ...p, description: d } : p;
     }
     const required = (schema.required ?? []).filter((k) => k in properties);
     out.push({

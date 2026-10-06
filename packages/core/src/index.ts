@@ -14,7 +14,7 @@ export {
   type DsExportOptions,
   type DsImportResult,
 } from './interop/dungeonscrawl.ts';
-export { METRES_PER_FOOT, SQUARE_SIZES, metresPerSquare, parseSquareUnit, squareUnit, type SquareUnit } from './units.ts';
+export { METRES_PER_FOOT, SQUARE_SIZES, metresPerSquare, parseSquareUnit, squareUnit, parseLength, lengthInSquares, lengthInUnits, halfSquares, type SquareUnit, type Length } from './units.ts';
 export { fromWatabou, CityImportError, type CityImportOptions, type CityImportResult } from './interop/watabou.ts';
 export { downscale, dropGridLines, outlines, simplify, signedArea, distanceTransform, type RGB, type Mask } from './trace/raster.ts';
 export { mainColours, classify, colourStats, toLab, deltaE, MERGE_DELTA_E, type Lab, type ColourStats, type ColourSpace, type ColourOptions } from './trace/colour.ts';
@@ -152,6 +152,7 @@ export { tightBounds, selectionBounds, unionOf, wholeSquares, cropFrame, frameQu
 export { roughFloor, drawnFloor, hasRoughness, amplitudeOf, ROUGHNESS_AMPLITUDE } from './geometry/rough.ts';
 export { scatterAlong, type ScatterOptions, type Placement } from './scatter.ts';
 export { isObstacle, propsOverlap, blockingProps, freeSpot, keepClear, overlapReport, OVERLAP_TOLERANCE, type Placed } from './placement.ts';
+export * from './places/index.ts';
 export {
   collectSegment,
   placeSegmentOps,

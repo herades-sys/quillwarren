@@ -3,8 +3,9 @@
 //   tool with its full description, the context block, and Claude Code's task
 //   list (TaskCreate / TaskUpdate / TaskList), which the prompt asks for and the
 //   harness answers itself.
-// - "lean": for small models: 16 tools with short descriptions and only their
-//   everyday parameters, the map id filled in by the harness, and the short
+// - "lean": for small models: 17 tools with short descriptions and only their
+//   everyday parameters (the meaning-level ones first: beside, in + place,
+//   region, room + wall), the map id filled in by the harness, and the short
 //   prompt in lean-prompt.md. Tune both here; `npm run llm-bench` measures it.
 import { readFileSync } from 'node:fs';
 import { ASSETS, CATEGORIES, DOOR_STYLES } from '@delve/core';
@@ -14,10 +15,18 @@ import { toToolDefs, type Json, type LocalTool, type McpToolInfo, type ToolDef, 
 export const TOOL_SETS = ['lean', 'full'] as const;
 export type ToolSet = (typeof TOOL_SETS)[number];
 
+/** What the lean tools say about a region (the nested fields keep their own short descriptions). */
+const LEAN_REGION =
+  'Where, by meaning: {"edge": "north", "depth": 3} a band along that edge of the map; {"corner": "sw", "size": 8}; {"in": "r5"} all of a room; {"in": "r2", "edge": "north"} part of one; {"around": "r3", "margin": 2}; {"between": ["east", "h1"], "width": 2} a strip from one thing to another';
+
 /** The lean tools, in the order the model sees them, with what it is told about each. */
 export const LEAN_TOOLS: Record<string, ToolPick> = {
   describe_map: {
-    description: 'The map as text: every room with id, number, name, size and position, the corridors and the doors on them (with styles), and what else is on the map. Call it to check your work.',
+    description: 'The map as text: every room with id, number, name, size and position, the corridors and the doors on them (with styles), and what else is on the map.',
+    params: [],
+  },
+  check_map: {
+    description: 'List layout problems: rooms overlapping or touching, corridors through rooms, doors not on a wall, props outside their room, on each other or in a doorway. Call it once after building and fix what it lists.',
     params: [],
   },
   list_assets: {
@@ -26,39 +35,52 @@ export const LEAN_TOOLS: Record<string, ToolPick> = {
     paramDescriptions: { search: 'A word to look for, e.g. "table"', category: 'Optional: a category id, e.g. furniture, trees, terrain' },
   },
   add_room: {
-    description: 'Add a room: rect [x, y, width, height] in squares, (x, y) the top-left corner. It gets the next room number.',
-    params: ['rect', 'name', 'notes'],
+    description:
+      'Add a room; it gets the next room number. Easiest: beside an existing room, {"beside": "r2", "side": "east", "size": [6, 4], "connect": true, "door": "normal"}: it finds free space on that side and joins the two with a corridor and a door. Or rect [x, y, width, height].',
+    params: ['beside', 'side', 'size', 'gap', 'connect', 'door', 'rect', 'name', 'notes'],
+    paramDescriptions: { side: 'north, south, east or west of beside (north is up)', size: '[width, height] in squares, or with units ["30 ft", "20 ft"]', gap: 'Squares between the two rooms (default 2)', door: 'With connect: the style of the door into the new room' },
+    bare: ['size'],
   },
   connect: {
-    description: 'Join two rooms with a corridor that routes itself. doors "both" puts a door at each end ("from" or "to": one end); door_style sets their style.',
+    description: 'Join two existing rooms with a corridor that routes itself round other rooms. doors "both" puts a door at each end ("from" or "to": one end); door_style sets their style.',
     params: ['from', 'to', 'doors', 'door_style', 'width'],
     paramDescriptions: { from: 'Room id, e.g. "r1"', to: 'Room id, e.g. "r7"', width: 'Corridor width in squares: 2 (default) or 1' },
   },
   add_door: {
-    description: 'Put a door on a wall line: at [x, y] is where the door starts, along "x" on a north or south wall, "y" on a west or east wall; width 1 or 2.',
-    params: ['at', 'along', 'width', 'style'],
+    description: 'Add a door. Easiest: {"room": "r3", "wall": "east"} puts it in the middle of that wall (or the free part nearest the middle). Or at [x, y] (its start) with along "x" or "y". width 1 (default) or 2.',
+    params: ['room', 'wall', 'style', 'width', 'at', 'along'],
+    paramDescriptions: { width: '1 (default) or 2 squares' },
   },
   add_stairs: {
     description: 'Stairs: rect [x, y, w, h] and direction, the way up (n, e, s or w).',
     params: ['rect', 'direction'],
   },
   add_prop: {
-    description: 'Place one prop by asset id (see list_assets). at [x, y] is the centre of the prop; rotation 0 faces south, 90 west, 180 north, 270 east.',
-    params: ['asset', 'at', 'rotation', 'notes'],
+    description:
+      'Place props by meaning: {"asset": "bed-single", "in": "r4", "place": "north wall"} stands against the inside of that wall, facing into the room; also "center", "ne corner" (nw, se, sw), "near i3", and "around i1" with count (chairs round a table). It finds a free spot inside the room, off other props and out of doorways. Or at [x, y], the centre of the prop.',
+    params: ['asset', 'in', 'place', 'count', 'at', 'rotation', 'notes'],
+    paramDescriptions: { rotation: 'Leave it out with place. With at: 0 faces south, 90 west, 180 north, 270 east' },
   },
   add_props_along: {
-    description: 'The prop brush: copies of one prop along a path of points, one every spacing squares (forests, rows of pillars, rocks along a wall). A colour tree such as c-oak-a mixes the variants of its group.',
-    params: ['asset', 'path', 'spacing', 'placement', 'spread'],
+    description:
+      'The prop brush. Fill a region with copies: {"asset": "c-pine-a", "region": {"edge": "west", "depth": 4}} plants a mixed forest along the west edge (it keeps off rooms). Or copies along a path of points, one every spacing squares. A colour tree such as c-oak-a mixes the variants of its group.',
+    params: ['asset', 'region', 'path', 'spacing', 'placement', 'spread'],
+    paramDescriptions: { region: LEAN_REGION, spacing: 'Squares between copies (default: the size of the prop)', spread: 'Irregular: how far copies stray, in squares' },
+    bare: ['region'],
   },
   add_terrain: {
-    description: 'Fill an area with terrain (water, grass, dirt, lava…): asset plus rect [x, y, w, h] or poly [[x, y], ...].',
-    params: ['asset', 'rect', 'poly'],
+    description: 'Fill an area with terrain (water, grass, dirt, lava…): asset plus a region, e.g. {"in": "r5"} all of room 5, or rect [x, y, w, h] or poly [[x, y], ...].',
+    params: ['asset', 'region', 'rect', 'poly'],
+    paramDescriptions: { region: LEAN_REGION },
+    bare: ['region'],
   },
   add_height: {
-    description: 'Raise or sink the ground in an area: height in the map\'s units (+5 a hill, +10 a ledge, -10 a pit). edge "slope" for a walkable hill, "cliff" for a sheer drop. Only where there is floor or terrain.',
-    params: ['rect', 'poly', 'circle', 'height', 'edge', 'name'],
+    description: 'Raise or sink the ground: height with its unit ("5 m", "10 ft"), edge "slope" for a walkable hill or "cliff" for a sheer drop, and where: a region or rect / poly / circle. Only where there is floor or terrain.',
+    params: ['region', 'rect', 'poly', 'circle', 'height', 'edge', 'name'],
+    paramDescriptions: { region: LEAN_REGION, height: 'With its unit, as the user said it: "5 m", "10 ft" (a plain number is in the map\'s units). +a hill or ledge, -a pit' },
+    bare: ['region'],
   },
-  add_label: { description: 'Text on the map, centred on at [x, y].', params: ['text', 'at', 'size'] },
+  add_label: { description: 'Text on the map: at [x, y], or the middle of a region such as {"in": "r3"}.', params: ['text', 'at', 'region', 'size'], paramDescriptions: { region: LEAN_REGION, size: 'Text height in squares' }, bare: ['region'] },
   update: {
     description: 'Change fields of one object: id plus set, e.g. {"id": "r3", "set": {"name": "Throne room"}} or {"id": "d4", "set": {"style": "locked"}}.',
     params: ['id', 'set', 'unset'],

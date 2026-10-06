@@ -14,6 +14,7 @@ import { areaTitle, hasNotes, isNoteArea } from './notes.ts';
 import { terrainEdgeText } from './render/terrain-edges.ts';
 import type { Corridor, Cutout, DelveMap, Door, MapImage, Marker, Opening, Point, Prop, Room, Terrain } from './schema.ts';
 import { parseSquareUnit } from './units.ts';
+import { compassWord, mapBox } from './places/common.ts';
 
 const fmt = (n: number): string => String(Math.round(n * 100) / 100);
 
@@ -26,6 +27,12 @@ const roomName = (r: Room): string => [r.label, r.name ?? '(unnamed)'].filter(Bo
 export interface DescribeOptions {
   /** Cut each GM note to this many characters (default: whole notes). */
   notesMax?: number;
+  /**
+   * Say which way is north and where each room lies in plain words ("north-west
+   * part of the map", its x and y span): MCP describe_map and the chat context
+   * turn it on. Off by default, so the summary of an old map reads as before.
+   */
+  where?: boolean;
 }
 
 export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
@@ -52,6 +59,9 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
   if (map.category) lines.push(`Library category: ${map.category}.`);
 
   if (map.roughness) lines.push(`Walls: roughness ${map.roughness} of 10${map.roughness >= 8 ? ' (cave-like)' : map.roughness === 1 ? ' (smooth)' : ''}.`);
+  // which way is which, said once: small models (and people) mix up north and south
+  const box = opts.where ? mapBox(map) : null;
+  if (opts.where) lines.push(`Orientation: north is up (small y), south is down (big y), west is left (small x), east is right (big x).${box ? ` The map covers x ${fmt(box.x0)}–${fmt(box.x1)}, y ${fmt(box.y0)}–${fmt(box.y1)}.` : ''}`);
   lines.push('Rooms:');
   for (const r of rooms) {
     const b = shapeBounds(r.shape);
@@ -63,7 +73,9 @@ export function describeMap(map: DelveMap, opts: DescribeOptions = {}): string {
         : 'circle' in r.shape
           ? `circle, radius ${fmt(r.shape.circle[2])} sq`
           : `polygon, ${fmt(shapeArea(r.shape))} sq²`;
-    lines.push(`  ${roomName(r)} [${r.id}]: ${size} at ${fmt(b.x0)},${fmt(b.y0)}${r.roughness ? `, walls roughness ${r.roughness}` : ''}`);
+    const where = box ? compassWord([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2], box) : 'middle';
+    const words = opts.where ? ` (x ${fmt(b.x0)}–${fmt(b.x1)}, y ${fmt(b.y0)}–${fmt(b.y1)}; ${where === 'middle' ? 'middle of the map' : `${where} part of the map`})` : '';
+    lines.push(`  ${roomName(r)} [${r.id}]: ${size} at ${fmt(b.x0)},${fmt(b.y0)}${words}${r.roughness ? `, walls roughness ${r.roughness}` : ''}`);
   }
 
   // Which room or corridor areas a door's midpoint touches.

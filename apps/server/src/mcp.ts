@@ -56,6 +56,7 @@ import {
   type Shape,
 } from '@delve/core';
 import { INSCRIPTION_INKS, INSCRIPTION_MAX, INSCRIPTION_SIZE } from '@delve/core';
+import { besideRect, checkObjects, corridorThrough, doorAtEnd, doorOnRoomWall, fillRegion, halfSquares, placeProps, regionCentre, routeAround, sideOf, type ConnectOptions, type ConnectPlan } from '@delve/core';
 import { FADE_WIDTH_MAX, FADE_WIDTH_MIN, STACK_MAX, TERRAIN_EDGES, terrainEdgeText } from '@delve/core';
 import { backgroundHints, mapBackground, parseBackground, styleBackground, withBackground } from '@delve/core';
 import { errorResponse, newMap, tokenGuard } from './api.ts';
@@ -71,6 +72,7 @@ import { render } from './render.ts';
 import { registerSegmentTools } from './segments.ts';
 import { registerCorridorTools } from './corridor-tools.ts';
 import { registerHeightTools } from './height-tools.ts';
+import { lengthArg, notesText, placeArg, regionArg, registerCheckTools, regionOf, shapeOrRegion, squaresArg } from './place-tools.ts';
 import type { MapService } from './service.ts';
 import { labelStairs, labelStairsSummary } from './stair-labels.ts';
 
@@ -79,7 +81,8 @@ const BY = 'claude';
 const INSTRUCTIONS = `Delve is a dungeon map editor for tabletop games. You build maps with these tools while the user watches them change live in their browser.
 Coordinates are grid squares (1 square = 5 ft unless the map says otherwise): x grows to the right, y grows downward, the origin is top-left, and positions use whole or half squares.
 Typical flow: create_map, then add_room (rect [x, y, width, height]) for each room, connect rooms (auto-routed corridors, optional doors at the ends), add_cutout for pillars or pits, add_door / add_stairs / add_label for details.
-Each tool call is one undoable step. Check your work with render (returns a picture) or describe_map (text). Use focus to point the user's viewer at what you just did.
+Place things by meaning and let the tools do the geometry: add_room beside "r2" side "north" (connect true, door "normal"); add_door room "r3" wall "east"; add_prop in "r2" place "north wall" / "ne corner" / "center" / "around i1" (count 4); add_terrain, add_height, add_props_along and add_label take a region ({"edge": "north"}, {"corner": "sw", "size": 8}, {"in": "r5"}, {"around": "r3"}, {"between": ["east", "h1"]}); lengths and heights take units ("5 m", "10 ft"). North is always up (small y).
+Each tool call is one undoable step. Building tools end their reply with a short check (inside the room? overlaps? on a wall?); check_map lists every layout problem. Check your work with render (returns a picture) or describe_map (text). Use focus to point the user's viewer at what you just did.
 Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.
 Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
 Colour props (ids c-…: trees, plants, rocks, rugs, trapdoors, hidden traps, ruin walls…) are a second library in full colour, placed the same way; list_assets palette "colour" lists them by category. Floor ones (rugs, trapdoors) lie under the other props, and add_props_along mixes a group's variants (a forest of different oaks).
@@ -164,6 +167,11 @@ function addedProps(ops: readonly Op[]): string[] {
   return ops.flatMap((o) => (o.op === 'batch' ? addedProps(o.ops) : o.op === 'add' && o.object.type === 'prop' ? [o.object.id] : []));
 }
 
+/** The ids of the objects of these types a list of ops adds (batches included). */
+function addedIds(ops: readonly Op[], types: readonly MapObject['type'][]): string[] {
+  return ops.flatMap((o) => (o.op === 'batch' ? addedIds(o.ops, types) : o.op === 'add' && types.includes(o.object.type) ? [o.object.id] : []));
+}
+
 /** At most this many lines from list_assets; narrower filters list the rest. */
 const LIST_MAX = 200;
 
@@ -171,6 +179,34 @@ function where(shape: Shape): string {
   const b = shapeBounds(shape);
   return `${b.x1 - b.x0}×${b.y1 - b.y0} squares at ${b.x0},${b.y0}`;
 }
+
+/**
+ * connect's ops, with a route that keeps out of the rooms it doesn't join: when
+ * the usual route (straight, L or Z between the two rooms) runs through another
+ * room, the corridor gets a path round them (core routeAround) and its doors
+ * move to that path's mouths. `note` says so, or warns when there is no way round.
+ */
+export function connectAvoiding(map: Parameters<typeof connectOps>[0], from: string, to: string, opts: ConnectOptions): ConnectPlan & { note: string } {
+  const plan = connectOps(map, from, to, opts);
+  const width = plan.corridor.width;
+  const hits = corridorThrough(map, plan.path, width, [from, to]);
+  if (!hits.length) return { ...plan, note: '' };
+  const alt = routeAround(map, from, to, width);
+  if (!alt) return { ...plan, note: ` Warning: it runs through ${hits.join(', ')} and there is no clear way round; move a room, or give the corridor a path by hand (apply_ops).` };
+  const corridor = { ...plan.corridor, path: alt };
+  const ops: Op[] = [{ op: 'add', object: corridor }];
+  const ends = opts.doors === 'both' ? (['start', 'end'] as const) : opts.doors === 'from' ? (['start'] as const) : opts.doors === 'to' ? (['end'] as const) : [];
+  ends.forEach((end, i) => ops.push({ op: 'add', object: { id: plan.doorIds[i]!, type: 'door', ...doorAtEnd(alt, end, width), width, style: opts.doorStyle ?? 'normal' } }));
+  return {
+    ops,
+    corridor,
+    path: alt,
+    doorIds: plan.doorIds,
+    note: ` The direct route ran through ${hits.join(', ')}, so it goes round them instead; it keeps this path (it won't follow if the rooms move; reroute makes it follow them again).`,
+  };
+}
+
+const pathLen = (path: readonly Point[]) => Math.round(path.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0) * 100) / 100;
 
 export function buildMcpServer(service: MapService, base: string, version: string, images?: ImageLibrary, props?: PropLibrary): McpServer {
   const server = new McpServer({ name: 'delve', title: 'Delve map editor', version }, { instructions: INSTRUCTIONS });
@@ -181,6 +217,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     return text(`${summary} Map is at rev ${c.rev}.`);
   };
   const addObject = (id: string, object: MapObject, summary: string) => change(id, [{ op: 'add', object }], summary);
+  /** A change whose reply ends with a short check of the objects it made (core checkObjects). */
+  const changeChecked = (id: string, ops: Op[], summary: string, ids: readonly string[]) => {
+    const c = service.apply(id, ops, { by: BY });
+    const check = ids.length ? checkObjects(c.map, ids) : '';
+    return text(`${summary} Map is at rev ${c.rev}.${check ? `\n${check}` : ''}`);
+  };
+  const addChecked = (id: string, object: MapObject, summary: string) => changeChecked(id, [{ op: 'add', object }], summary, [object.id]);
 
   server.registerTool(
     'list_maps',
@@ -226,13 +269,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'describe_map',
     {
       title: 'Describe map',
-      description: 'Plain-text summary: rooms with sizes, corridors, doors, cutouts. Cheaper than get_map.',
+      description: 'Plain-text summary: which way is north, rooms with sizes and where each lies ("north-west part of the map"), corridors, doors, cutouts. Cheaper than get_map.',
       inputSchema: { map: mapId },
       annotations: { readOnlyHint: true },
     },
     (a) => guarded(() => {
       const { rev, map } = store.get(a.map);
-      return text(`${describeMap(map)}\n(rev ${rev})`);
+      return text(`${describeMap(map, { where: true })}\n(rev ${rev})`);
     }),
   );
 
@@ -240,11 +283,20 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'add_room',
     {
       title: 'Add room',
-      description: 'Add a room. Give exactly one shape: rect, poly, circle, or preset (an oval, triangle, hexagon or octagon filling a box). The label (room number) defaults to the next free number; pass "" for none.',
+      description:
+        'Add a room. Give exactly one shape: rect, poly, circle, or preset (an oval, triangle, hexagon or octagon filling a box). The label (room number) defaults to the next free number; pass "" for none. ' +
+        'Or place it by meaning: beside (a room id) with side (north, south, east or west; north is up) and size [width, height]: it goes on that side, gap squares away (default 2), lined up with that room and clear of every other room and corridor; ' +
+        'connect true joins the two with a corridor, and door (a door style) puts a door where it enters the new room. The reply ends with a check (overlaps, rooms touching).',
       inputSchema: {
         map: mapId,
         ...shapeArgs,
         preset: presetArg,
+        beside: z.string().max(64).optional().describe('Instead of a shape: put the new room beside this room, e.g. "r2" (with side and size)'),
+        side: z.string().max(20).optional().describe('With beside: north, south, east or west of it (north is up, small y)'),
+        size: z.tuple([lengthArg('Width'), lengthArg('Height')]).optional().describe('With beside: [width, height] of the new room in squares (default [6, 6]); units like "30 ft" work too'),
+        gap: lengthArg('With beside: squares between the two rooms (default 2)').optional(),
+        connect: z.boolean().optional().describe('With beside: join the new room to that room with a corridor (2 wide)'),
+        door: z.enum(DOOR_STYLES).optional().describe('With connect: a door of this style where the corridor enters the new room'),
         name: z.string().max(200).optional().describe('e.g. "Guard room"'),
         label: z.string().max(20).optional(),
         notes: z.string().max(10_000).optional().describe('GM notes (never drawn)'),
@@ -255,7 +307,23 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const map = store.get(a.map).map;
-        const shape = shapeOrPreset(a);
+        const notes: string[] = [];
+        let placedText = '';
+        let shape: Shape;
+        if (a.beside !== undefined) {
+          if (a.rect || a.poly || a.circle || a.preset) throw new ValidationError(['give a shape (rect, poly, circle, preset) or beside, not both']);
+          const side = sideOf(a.side ?? '');
+          if (!side) throw new ValidationError([`side: north, south, east or west of ${a.beside}, got ${JSON.stringify(a.side ?? null)}`]);
+          const w = a.size ? halfSquares(squaresArg(map, a.size[0], 'size', notes, { min: 0.5 })!) : 6;
+          const h = a.size ? halfSquares(squaresArg(map, a.size[1], 'size', notes, { min: 0.5 })!) : 6;
+          const gap = a.gap !== undefined ? Math.max(0, Math.round(squaresArg(map, a.gap, 'gap', notes)! * 2) / 2) : 2;
+          const spot = besideRect(map, { beside: a.beside, side, w, h, gap, corridorWidth: a.connect ? 2 : 0 });
+          shape = { rect: spot.rect };
+          placedText = ` It lies ${spot.text}.`;
+        } else {
+          if (a.connect || a.door) throw new ValidationError(['connect and door go with beside; to join two rooms that already exist use connect']);
+          shape = shapeOrPreset(a);
+        }
         const label = a.label ?? nextLabel(map);
         const room: Room = {
           id: a.id ?? nextId(map, 'r'),
@@ -266,7 +334,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           ...(a.notes ? { notes: a.notes } : {}),
           ...(a.roughness ? { roughness: a.roughness } : {}),
         };
-        return addObject(a.map, room, `Added room ${room.id}${a.name ? ` "${a.name}"` : ''}${label ? ` (label ${label})` : ''}: ${where(shape)}.`);
+        const head = `Added room ${room.id}${a.name ? ` "${a.name}"` : ''}${label ? ` (label ${label})` : ''}: ${where(shape)}.${placedText}`;
+        if (a.beside === undefined || !a.connect) return changeChecked(a.map, [{ op: 'add', object: room }], `${head}${notesText(notes)}`, [room.id]);
+        // joined to the room it stands beside, with a door into the new one if asked
+        const withRoom = { ...map, objects: [...map.objects, room] };
+        const plan = connectAvoiding(withRoom, a.beside, room.id, { doors: a.door ? 'to' : 'none', doorStyle: a.door });
+        const joined = ` Joined to ${a.beside} by corridor ${plan.corridor.id} (${plan.corridor.width} wide, ${pathLen(plan.path)} squares long)${plan.doorIds.length ? ` with a ${a.door} door ${plan.doorIds[0]} where it enters ${room.id}` : ''}.${plan.note}`;
+        return changeChecked(a.map, [{ op: 'add', object: room }, ...plan.ops], `${head}${joined}${notesText(notes)}`, [room.id, plan.corridor.id, ...plan.doorIds]);
       }),
   );
 
@@ -276,12 +350,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       title: 'Connect rooms',
       description:
         'Add a corridor between two rooms. It is routed automatically (straight, L or Z, meeting hexagons, circles and other shapes at their real outlines) and re-routes when a room moves. ' +
-        'doors puts doors across the corridor mouths at its current ends (doors stay put if rooms move later).',
+        'If that route would run through another room, it goes round the rooms instead (and then keeps that path). ' +
+        'doors puts doors across the corridor mouths at its current ends (doors stay put if rooms move later). The reply ends with a check.',
       inputSchema: {
         map: mapId,
         from: z.string().describe('Room id'),
         to: z.string().describe('Room id'),
-        width: z.number().positive().optional().describe('Corridor width in squares (default 2)'),
+        width: lengthArg('Corridor width (default 2 squares)').optional(),
         doors: z.enum(['none', 'from', 'to', 'both']).optional().describe('default none'),
         door_style: z.enum(DOOR_STYLES).optional(),
         id: z.string().optional(),
@@ -290,17 +365,19 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const map = store.get(a.map).map;
-        const { ops, corridor, path, doorIds } = connectOps(map, a.from, a.to, {
-          width: a.width,
+        const notes: string[] = [];
+        const width = a.width !== undefined ? halfSquares(squaresArg(map, a.width, 'width', notes, { min: 0.5 })!) : undefined;
+        const { ops, corridor, path, doorIds, note } = connectAvoiding(map, a.from, a.to, {
+          width,
           doors: a.doors,
           doorStyle: a.door_style,
           id: a.id,
         });
-        const len = Math.round(path.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0) * 100) / 100;
-        return change(
+        return changeChecked(
           a.map,
           ops,
-          `Added corridor ${corridor.id} from ${a.from} to ${a.to}: ${corridor.width} wide, ${len} squares long, path ${JSON.stringify(path)}${doorIds.length ? `; doors ${doorIds.join(', ')}` : ''}.`,
+          `Added corridor ${corridor.id} from ${a.from} to ${a.to}: ${corridor.width} wide, ${pathLen(path)} squares long, path ${JSON.stringify(path)}${doorIds.length ? `; doors ${doorIds.join(', ')}` : ''}.${note}${notesText(notes)}`,
+          [corridor.id, ...doorIds],
         );
       }),
   );
@@ -367,14 +444,17 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       description:
         'Add a door along a wall or across an opening. Doors can sit in walls at any angle. at is the door\'s start point; along says which way it runs ("x" = horizontal, "y" = vertical), ' +
         'or angle turns it any way, in degrees clockwise from east (0 = along x, 90 = along y, 45 runs down to the right, 135 down to the left): for slanted walls (octagons, hexagons, polygons) and curved ones (circles, caves). ' +
-        'Easiest in such walls: give near (a spot on or by the wall) instead of at, and the door goes on the nearest wall within a square, centred on the wall line and turned to the wall there.',
+        'Easiest in such walls: give near (a spot on or by the wall) instead of at, and the door goes on the nearest wall within a square, centred on the wall line and turned to the wall there. ' +
+        'Easiest of all: room (a room id) and wall (north, south, east or west): the door goes in the middle of that wall, or on the free stretch of it nearest the middle. The reply ends with a check (is it on a wall, where it leads).',
       inputSchema: {
         map: mapId,
-        at: point.optional().describe('The door\'s start point, [x, y] in squares (or give near)'),
+        room: z.string().max(64).optional().describe('With wall: the room whose wall gets the door, e.g. "r3"'),
+        wall: z.string().max(20).optional().describe('With room: north, south, east or west (north is up, small y)'),
+        at: point.optional().describe('The door\'s start point, [x, y] in squares (or give near, or room and wall)'),
         near: point.optional().describe('Instead of at: a spot on or by a wall; the door is centred on the nearest wall there and turned to match it'),
         along: z.enum(['x', 'y']).optional().describe('"x" = horizontal (default), "y" = vertical'),
         angle: z.number().gt(-3600).lt(3600).optional().describe('Degrees clockwise from east; turns the door any way (wins over along)'),
-        width: z.number().positive().describe('Length of the door in squares'),
+        width: lengthArg('Length of the door (default 1 square; 2 for a wide or double door)').optional(),
         style: z.enum(DOOR_STYLES).optional().describe('default normal'),
         open: z.boolean().optional(),
         id: z.string().optional(),
@@ -384,20 +464,31 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       guarded(() => {
         const map = store.get(a.map).map;
         const id = a.id ?? nextId(map, 'd');
+        const notes: string[] = [];
+        let width = a.width !== undefined ? squaresArg(map, a.width, 'width', notes, { min: 0.1 })! : 1;
         let line: Pick<Door, 'at' | 'along' | 'angle'>;
         let where = '';
-        if (a.near) {
+        if (a.room !== undefined || a.wall !== undefined) {
+          if (a.at || a.near) throw new ValidationError(['give room and wall, or at, or near: one of them']);
+          if (a.room === undefined) throw new ValidationError(['room: which room\'s wall, e.g. "r3"']);
+          const side = sideOf(a.wall ?? '');
+          if (!side) throw new ValidationError([`wall: north, south, east or west, got ${JSON.stringify(a.wall ?? null)}`]);
+          const placed = doorOnRoomWall(map, a.room, side, halfSquares(width));
+          line = placed.line;
+          width = placed.width;
+          where = ` ${placed.text},`;
+        } else if (a.near) {
           const floor = computeFloor(map);
-          const ends = doorOnWall(floor, a.near, a.width);
+          const ends = doorOnWall(floor, a.near, width);
           if (!ends) throw new ValidationError([`near: no wall within a square of [${a.near.join(', ')}]; give at with along or angle instead`]);
           line = placeDoorBetween(floor, ends[0], ends[1]);
           where = ' on the wall';
         } else if (a.at) {
           line = a.angle !== undefined ? { at: a.at, along: nearestAxis(a.angle), angle: a.angle } : { at: a.at, along: a.along ?? 'x' };
-        } else throw new ValidationError(['give at (the door\'s start point) or near (a spot by a wall)']);
-        const door: Door = { id, type: 'door', ...line, width: a.width, style: a.style ?? 'normal', ...(a.open ? { open: true } : {}) };
+        } else throw new ValidationError(['give room and wall (e.g. {"room": "r3", "wall": "east"}), at (the door\'s start point) or near (a spot by a wall)']);
+        const door: Door = { id, type: 'door', ...line, width, style: a.style ?? 'normal', ...(a.open ? { open: true } : {}) };
         const runs = isTurned(door) ? `turned ${Math.round(doorAngle(door) * 100) / 100}°` : `along ${door.along}`;
-        return addObject(a.map, door, `Added ${a.style ?? 'normal'} door ${id}${where} at ${door.at.join(',')} ${runs}, ${a.width} wide.`);
+        return addChecked(a.map, door, `Added ${a.style ?? 'normal'} door ${id}${where} at ${door.at.join(',')} ${runs}, ${width} wide.${notesText(notes)}`);
       }),
   );
 
@@ -421,14 +512,27 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'add_label',
     {
       title: 'Add label',
-      description: 'Free text on the map (shown in both views), centred on at.',
-      inputSchema: { map: mapId, text: z.string().min(1).max(200), at: point, size: z.number().positive().optional().describe('Text height in squares'), id: z.string().optional() },
+      description: 'Free text on the map (shown in both views), centred on at, or in the middle of a region (e.g. {"edge": "north"} or {"in": "r3"}).',
+      inputSchema: {
+        map: mapId,
+        text: z.string().min(1).max(200),
+        at: point.optional().describe('The middle of the text [x, y] (or give region)'),
+        region: regionArg.optional(),
+        size: lengthArg('Text height (about 0.6 squares by default)').optional(),
+        id: z.string().optional(),
+      },
     },
     (a) =>
       guarded(() => {
         const map = store.get(a.map).map;
         const id = a.id ?? nextId(map, 'l');
-        return addObject(a.map, { id, type: 'label', text: a.text, at: a.at, ...(a.size ? { size: a.size } : {}) }, `Added label ${id} "${a.text}".`);
+        const notes: string[] = [];
+        if (a.at && a.region) throw new ValidationError(['give at or region, not both']);
+        if (!a.at && !a.region) throw new ValidationError(['give at [x, y] or a region, e.g. {"in": "r3"}']);
+        const region = a.region ? regionOf(map, a.region) : null;
+        const at = region ? regionCentre(region) : a.at!;
+        const size = squaresArg(map, a.size, 'size', notes, { min: 0.05 });
+        return addChecked(a.map, { id, type: 'label', text: a.text, at, ...(size ? { size } : {}) }, `Added label ${id} "${a.text}"${region ? ` at [${at.join(', ')}], the middle of ${region.text}` : ''}.${notesText(notes)}`);
       }),
   );
 
@@ -537,12 +641,17 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       description:
         'Place a prop (see list_assets). at is the centre of its footprint: a 1×1 prop in the square at x 3–4, y 5–6 has at [3.5, 5.5]; a 2×1 prop covering x 3–5 has at [4, 5.5]. ' +
         'At rotation 0 a prop faces south (its back or wall side is north); rotation turns it clockwise in degrees (90, 180, 270). ' +
-        'A tree, or a prop that blocks movement or sight, placed on a tree, boulder, wall or other blocking prop is still added, but the reply names what it overlaps and the nearest free spot; avoid true puts it there instead.',
+        'A tree, or a prop that blocks movement or sight, placed on a tree, boulder, wall or other blocking prop is still added, but the reply names what it overlaps and the nearest free spot; avoid true puts it there instead. ' +
+        'Easier: place it by meaning instead of at: in (a room id) and place ("center", "north wall", "ne corner", "near i3", "around i1"…): the tool finds a free spot inside the room, against the wall and turned to face into the room for walls, ' +
+        'off other props and out of doorways, and says where it put it; count adds several (4 chairs around a table). The reply ends with a check (inside the room? overlaps? doorways?).',
       inputSchema: {
         map: mapId,
         asset: z.string().describe('Asset id, e.g. "chest-closed"'),
-        at: point.describe('Centre of the footprint [x, y] in squares'),
-        rotation: z.number().optional().describe('Degrees clockwise: 0 (faces south), 90 (faces west), 180 (north), 270 (east)'),
+        at: point.optional().describe('Centre of the footprint [x, y] in squares (or give in and place)'),
+        in: z.string().max(64).optional().describe('Place it by meaning in this room or area, e.g. "r2" (with place; default "center")'),
+        place: placeArg.optional(),
+        count: z.number().int().min(1).max(50).optional().describe('With place: how many (default 1; for "around": 4)'),
+        rotation: z.number().optional().describe('Degrees clockwise: 0 (faces south), 90 (faces west), 180 (north), 270 (east). With place: leave it out to face into the room'),
         scale: z.number().positive().max(4).optional(),
         name: z.string().max(200).optional(),
         notes: z.string().max(10_000).optional().describe('GM notes, e.g. what is inside a chest'),
@@ -562,6 +671,30 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const info = assetInfo(a.asset);
         if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets; terrain goes in add_terrain)`]);
         const map = store.get(a.map).map;
+        const extras = {
+          ...(a.scale && a.scale !== 1 ? { scale: a.scale } : {}),
+          ...(a.name ? { name: a.name } : {}),
+          ...(a.notes ? { notes: a.notes } : {}),
+          ...(a.hidden !== undefined ? { gmOnly: a.hidden } : {}),
+        };
+        if (a.in !== undefined || a.place !== undefined || a.count !== undefined) {
+          // by meaning: the code finds the spot
+          if (a.at) throw new ValidationError(['give at, or in and place: not both']);
+          const r = placeProps(map, { asset: a.asset, in: a.in, place: a.place, count: a.count, rotation: a.rotation, scale: a.scale });
+          if (!r.placed.length) throw new ValidationError(r.notes.length ? r.notes : ['no free spot there']);
+          const ops: Op[] = r.placed.map((p, k) => ({
+            op: 'add',
+            object: { id: k === 0 && a.id ? a.id : nextId(map, 'i', k), type: 'prop', asset: p.asset, at: p.at, ...(p.rotation ? { rotation: p.rotation } : {}), ...extras },
+          }));
+          const ids = ops.map((o) => (o as { object: MapObject }).object.id);
+          const lines = r.placed.map((p, k) => {
+            const b = propBounds({ asset: p.asset, at: p.at, rotation: p.rotation, scale: a.scale });
+            return `${ids[k]} at [${p.at.join(', ')}]${p.rotation ? ` turned ${p.rotation}°` : ''} ${p.where} (covers x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1})`;
+          });
+          const head = r.placed.length === 1 ? `Added ${info.name} ${lines[0]}.` : `Added ${r.placed.length} × ${info.name}: ${lines.join('; ')}.`;
+          return changeChecked(a.map, ops, `${head}${r.notes.length ? ` ${r.notes.join(' ')}` : ''}`, ids);
+        }
+        if (!a.at) throw new ValidationError(['give at [x, y], or in (a room id) and place (e.g. "north wall", "center", "around i1")']);
         const id = a.id ?? nextId(map, 'i');
         // modular pieces (ruin walls, seamless textures) go onto whole squares, so they meet the next piece
         const snappedAt = modularAt({ asset: a.asset, at: a.at, rotation: a.rotation, scale: a.scale });
@@ -590,7 +723,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const b = propBounds(prop);
         const hidden = propHidden(prop as { asset: string; gmOnly?: boolean }) ? ' It is hidden from players (GM view only).' : '';
         const snapped = snappedAt[0] !== a.at[0] || snappedAt[1] !== a.at[1] ? ` Moved onto whole squares (at [${snappedAt.join(', ')}]) so it meets the next piece.` : '';
-        return addObject(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.${hidden}${snapped}${overlapNote}`);
+        return addChecked(a.map, prop, `Added ${info.name} ${prop.id}, covering x ${b.x0}–${b.x1}, y ${b.y0}–${b.y1}.${hidden}${snapped}${overlapNote}`);
       }),
   );
 
@@ -602,14 +735,17 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         'Place copies of one prop along a path, like painting with a brush: trees along a road, rocks along a cave wall, pillars down a hall. ' +
         'placement "regular" puts one exactly every `spacing` squares (the first at the path\'s start); "irregular" varies the gaps, strays up to `spread` squares to either side, and turns and sizes each copy a little. ' +
         'A colour prop with a group (oaks, pines, boulders…) mixes the group\'s variants at random unless mix is false, so a forest is not one tree repeated. ' +
-        'Spots within 0.6 × spacing of the same prop (or its group) already on the map are skipped, and so are spots where a copy would stand on a tree, boulder, wall or other blocking prop, or on an earlier copy (footprints may touch, overlapping up to a quarter square; props you walk over, like ferns and rugs, go anywhere); the reply says how many. overlap true allows that, for a dense thicket. One undo step.',
+        'Spots within 0.6 × spacing of the same prop (or its group) already on the map are skipped, and so are spots where a copy would stand on a tree, boulder, wall or other blocking prop, or on an earlier copy (footprints may touch, overlapping up to a quarter square; props you walk over, like ferns and rugs, go anywhere); the reply says how many. overlap true allows that, for a dense thicket. One undo step. ' +
+        'Instead of a path, give a region to fill it: rows of copies over the whole area, spacing apart (default: the prop\'s size, or its group\'s on average; placement irregular nudges, turns and sizes each a little):{"edge": "north", "depth": 4} a forest along the north edge, {"in": "r3"} rubble all over room 3, {"around": "r2"} trees round a house. ' +
+        'Copies keep their middle inside the region; in a room (in) they stay on its floor and out of the doorways, elsewhere they keep off rooms and corridors.',
       inputSchema: {
         map: mapId,
         asset: z.string().describe('Prop id, e.g. "tree" or "c-oak-a" (see list_assets)'),
-        path: z.array(point).min(1).max(200).describe('Points the brush passes through, [[x, y], ...]'),
-        spacing: z.number().min(0.5).max(20).optional().describe('Squares between copies (default 3)'),
-        placement: z.enum(['regular', 'irregular']).optional().describe('default regular'),
-        spread: z.number().min(0).max(10).optional().describe('Irregular: how far copies stray to the sides, in squares (default a third of the spacing)'),
+        path: z.array(point).min(1).max(200).optional().describe('Points the brush passes through, [[x, y], ...] (or give region)'),
+        region: regionArg.optional(),
+        spacing: lengthArg('Squares between copies (default 3; filling a region: the prop\'s size)').optional(),
+        placement: z.enum(['regular', 'irregular']).optional().describe('default regular (filling a region: irregular)'),
+        spread: lengthArg('Irregular: how far copies stray to the sides (default a third of the spacing)').optional(),
         rotation: z.number().optional().describe('Regular: the rotation of every copy'),
         mix: z.boolean().optional().describe("Mix the variants of the prop's group (default true when it has one, see list_assets)"),
         overlap: z.boolean().optional().describe('true: copies may stand on blocking props and on each other (a dense thicket). Default false: those spots are skipped'),
@@ -621,13 +757,53 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const info = assetInfo(a.asset);
         if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets)`]);
         const map = store.get(a.map).map;
+        const notes: string[] = [];
+        const spacingSq = squaresArg(map, a.spacing, 'spacing', notes, { min: 0.5 });
+        const spreadSq = squaresArg(map, a.spread, 'spread', notes, { min: 0 });
+        if (spacingSq !== undefined && spacingSq > 20) throw new ValidationError(['spacing: at most 20 squares']);
+        if (a.region) {
+          if (a.path) throw new ValidationError(['give a path or a region, not both']);
+          const region = regionOf(map, a.region);
+          const fill = fillRegion(map, region, {
+            asset: a.asset,
+            ...(spacingSq !== undefined ? { spacing: spacingSq } : {}),
+            placement: a.placement ?? 'irregular',
+            ...(spreadSq !== undefined ? { spread: spreadSq } : {}),
+            ...(a.rotation ? { rotation: a.rotation } : {}),
+            seed: a.seed ?? randomInt(1, 2 ** 31),
+            ...(a.mix === false ? { mix: false } : {}),
+            ...(a.overlap ? { overlap: true } : {}),
+          });
+          const copies = fill.copies.slice(0, 500);
+          const s = fill.skipped;
+          const left = [
+            s.blocked ? `${s.blocked} on trees, boulders, walls or other copies` : '',
+            s.floor ? `${s.floor} on rooms or corridors (outdoor things keep off them; region in puts them inside a room)` : '',
+            s.outside ? `${s.outside} outside the room or in its doorways` : '',
+          ].filter(Boolean);
+          const skippedNote = left.length ? ` Spots skipped: ${left.join(', ')}.` : '';
+          if (!copies.length) return text(`Nothing placed in ${region.text}.${skippedNote || ' The region is too small for this prop.'}${notesText([...notes, ...region.notes])}`);
+          const ops = copies.map((c, k) => ({
+            op: 'add' as const,
+            object: { id: nextId(map, 'i', k), type: 'prop' as const, asset: c.asset, at: c.at, ...(c.rotation ? { rotation: c.rotation } : {}), ...(c.scale !== 1 ? { scale: c.scale } : {}) },
+          }));
+          const used = [...new Set(ops.map((o) => o.object.asset))];
+          const what = used.length > 1 ? `props of group ${info.group} (${used.map((u) => assetInfo(u)?.name ?? u).join('; ')})` : info.name;
+          return changeChecked(
+            a.map,
+            ops,
+            `Added ${copies.length} × ${what} (${ops[0]!.object.id}–${ops.at(-1)!.object.id}) filling ${region.text}, rows ${fill.spacing} squares apart.${skippedNote}${notesText([...notes, ...region.notes])}`,
+            ops.map((o) => o.object.id),
+          );
+        }
+        if (!a.path) throw new ValidationError(['give a path [[x, y], ...] or a region, e.g. {"edge": "north"}']);
         const variants = a.mix === false ? [a.asset] : groupVariants(a.asset);
         const kin = new Set(variants);
         const avoid = map.objects.flatMap((o) => (o.type === 'prop' && kin.has(o.asset) ? [o.at] : []));
         const spots = scatterAlong(a.path, {
-          spacing: a.spacing ?? 3,
+          spacing: spacingSq ?? 3,
           placement: a.placement ?? 'regular',
-          ...(a.spread !== undefined ? { spread: a.spread } : {}),
+          ...(spreadSq !== undefined ? { spread: spreadSq } : {}),
           ...(a.rotation ? { rotation: a.rotation } : {}),
           seed: a.seed ?? randomInt(1, 2 ** 31),
           avoid,
@@ -648,7 +824,12 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         }));
         const used = [...new Set(ops.map((o) => o.object.asset))];
         const what = used.length > 1 ? `props of group ${info.group} (${used.map((u) => assetInfo(u)?.name ?? u).join('; ')})` : info.name;
-        return change(a.map, ops, `Added ${copies.length} × ${what} (${ops[0]!.object.id}–${ops.at(-1)!.object.id}) along the path.${skippedNote ? ` ${skippedNote}` : ''}`);
+        return changeChecked(
+          a.map,
+          ops,
+          `Added ${copies.length} × ${what} (${ops[0]!.object.id}–${ops.at(-1)!.object.id}) along the path.${skippedNote ? ` ${skippedNote}` : ''}${notesText(notes)}`,
+          ops.map((o) => o.object.id),
+        );
       }),
   );
 
@@ -658,13 +839,14 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       title: 'Add terrain',
       description:
         'Fill an area with a terrain tile (water, grass, lava, rubble… see list_assets category terrain) or a colour terrain texture (ids c-…: floorboards, flagstones, grass, sand, water… see list_assets palette colour, categories floors, ground and water). ' +
-        'Give exactly one shape; it may cover a whole room or open ground outside rooms. Tiles repeat on the map grid, so neighbouring areas of one texture join without a seam. ' +
+        'Give exactly one shape, or a region by meaning ({"in": "r5"} all of room 5, {"edge": "north", "depth": 3}, {"corner": "sw"}, {"between": ["east", "h1"], "width": 2} a path to a hill, {"around": "t2"} a shore round a pond); it may cover a whole room or open ground outside rooms. Tiles repeat on the map grid, so neighbouring areas of one texture join without a seam. ' +
         'Areas fade into each other instead of meeting at straight edges: natural ground and water fade (deep water → shallows → sand → grass, in that order), indoor floors stay crisp, and against bare floor or the background an edge is at most ragged. A later area still covers an earlier one where they overlap (a pond over a field). ' +
         'edge, fade_width, edge_details and stack change that per area.',
       inputSchema: {
         map: mapId,
         asset: z.string().describe('Terrain id, e.g. "water-shallow" or "c-floor-planks-oak"'),
         ...shapeArgs,
+        region: regionArg.optional(),
         name: z.string().max(200).optional(),
         id: z.string().optional(),
         edge: z
@@ -687,12 +869,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const info = assetInfo(a.asset);
         if (!info || info.kind !== 'terrain') throw new ValidationError([`asset: "${a.asset}" is not a terrain tile (see list_assets with category "terrain")`]);
         const map = store.get(a.map).map;
-        const shape = oneShape(a);
+        const { shape, holes, region } = shapeOrRegion(map, a, Boolean(a.rect || a.poly || a.circle), () => oneShape(a));
         const id = a.id ?? nextId(map, 't');
         const t = {
           id,
           type: 'terrain' as const,
           shape,
+          ...(holes.length ? { holes } : {}),
           asset: a.asset,
           ...(a.name ? { name: a.name } : {}),
           ...(a.edge ? { edge: a.edge } : {}),
@@ -700,7 +883,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           ...(a.edge_details === false ? { edgeDetails: false } : {}),
           ...(a.stack !== undefined ? { stack: a.stack } : {}),
         };
-        return addObject(a.map, t, `Added ${info.name} terrain ${id}: ${where(shape)}; ${terrainEdgeText(t)}.`);
+        return addChecked(a.map, t, `Added ${info.name} terrain ${id}: ${where(shape)}${region ? `, ${region.text}` : ''}; ${terrainEdgeText(t)}.${notesText(region?.notes ?? [])}`);
       }),
   );
 
@@ -868,7 +1051,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       guarded(() => {
         const ids = withAttachedDoors(store.get(a.map).map, a.ids);
         const extra = ids.filter((id) => !a.ids.includes(id));
-        return change(a.map, [{ op: 'move', ids, dx: a.dx, dy: a.dy }], `Moved ${a.ids.join(', ')}${extra.length ? ` (and doors ${extra.join(', ')})` : ''} by ${a.dx},${a.dy}.`);
+        return changeChecked(a.map, [{ op: 'move', ids, dx: a.dx, dy: a.dy }], `Moved ${a.ids.join(', ')}${extra.length ? ` (and doors ${extra.join(', ')})` : ''} by ${a.dx},${a.dy}.`, a.ids.slice(0, 20));
       }),
   );
 
@@ -882,7 +1065,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const shape = shapeOrPreset(a);
-        return change(a.map, [{ op: 'update', id: a.id, set: { shape } }], `Reshaped ${a.id}: ${where(shape)}.`);
+        return changeChecked(a.map, [{ op: 'update', id: a.id, set: { shape } }], `Reshaped ${a.id}: ${where(shape)}.`, [a.id]);
       }),
   );
 
@@ -893,7 +1076,13 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       description: 'Set or remove fields of one object, e.g. {"name": "Armoury"}, {"style": "locked"} or {"angle": 30} on a door (turns it about its start point at; unset ["angle"] makes it run along x or y again), {"walls": true} on an open area, {"edge": "ragged"}, {"fadeWidth": 3}, {"edgeDetails": false} or {"stack": 6} on terrain (see add_terrain; unset ["edge"] goes back to the material\'s default), or {"notes": "Two ogres; a chest with 40 gp"} on a room, corridor or terrain (GM notes: never drawn, only the GM sees them; unset ["notes"] removes them). id and type can\'t change.',
       inputSchema: { map: mapId, id: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional() },
     },
-    (a) => guarded(() => change(a.map, [{ op: 'update', id: a.id, set: a.set, unset: a.unset }], `Updated ${a.id}.`)),
+    (a) =>
+      guarded(() => {
+        // fields small models reach for that don't exist: say what does
+        const wrong = Object.keys(a.set ?? {}).find((k) => ['position', 'pos', 'location', 'center', 'centre', 'coords', 'x', 'y', 'place'].includes(k));
+        if (wrong) throw new ValidationError([`set: there is no field "${wrong}". Props, labels and markers sit at {"at": [x, y]} (their centre); rooms, terrain and other areas have a shape ({"shape": {"rect": [x, y, w, h]}}); move shifts objects by dx, dy; add_prop with in and place puts a new prop by meaning`]);
+        return change(a.map, [{ op: 'update', id: a.id, set: a.set, unset: a.unset }], `Updated ${a.id}.`);
+      }),
   );
 
   server.registerTool(
@@ -1140,7 +1329,10 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         const warning = report.length
           ? ` Warning: ${report.length === 1 ? 'a new prop stands' : `${report.length} new props stand`} on trees or other props in the way, so they are drawn over each other: ${lines.join('; ')}${report.length > 8 ? `; and ${report.length - 8} more` : ''}. Move them clear unless that is meant.`
           : '';
-        return text(`Applied ${a.ops.length} op${a.ops.length === 1 ? '' : 's'}. Map is at rev ${c.rev}.${warning}`);
+        // new rooms, corridors and doors that overlap, run through rooms or float off a wall: said too (a clean batch reads as before)
+        const built = addedIds(ops, ['room', 'corridor', 'door']).slice(0, 200);
+        const layout = built.length ? checkObjects(c.map, built) : '';
+        return text(`Applied ${a.ops.length} op${a.ops.length === 1 ? '' : 's'}. Map is at rev ${c.rev}.${warning}${layout.startsWith('Check: WARNING') ? `\n${layout}` : ''}`);
       }),
   );
 
@@ -1148,6 +1340,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
   registerCorridorTools(server, service, BY);
   if (props) registerPropTools(server, props, store, base, BY);
   registerHeightTools(server, service, BY);
+  registerCheckTools(server, service);
   return server;
 }
 

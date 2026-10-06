@@ -472,17 +472,20 @@ describe('lean and full setups on a real Delve', () => {
     return res.json() as { id: string; rev: number; map: DelveMap };
   };
 
-  it('the lean set: 16 short tools without the map id, and a short prompt', async () => {
+  it('the lean set: 17 short tools without the map id, and a short prompt', async () => {
     const m = await newMap();
     const lean = buildSetup('lean', tools, m.id);
     expect(lean.tools.map((t) => t.name)).toEqual(Object.keys(LEAN_TOOLS));
-    expect(lean.tools.length).toBe(16);
+    expect(lean.tools.length).toBe(17);
     for (const t of lean.tools) {
       if (t.name !== 'list_assets') expect(t.fixed).toEqual({ map: m.id }); // list_assets takes no map
       expect(t.parameters.properties).not.toHaveProperty('map');
       expect(t.parameters.required ?? []).not.toContain('map');
     }
-    expect(Object.keys(lean.tools.find((t) => t.name === 'add_terrain')!.parameters.properties!)).toEqual(['asset', 'rect', 'poly']);
+    expect(Object.keys(lean.tools.find((t) => t.name === 'add_terrain')!.parameters.properties!)).toEqual(['asset', 'region', 'rect', 'poly']);
+    // lengths with units keep no type, so a number or "5 m" both go through unrepaired
+    expect(lean.tools.find((t) => t.name === 'add_height')!.parameters.properties!.height).not.toHaveProperty('type');
+    expect(lean.tools.find((t) => t.name === 'add_props_along')!.parameters.properties!.region!.properties).toHaveProperty('edge');
     const prompt = leanPrompt();
     expect(prompt).not.toMatch(/\{\{/);
     expect(prompt).toContain('chair');
