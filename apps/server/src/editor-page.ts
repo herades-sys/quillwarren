@@ -23,6 +23,8 @@ export interface EditorPageOpts {
   levels: { id: string; name: string; level?: Level }[];
   /** Who is logged in, for the avatar (null: the shared password, or open edit). */
   account: { name: string; role: 'admin' | 'gm' } | null;
+  /** The desktop app: the chat backend in use, the ones offered (settings show for two or more) and the assistant's name. Never set on the web server. */
+  chatChoice?: { backend: string; offered: readonly string[]; name: string };
   /** Snip an area to a PNG (the Snip button, Shift S): admin and GM accounts, and open-edit development servers. */
   snip: boolean;
 }
@@ -41,6 +43,24 @@ const PLAN_ICON = '<svg class="icon" viewBox="0 0 24 24" width="17" height="17" 
 /** Snip (export an area): crop marks, drawn like the design's icons. */
 const SNIP_ICON = '<svg class="icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v12.5a1.5 1.5 0 0 0 1.5 1.5H21M3 7h12.5A1.5 1.5 0 0 1 17 8.5V21"/></svg>';
 
+/** The chat settings (apps/web/src/chat.ts fills them): only on pages with a choice of backends, so the web editor never carries it. */
+const CHAT_SETTINGS_CSS = `
+  .ed-chat-settings { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .ed-chat-settings[hidden] { display: none; }
+  .ed-cs-title { margin: 0; font-size: 13px; font-weight: 600; }
+  .ed-cs-choices { display: flex; flex-direction: column; gap: 8px; }
+  .ed-cs-choice { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--color-border); cursor: pointer; }
+  .ed-cs-choice:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--color-accent); }
+  .ed-cs-choice input { margin-top: 3px; accent-color: var(--color-accent); }
+  .ed-cs-sub { display: block; font-size: 12px; color: var(--color-text-muted); line-height: 1.35; }
+  .ed-cs-local { display: flex; flex-direction: column; gap: 10px; }
+  .ed-cs-local[hidden] { display: none; }
+  .ed-cs-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .ed-cs-result { font-size: 12.5px; color: var(--color-text-muted); line-height: 1.4; }
+  .ed-cs-result[data-kind="bad"] { color: var(--color-danger); }
+  .ed-cs-off { color: var(--color-text-muted); font-size: 13px; line-height: 1.45; }
+`;
+
 export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap, o: EditorPageOpts): string {
   const { view, style } = o;
   const enc = encodeURIComponent(id);
@@ -49,7 +69,10 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   scene.layers = scene.layers.filter((l) => l.name !== 'floor-number');
   const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : 'var(--canvas-parchment)';
   const edit = o.loggedIn;
-  const chat = edit && o.chatModel ? { enabled: true, model: o.chatModel } : undefined;
+  const choice = o.chatChoice;
+  const ai = esc(choice?.name ?? 'Claude');
+  const chat = edit && (o.chatModel || choice) ? { enabled: true, model: o.chatModel ?? '', ...(choice ? { backend: choice.backend, backends: choice.offered, name: choice.name } : {}) } : undefined;
+  const chatSettings = Boolean(choice && choice.offered.length > 1);
   const initial = JSON.stringify({
     id,
     rev,
@@ -131,24 +154,27 @@ ${viewSeg('view', '')}
   <div class="ed-menu-wrap ed-narrow"><button class="btn btn-icon" type="button" id="more-btn" aria-label="More: export, 3D, players’ screen, settings" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">${ic('more', 20)}</button>
     <div class="menu ed-menu" role="menu" id="more-menu" hidden>${moreItems}</div></div>
   <span class="vsep ed-desk"></span>
-  ${chat ? `<button class="btn btn-icon ed-chat-btn" type="button" id="chat-toggle" aria-pressed="false" aria-label="Chat with Claude" title="Claude · Ctrl .">${ic('chat')}</button>` : ''}
+  ${chat ? `<button class="btn btn-icon ed-chat-btn" type="button" id="chat-toggle" aria-pressed="false" aria-label="Chat with ${ai}" title="${ai} · Ctrl .">${ic('chat')}</button>` : ''}
   ${edit ? who : `<a class="btn btn-secondary" id="login-link" href="${esc(loginHref)}">${ic('lock', 15)}<span class="lbl">Log in to edit</span></a>`}
 </div>
 </header>`;
 
   const chatPanel = chat
-    ? `<aside class="ed-claude ed-sheet" id="chat" hidden aria-label="Chat with Claude">
+    ? `<aside class="ed-claude ed-sheet" id="chat" hidden aria-label="Chat with ${ai}"${choice ? ` data-assistant="${ai}"` : ''}>
   <span class="sheet-handle ed-phone-only"></span>
-  <div class="ed-panel-head"><span class="ed-panel-title">Claude</span><span class="tag tag-accent tag-sm" id="chat-live" hidden><span class="dot"></span>Editing live</span>
+  <div class="ed-panel-head"><span class="ed-panel-title">${ai}</span><span class="tag tag-accent tag-sm" id="chat-live" hidden><span class="dot"></span>Editing live</span>
     <div class="select ed-model"><select id="chat-model" class="input" aria-label="Model"></select>${ic('chevron-down', 13)}</div>
     <span class="spacer"></span>
-    <button class="btn btn-icon" type="button" id="chat-plan" aria-pressed="true" aria-label="Show Claude’s plan" title="Show Claude’s plan: its steps, progress and time left">${PLAN_ICON}</button>
+    <button class="btn btn-icon" type="button" id="chat-plan" aria-pressed="true" aria-label="Show ${ai}’s plan" title="Show ${ai}’s plan: its steps, progress and time left">${PLAN_ICON}</button>${chatSettings ? `
+    <button class="btn btn-icon" type="button" id="chat-settings" aria-pressed="false" aria-label="Chat settings" title="Chat settings: off, or a local model">${ic('settings', 17)}</button>` : ''}
     <button class="btn btn-icon" type="button" id="chat-new" aria-label="New conversation" title="Start a new conversation">${ic('plus', 17)}</button>
-    <button class="btn btn-icon" type="button" id="chat-close" aria-label="Collapse Claude" title="Collapse · Ctrl .">${icon('chevron-right', { size: 17, className: 'ed-collapse' })}</button></div>
-  <div class="ed-chat-log" id="chat-log" role="log" aria-live="polite"></div>
+    <button class="btn btn-icon" type="button" id="chat-close" aria-label="Collapse ${ai}" title="Collapse · Ctrl .">${icon('chevron-right', { size: 17, className: 'ed-collapse' })}</button></div>
+${chatSettings ? `  <div class="ed-chat-settings" id="chat-settings-pane" hidden></div>
+<style>${CHAT_SETTINGS_CSS}</style>
+` : ''}  <div class="ed-chat-log" id="chat-log" role="log" aria-live="polite"></div>
   <div class="ed-chat-status" id="chat-status" role="status" hidden></div>
   <form class="ed-chat-form" id="chat-form">
-    <textarea class="input" id="chat-input" rows="3" aria-label="Message Claude" placeholder="Ask Claude to change the map"></textarea>
+    <textarea class="input" id="chat-input" rows="3" aria-label="Message ${ai}" placeholder="Ask ${ai} to change the map"></textarea>
     <div class="ed-chat-foot"><span class="ed-chat-hint" id="chat-usage">Each reply is one undo step. <kbd>/</kbd> focuses chat</span><button class="btn btn-primary" id="chat-send" type="submit" title="Send · Enter">${ic('send', 15)}<span>Send</span></button></div>
   </form>
 </aside>`
@@ -164,7 +190,7 @@ ${viewSeg('view', '')}
     <div class="tabs ed-tabs" role="tablist"><button class="tab" type="button" role="tab" id="tab-inspector" aria-selected="true">Inspector</button><button class="tab" type="button" role="tab" id="tab-map" aria-selected="false">Map settings</button><span class="spacer"></span><button class="btn btn-icon ed-drawer-close" type="button" id="panel-close" aria-label="Close the panel">${ic('x', 17)}</button></div>
     <div class="ed-scroll" id="props"></div>
   </aside>`,
-        phonebar: `<nav class="ed-phonebar" id="phonebar" aria-label="Tools"><div class="ed-phonetools" id="phonetools" role="toolbar"></div>${chat ? `<span class="vsep"></span><button class="ed-phonetool" type="button" id="chat-phone" aria-pressed="false">${ic('chat', 22)}Claude</button>` : ''}</nav>`,
+        phonebar: `<nav class="ed-phonebar" id="phonebar" aria-label="Tools"><div class="ed-phonetools" id="phonetools" role="toolbar"></div>${chat ? `<span class="vsep"></span><button class="ed-phonetool" type="button" id="chat-phone" aria-pressed="false">${ic('chat', 22)}${ai}</button>` : ''}</nav>`,
       }
     : { rail: '', overlays: '', inspector: '', phonebar: '' };
 

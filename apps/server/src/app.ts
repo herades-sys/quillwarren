@@ -6,7 +6,7 @@ import { AccountStore } from './accounts/store.ts';
 import { registerApi } from './api.ts';
 import { registerAssets } from './assets.ts';
 import { Sessions } from './auth.ts';
-import { registerChat, type ChatConfig } from './chat/route.ts';
+import { registerChat, type ChatBackends, type ChatConfig } from './chat/route.ts';
 import { ChatTokens } from './chat/tokens.ts';
 import { PropLibrary, registerPropRoutes } from './custom-props.ts';
 import { FeedbackLog, FILE_NAME, SendLimits } from './feedback/log.ts';
@@ -52,6 +52,23 @@ export interface AppOptions {
   discord?: DiscordConfig;
   /** DELVE_PUBLIC_URL: the address the Cloudflare tunnel publishes, e.g. https://delve.example.com. */
   publicUrl?: string;
+  // ----- the desktop app only (desktop/main.ts); the web server (main.ts) sets none of these -----
+  /** One local user: whoever gets past the desktop gate (`extend`) is logged in, with no login page. */
+  singleUser?: boolean;
+  /** Chat backends besides the bridge (chat/local-chat.ts), made once the app's libraries exist. */
+  chatBackends?: (ctx: AppContext) => ChatBackends;
+  /** Hooks and routes added before any other (the desktop gate, the model manager). */
+  extend?: (app: FastifyInstance, ctx: AppContext) => void;
+}
+
+/** What `extend` and `chatBackends` get to work with. */
+export interface AppContext {
+  info: AppInfo;
+  store: MapStore;
+  service: MapService;
+  auth: EditorAuth;
+  images: ImageLibrary;
+  props: PropLibrary;
 }
 
 /** Never let the WebSocket token or a Discord login's code and state reach the log. */
@@ -80,7 +97,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   // This Delve's own props, shared by every GM: <DELVE_DATA>/props (a temp dir without one).
   const props = new PropLibrary(opts.dataDir ? join(opts.dataDir, 'props') : undefined);
   app.addHook('onClose', async () => props.close());
-  const auth: EditorAuth = { sessions: new Sessions(opts.token, opts.openEdit ?? false), passwordHash: opts.passwordHash };
+  const auth: EditorAuth = { sessions: new Sessions(opts.token, Boolean(opts.openEdit || opts.singleUser)), passwordHash: opts.passwordHash };
   // Admin and GM accounts: <DELVE_DATA>/accounts.db (in memory without one).
   const accounts = new AccountStore(opts.dataDir ? join(opts.dataDir, 'accounts.db') : ':memory:', opts.token);
   app.addHook('onClose', async () => accounts.close());
@@ -89,6 +106,9 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   const feedback = new FeedbackLog(opts.dataDir ? join(opts.dataDir, FILE_NAME) : undefined);
   app.addHook('onClose', async () => feedback.close());
   // Through the Cloudflare tunnel: no API token, no MCP, and nothing but the table and the login without logging in.
+  const ctx: AppContext = { info, store, service, auth, images, props };
+  opts.extend?.(app, ctx);
+  const backends = opts.chatBackends?.(ctx);
   registerPublicGate(app, { publicHost: publicHostOf(opts.publicUrl), loggedIn: (req) => isLoggedIn(auth, req) });
   if (opts.openEdit) app.log.warn('DELVE_INSECURE_OPEN_EDIT is on: every browser can edit. Never use this on the live server.');
 
@@ -117,9 +137,9 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerImages(scoped, { images, store, token: opts.token, sessions: auth.sessions });
     registerPropRoutes(scoped, { props, store, token: opts.token, auth });
     registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens, images, props });
-    registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat });
+    registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat, backends });
     registerLogin(scoped, auth, { adminSection: () => requestsSection(feedback.summary()) });
-    registerViewer(scoped, info, store, auth, opts.chat);
+    registerViewer(scoped, info, store, auth, opts.chat, backends);
     registerStack(scoped, info, store);
     registerPreview(scoped, info, store, auth);
     registerTracePage(scoped, info, auth);

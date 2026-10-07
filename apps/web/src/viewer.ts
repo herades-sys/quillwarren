@@ -20,8 +20,8 @@ interface Initial {
   levels: Storey[];
   edit: { loggedIn: boolean; passwordSet: boolean };
   account: { name: string; role: 'admin' | 'gm' } | null;
-  /** Only for logged-in editors on a server with the chat bridge set up. */
-  chat?: { enabled: boolean; model: string };
+  /** Only for logged-in editors on a server with the chat bridge set up (or, in the desktop app, a choice of backends). */
+  chat?: { enabled: boolean; model: string; backend?: string; backends?: string[]; name?: string };
   /** Snip an area to a PNG (snip.ts): admin and GM accounts only. */
   snip?: boolean;
 }
@@ -568,7 +568,7 @@ if (initial.chat?.enabled) {
       layout: () => requestAnimationFrame(() => applyViewBox()),
       hasObjects: () => map.objects.length > 0,
     },
-    { model: initial.chat.model },
+    { model: initial.chat.model, ...(initial.chat.backends ? { backend: initial.chat.backend ?? 'none', backends: initial.chat.backends, name: initial.chat.name ?? 'Assistant' } : {}) },
   );
 }
 

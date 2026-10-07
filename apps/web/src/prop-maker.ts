@@ -16,11 +16,15 @@ export interface PropMakerHost {
 /** Open the Claude panel with this text in the box, `pick` selected so typing replaces it. */
 export function askClaude(text: string, pick?: string): boolean {
   if (!document.getElementById('chat-input')) return false;
+  if (localAssistant()) return false; // the desktop app's local model has no prop-drawing tools
   window.dispatchEvent(new CustomEvent('delve:chat-prefill', { detail: { text, pick } }));
   return true;
 }
 
 const NO_CHAT = 'Drawing props needs the Claude panel, and the chat isn’t set up on this server. Claude Code with Delve’s MCP can draw one too (create_prop).';
+/** The desktop app's chat panel answers with a local model (it carries the assistant's name), not Claude. */
+const localAssistant = (): boolean => Boolean(document.getElementById('chat')?.dataset.assistant);
+const noChat = (): string => (localAssistant() ? 'Drawing new props needs Claude: the local model in the desktop app can’t draw them yet.' : NO_CHAT);
 const DESCRIBE = '<describe it>';
 const CHANGE = '<what to change>';
 
@@ -35,7 +39,7 @@ export function newPropButton(host: PropMakerHost): HTMLButtonElement {
     onclick: () => {
       const cat = host.category();
       const category = PROP_CATEGORIES.some((c) => c.id === cat) ? cat : 'custom';
-      if (!askClaude(`Draw a new prop: ${DESCRIBE}, size 1×1 squares, category ${category}.`, DESCRIBE)) host.toast(NO_CHAT, 'info');
+      if (!askClaude(`Draw a new prop: ${DESCRIBE}, size 1×1 squares, category ${category}.`, DESCRIBE)) host.toast(noChat(), 'info');
     },
   });
 }
@@ -95,7 +99,7 @@ export function customTile(button: HTMLElement, a: AssetInfo, host: PropMakerHos
       item('Change size…', `now ${a.w}×${a.h} squares`, () => editDialog(a.id, host, 'size')),
       item('Change what it blocks…', null, () => editDialog(a.id, host, 'blocks')),
       item('Ask Claude to change it…', 'opens the Claude panel', () => {
-        if (!askClaude(`Change the custom prop "${a.name}" (${a.id}): ${CHANGE}.`, CHANGE)) host.toast(NO_CHAT, 'info');
+        if (!askClaude(`Change the custom prop "${a.name}" (${a.id}): ${CHANGE}.`, CHANGE)) host.toast(noChat(), 'info');
       }),
       item('Delete…', null, () => deleteDialog(a.id, host), true),
     );

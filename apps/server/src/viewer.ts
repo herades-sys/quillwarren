@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { levelSiblings, PRESETS, revealedBounds, sceneToSvg, type DelveMap } from '@delve/core';
 import { currentAccount } from './accounts/http.ts';
 import type { AppInfo } from './app.ts';
-import type { ChatConfig } from './chat/route.ts';
+import type { ChatBackends, ChatConfig } from './chat/route.ts';
 import { editorPage } from './editor-page.ts';
 import { htmlDocument, icon } from '@delve/ui';
 import { canLogIn, isLoggedIn, type EditorAuth } from './login.ts';
@@ -72,7 +72,7 @@ function screenPage(info: AppInfo, id: string, rev: number, map: DelveMap): stri
   return htmlDocument({ title: `${map.name} · Players’ screen`, body, extra: css });
 }
 
-export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, chat?: ChatConfig): void {
+export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, chat?: ChatConfig, backends?: ChatBackends): void {
   app.get('/maps/:id/screen', async (req, reply) => {
     const { id } = req.params as { id: string };
     try {
@@ -111,6 +111,8 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
         loggedIn: isLoggedIn(auth, req),
         passwordSet: canLogIn(auth) || auth.sessions.open,
         chatModel: chat ? (chat.model ?? 'sonnet') : null,
+        // the desktop app: which backend answers, and whether there is a choice (never on the web server)
+        ...(backends ? { chatChoice: { backend: backends.current(), offered: backends.offered, name: backends.current() === 'claude' ? 'Claude' : backends.name } } : {}),
         levels: levelSiblings(store.list(), id).reverse(),
         account: user ? { name: user.name, role: user.role } : null,
         // snip an area to a PNG: admin and GM accounts (and open-edit development servers)

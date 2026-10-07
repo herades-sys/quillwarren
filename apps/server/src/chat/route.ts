@@ -4,12 +4,13 @@
 // editors (or API token holders) can chat, the same people who can edit.
 import { PassThrough, Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ValidationError, type Bounds } from '@delve/core';
 import { errorResponse, writeGuard } from '../api.ts';
 import type { Sessions } from '../auth.ts';
 import type { MapService } from '../service.ts';
 import { levelsOf } from '../levels.ts';
+import type { ChatEvent } from './events.ts';
 import { CHAT_SYSTEM_PROMPT, chatPrompt } from './prompt.ts';
 import type { ChatTokens } from './tokens.ts';
 
@@ -64,23 +65,71 @@ export function parseChatRequest(body: unknown): ChatRequest {
   };
 }
 
+/** The ways a chat message can be answered: the Claude Code bridge (above), a local model, or not at all. */
+export const CHAT_BACKENDS = ['none', 'claude', 'local'] as const;
+export type ChatBackendName = (typeof CHAT_BACKENDS)[number];
+
+/** One message for the local model (chat/local-chat.ts answers it). */
+export interface LocalChatRun {
+  mapId: string;
+  request: ChatRequest;
+  /** The address the browser used, so links the tools hand out work there. */
+  base: string;
+  send(ev: ChatEvent): void;
+  /** Aborted when the browser leaves or presses Stop. */
+  signal: AbortSignal;
+}
+
+/**
+ * More chat backends than the bridge, picked in the chat settings. The web
+ * server never sets this: its chat is the bridge alone, exactly as before.
+ * The desktop app does (desktop/main.ts with chat/local-chat.ts), offering
+ * none and local. The editor shows its chat settings only when two or more
+ * backends are offered.
+ */
+export interface ChatBackends {
+  offered: readonly ChatBackendName[];
+  /** The backend in use now. */
+  current(): ChatBackendName;
+  /** What the panel calls the assistant when it isn't Claude ("Assistant"). */
+  name: string;
+  /** GET /api/v1/chat with the local backend: whether the model answers ({ ok, error?, model }). */
+  localStatus(): Promise<Record<string, unknown>>;
+  /** GET /api/v1/chat/settings */
+  settings(): Record<string, unknown>;
+  /** PUT /api/v1/chat/settings: checks and keeps them; throws ValidationError. */
+  saveSettings(body: unknown): Promise<Record<string, unknown>>;
+  /** POST /api/v1/chat/settings/test: does a model server answer at this address, and with which models. */
+  test(body: unknown): Promise<Record<string, unknown>>;
+  /** Answer one message with the local model, as chat events. */
+  runLocal(run: LocalChatRun): Promise<void>;
+}
+
 export interface ChatDeps {
   service: MapService;
   token: string | undefined;
   sessions: Sessions;
   tokens: ChatTokens;
   config: ChatConfig | undefined;
+  /** Desktop only; see ChatBackends. */
+  backends?: ChatBackends | undefined;
 }
 
-export function registerChat(app: FastifyInstance, { service, token, sessions, tokens, config }: ChatDeps): void {
+export function registerChat(app: FastifyInstance, { service, token, sessions, tokens, config, backends }: ChatDeps): void {
   const writer = writeGuard(token, sessions);
   const bridge = (path: string) => `${config!.bridgeUrl.replace(/\/$/, '')}${path}`;
   const notSetUp = (reply: FastifyReply) =>
     reply.code(503).send({ error: 'the chat isn\'t set up on this server (DELVE_CHAT_URL is not set)' });
+  if (backends) registerBackends(app, writer, backends);
 
   app.get('/api/v1/chat', { preHandler: writer }, async () => {
+    if (backends && backends.current() !== 'claude') {
+      const backend = backends.current();
+      const head = { enabled: backend !== 'none', backend, backends: backends.offered, name: backends.name };
+      return backend === 'local' ? { ...head, ...(await backends.localStatus()) } : { ...head, ok: false };
+    }
     if (!config) return { enabled: false };
-    const base = { enabled: true, models: CHAT_MODELS, model: config.model ?? 'sonnet' };
+    const base = { enabled: true, models: CHAT_MODELS, model: config.model ?? 'sonnet', ...(backends ? { backend: 'claude', backends: backends.offered, name: 'Claude' } : {}) };
     try {
       const res = await fetch(bridge('/health'), { signal: AbortSignal.timeout(5000) });
       const body = (await res.json()) as { ok?: boolean; claude?: string; error?: string };
@@ -91,6 +140,7 @@ export function registerChat(app: FastifyInstance, { service, token, sessions, t
   });
 
   app.post('/api/v1/maps/:id/chat', { preHandler: writer }, async (req, reply) => {
+    if (backends && backends.current() !== 'claude') return answerLocally(req, reply, service, backends);
     if (!config) return notSetUp(reply);
     const { id } = req.params as { id: string };
     let r: ChatRequest;
@@ -150,4 +200,62 @@ export function registerChat(app: FastifyInstance, { service, token, sessions, t
     stream.pipe(out);
     return reply.type('application/x-ndjson; charset=utf-8').header('cache-control', 'no-store').send(out);
   });
+}
+
+// ---------- other backends (desktop only: registerChat gets them only from desktop/main.ts) ----------
+
+type Guard = ReturnType<typeof writeGuard>;
+
+/** The chat settings: shown and changed only where there is a choice (two or more backends). */
+function registerBackends(app: FastifyInstance, writer: Guard, backends: ChatBackends): void {
+  if (backends.offered.length < 2) return;
+  app.get('/api/v1/chat/settings', { preHandler: writer }, async () => backends.settings());
+  app.put('/api/v1/chat/settings', { preHandler: writer }, async (req, reply) => {
+    try {
+      return await backends.saveSettings(req.body);
+    } catch (e) {
+      const { status, body } = errorResponse(e);
+      return reply.code(status).send(body);
+    }
+  });
+  app.post('/api/v1/chat/settings/test', { preHandler: writer }, async (req, reply) => {
+    try {
+      return await backends.test(req.body);
+    } catch (e) {
+      const { status, body } = errorResponse(e);
+      return reply.code(status).send(body);
+    }
+  });
+}
+
+/** A message for the local model (or for no backend at all), streamed back as chat events like the bridge's. */
+async function answerLocally(req: FastifyRequest, reply: FastifyReply, service: MapService, backends: ChatBackends) {
+  if (backends.current() === 'none') {
+    return reply.code(503).send({ error: 'the chat is off: choose a local model in the chat settings' });
+  }
+  const { id } = req.params as { id: string };
+  let request: ChatRequest;
+  try {
+    request = parseChatRequest(req.body);
+    service.store.get(id);
+  } catch (e) {
+    const { status, body } = errorResponse(e);
+    return reply.code(status).send(body);
+  }
+  const base = `${req.protocol}://${req.headers.host}`.replace(/\/$/, '');
+  const abort = new AbortController();
+  reply.raw.on('close', () => abort.abort()); // the browser left or pressed Stop
+  const out = new PassThrough();
+  const beat = setInterval(() => out.write('\n'), HEARTBEAT_MS);
+  const send = (ev: ChatEvent) => {
+    if (!out.writableEnded) out.write(`${JSON.stringify(ev)}\n`);
+  };
+  void backends
+    .runLocal({ mapId: id, request, base, send, signal: abort.signal })
+    .catch((e: unknown) => send({ type: 'error', code: 'bridge', error: `The local model failed: ${(e as Error).message}` }))
+    .finally(() => {
+      clearInterval(beat);
+      out.end();
+    });
+  return reply.type('application/x-ndjson; charset=utf-8').header('cache-control', 'no-store').send(out);
 }

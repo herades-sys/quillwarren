@@ -312,7 +312,9 @@ export function initShell(o: { mapId: string; edit: boolean; snip?: boolean; vie
   function openShortcuts(): void {
     if (!shortcuts) return;
     const list = $('shortcuts-list')!;
-    if (!list.childElementCount) list.replaceChildren(...SHORTCUTS.filter(([k]) => (k !== 'Shift S' || o.snip) && (o.edit || ['Ctrl 0', 'PgUp / PgDn', 'Shift P', 'Shift G', 'Esc', '?'].includes(k))).map(([k, t]) => h('div', {}, h('kbd', {}, k), t)));
+    // the desktop app's local assistant isn't Claude (the chat panel carries its name)
+    const assistant = $('chat')?.dataset.assistant ?? 'Claude';
+    if (!list.childElementCount) list.replaceChildren(...SHORTCUTS.filter(([k]) => (k !== 'Shift S' || o.snip) && (o.edit || ['Ctrl 0', 'PgUp / PgDn', 'Shift P', 'Shift G', 'Esc', '?'].includes(k))).map(([k, t]) => h('div', {}, h('kbd', {}, k), t.replace('Claude', assistant))));
     shortcuts.hidden = false;
     shortcuts.querySelector<HTMLElement>('[data-close]')?.focus();
   }

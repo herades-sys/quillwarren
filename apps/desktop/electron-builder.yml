@@ -1,0 +1,85 @@
+# electron-builder: Delve for Windows (x64). scripts/build.sh prepares
+# build/resources (the server, Node.js, the icon, the notices) and runs this.
+# See docs/DESKTOP.md, "Building".
+appId: app.delve.desktop
+productName: Delve
+copyright: Copyright © 2026 the Delve authors
+directories:
+  output: out
+  buildResources: build
+# The Electron side is one bundled file; nothing from node_modules ships in app.asar.
+files:
+  - dist/**
+  - package.json
+asar: true
+extraResources:
+  - from: build/resources/node
+    to: node
+  - from: build/resources/server
+    to: server
+  # electron-builder never copies a resource folder's own node_modules: resvg (the PNG renderer) goes in on its own
+  - from: build/resources/server/node_modules
+    to: server/node_modules
+  - from: build/resources/icon.png
+    to: icon.png
+  - from: build/icon.ico
+    to: icon.ico
+  - from: build/resources/THIRD-PARTY-NOTICES.txt
+    to: THIRD-PARTY-NOTICES.txt
+  # The built-in model runtime, once llama.cpp's llama-server is approved and
+  # downloaded into build/resources/llama (llama-server.exe and its DLLs):
+  # - from: build/resources/llama
+  #   to: llama
+# Electron's fuses, set in Delve.exe itself: no running Electron as plain Node
+# (Delve's server has its own node.exe), no NODE_OPTIONS or --inspect from
+# outside, the app only from app.asar, cookies encrypted with the user's
+# Windows key. Asar integrity checking stays off until it has been tried on
+# Windows (see docs/DESKTOP.md, release checklist).
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  enableCookieEncryption: true
+  grantFileProtocolExtraPrivileges: false
+  enableEmbeddedAsarIntegrityValidation: false
+# Chromium's UI languages: Delve's pages are English; dialogs follow Windows.
+electronLanguages: [en-US, en-GB, de, fr, es, it, nl, pl]
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  icon: build/icon.ico
+  # Writing the icon and version into Delve.exe (rcedit) and signing need
+  # Windows or wine: scripts/build.sh switches this off when it cross-builds on
+  # Linux. Signing stays off until there is a certificate: set CSC_LINK (the
+  # .pfx, or base64 of it) and CSC_KEY_PASSWORD, or configure azureSignOptions
+  # (Azure Trusted Signing), and build on Windows. See docs/DESKTOP.md.
+  signAndEditExecutable: true
+  signtoolOptions:
+    signingHashAlgorithms: [sha256]
+    rfc3161TimeStampServer: http://timestamp.digicert.com
+  # publisherName: "Exact subject CN of the code-signing certificate"
+  artifactName: Delve-${version}-win-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Delve
+  menuCategory: false
+  # Maps, pictures and settings stay unless the user says otherwise (build/installer.nsh asks).
+  deleteAppDataOnUninstall: false
+  include: build/installer.nsh
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  uninstallDisplayName: Delve
+  artifactName: Delve-Setup-${version}.${ext}
+# Updates (electron-updater) are prepared but off: there is no public release
+# host yet (the GitHub repository is private). When there is one, publish here
+# and set UPDATE_URL in src/updater.ts. See docs/DESKTOP.md, "Updates".
+publish: null

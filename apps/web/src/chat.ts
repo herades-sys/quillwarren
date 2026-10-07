@@ -251,7 +251,37 @@ const initialsOf = (name: string) => {
   return (w.length > 1 ? w[0]![0]! + w[1]![0]! : (w[0] ?? 'Y').slice(0, 2)).toUpperCase();
 };
 
-export function initChat(host: ChatHost, opts: { model: string }): void {
+/** What the desktop app's chat settings are about (chat-settings.ts on the server side: chat/local-chat.ts). */
+interface ChatSettingsView {
+  backend: string;
+  offered: string[];
+  local: { url: string; model: string };
+  /** Addresses to suggest: Ollama's and llama-server's defaults. */
+  suggestions?: { label: string; url: string }[];
+  /** The model manager page, where there is one (the desktop app). */
+  links?: { models?: string };
+}
+
+const BACKEND_TEXT: Record<string, [string, string]> = {
+  none: ['Off', 'No chat. Nothing is sent anywhere.'],
+  local: ['Local model', 'A model server on this computer or your network: Ollama, LM Studio or llama.cpp’s llama-server. Maps never leave your network.'],
+  claude: ['Claude', 'Claude Code through this server’s chat bridge.'],
+};
+
+/** For a small local model: one clear thing at a time works best. */
+const LOCAL_SUGGESTIONS_FILLED = [
+  'Add a 6×4 room east of room 1 and connect it with a door',
+  'Put a table with four chairs in room 2',
+  'Fill room 3 with water',
+  'Write a short GM note for room 1: what is there',
+];
+const LOCAL_SUGGESTIONS_EMPTY = ['Add an 8×6 room, then a 5×5 room east of it, joined by a corridor with a door', 'Add a round room 6 squares wide with four pillars'];
+
+/**
+ * opts.backends: the desktop app's choice of backends (the web server sends
+ * none: its chat is Claude through the bridge, and the panel stays as it was).
+ */
+export function initChat(host: ChatHost, opts: { model: string; backend?: string; backends?: string[]; name?: string }): void {
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const panel = $('chat');
   const toggle = $<HTMLButtonElement>('chat-toggle');
@@ -280,6 +310,19 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
   modelSel.value = store.get<string>('delve-chat-model') ?? opts.model;
   if (!modelSel.value) modelSel.value = 'sonnet';
   modelSel.addEventListener('change', () => store.set('delve-chat-model', modelSel.value));
+
+  // Who answers: Claude (the web server, always), or in the desktop app a local model or nothing.
+  const name = opts.name ?? 'Claude';
+  const isClaude = name === 'Claude';
+  const theAi = isClaude ? 'Claude' : 'the assistant';
+  const TheAi = isClaude ? 'Claude' : 'The assistant';
+  let backend = opts.backend ?? 'claude';
+  const choice = (opts.backends?.length ?? 0) > 1;
+  const modelBox = modelSel.closest<HTMLElement>('.select');
+  const syncBackend = () => {
+    if (modelBox) modelBox.style.display = backend === 'claude' ? '' : 'none';
+  };
+  syncBackend();
 
   // "Show Claude's plan" (the header's checklist button): remembered per browser, on by default
   const planBtn = document.getElementById('chat-plan') as HTMLButtonElement | null;
@@ -319,9 +362,13 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     checked = true;
     try {
       const res = await fetch('/api/v1/chat');
-      const body = (await res.json()) as { enabled?: boolean; ok?: boolean; error?: string; claude?: string };
-      if (!body.enabled) setStatus('The chat isn’t set up on this server.', 'bad');
-      else if (!body.ok) setStatus(`Claude isn’t reachable: ${body.error ?? 'unknown problem'}`, 'bad');
+      const body = (await res.json()) as { enabled?: boolean; ok?: boolean; error?: string; claude?: string; backend?: string };
+      if (body.backend) {
+        backend = body.backend;
+        syncBackend();
+      }
+      if (!body.enabled) setStatus(choice ? '' : 'The chat isn’t set up on this server.', 'bad'); // with a choice, the log says how to turn it on
+      else if (!body.ok) setStatus(`${TheAi} isn’t reachable: ${body.error ?? 'unknown problem'}`, 'bad');
       else if (!busy) setStatus('');
     } catch {
       setStatus('Couldn’t reach Delve to check the chat.', 'bad');
@@ -383,7 +430,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
       const count = h('span', { class: 'ed-plan-count' });
       const eta = h('span', { class: 'ed-plan-eta', title: 'An estimate from the steps so far' });
       const fill = h('span', { class: 'ed-plan-fill' });
-      const bar = h('div', { class: 'ed-plan-bar', role: 'progressbar', 'aria-label': 'Claude’s progress', 'aria-valuemin': 0, 'aria-valuemax': 100 }, fill);
+      const bar = h('div', { class: 'ed-plan-bar', role: 'progressbar', 'aria-label': `${TheAi}’s progress`, 'aria-valuemin': 0, 'aria-valuemax': 100 }, fill);
       const list = h('div');
       const note = h('p', { class: 'ed-plan-note' });
       card = { el: h('div', { class: 'ed-plan', 'data-state': 'working' }, h('div', { class: 'ed-plan-head' }, count, eta), bar, list, note), count, eta, bar, fill, list, note, sig: '' };
@@ -396,7 +443,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
     if (!card) return;
     const now = Date.now();
     const [title, right] = cardHead(p, now, replying?.at);
-    card.count.textContent = title;
+    card.count.textContent = isClaude ? title : title.replace('Claude', theAi);
     card.eta.textContent = right;
     card.el.dataset.mode = p.mode ?? 'plan';
     if (p.mode === 'activity') {
@@ -447,7 +494,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
         },
       },
       iconEl(p.outcome === 'done' ? 'check' : p.outcome === 'stopped' ? 'stop' : 'alert', 14),
-      h('span', { class: 'spacer' }, planSummary(p, m.at)),
+      h('span', { class: 'spacer' }, isClaude ? planSummary(p, m.at) : planSummary(p, m.at).replace('Claude', theAi)),
       iconEl('chevron-down', 14),
     );
     return h('div', { class: 'ed-plan', 'data-state': p.outcome ?? 'failed' }, sum, list, note);
@@ -465,7 +512,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
   }
 
   function claudeBody(m: Msg, working: boolean): HTMLElement {
-    const body = h('div', { class: 'ed-msg-body' }, meta('Claude', working ? 'working' : clock(m.at)));
+    const body = h('div', { class: 'ed-msg-body' }, meta(name, working ? 'working' : clock(m.at)));
     if (m.plan && showPlan) body.append(busy && m === replying ? liveCard(m.plan) : doneCard(m.plan, m));
     let tools: ToolPart[] = [];
     const flushTools = () => {
@@ -489,20 +536,30 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
         h('button', { type: 'button', class: 'btn btn-secondary btn-sm', style: 'align-self:flex-start', onclick: () => busy?.abort() }, iconEl('stop', 14), 'Stop', h('span', { class: 'key' }, 'Esc')),
       );
     }
-    return h('div', { class: 'ed-msg' }, h('span', { class: 'ed-claude-mark', 'aria-hidden': 'true' }, 'C'), body);
+    return h('div', { class: 'ed-msg' }, h('span', { class: 'ed-claude-mark', 'aria-hidden': 'true' }, name.charAt(0).toUpperCase()), body);
   }
 
   function draw(): void {
     if (!open) return;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
     const kids: HTMLElement[] = [];
-    if (!messages.length) {
+    if (choice && backend === 'none') {
+      // the desktop app with the chat off: say how to turn it on
       kids.push(
         h(
           'div',
           { class: 'ed-suggest' },
-          h('p', {}, 'Ask Claude to build or change this map. It sees the whole map, what you have selected and where you are looking, and you watch every change happen. Each reply is one undo step.'),
-          ...(host.hasObjects() ? SUGGESTIONS_FILLED : SUGGESTIONS_EMPTY).map((s) => h('button', { type: 'button', onclick: () => ((input.value = s), input.focus()) }, s)),
+          h('p', {}, 'The chat is off. With a local model (Ollama, LM Studio or llama.cpp’s llama-server on this computer or your network) the assistant builds and changes this map while you watch.'),
+          h('button', { type: 'button', onclick: () => void showSettings(true) }, 'Choose a local model…'),
+        ),
+      );
+    } else if (!messages.length) {
+      kids.push(
+        h(
+          'div',
+          { class: 'ed-suggest' },
+          h('p', {}, `Ask ${theAi} to build or change this map. It sees the whole map, what you have selected and where you are looking, and you watch every change happen. Each reply is one undo step.`),
+          ...(backend === 'local' ? (host.hasObjects() ? LOCAL_SUGGESTIONS_FILLED : LOCAL_SUGGESTIONS_EMPTY) : host.hasObjects() ? SUGGESTIONS_FILLED : SUGGESTIONS_EMPTY).map((s) => h('button', { type: 'button', onclick: () => ((input.value = s), input.focus()) }, s)),
         ),
       );
     }
@@ -528,6 +585,117 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
       draw();
     });
   };
+
+  // ---------- settings (only with a choice of backends: the desktop app) ----------
+
+  const settingsBtn = document.getElementById('chat-settings') as HTMLButtonElement | null;
+  const pane = document.getElementById('chat-settings-pane');
+  let settingsOpen = false;
+
+  async function showSettings(on: boolean): Promise<void> {
+    if (!pane || !choice) return;
+    if (on && !open) setOpen(true, false);
+    settingsOpen = on;
+    pane.hidden = !on;
+    log.style.display = on ? 'none' : ''; // the log and the form are display: flex, which beats [hidden]
+    form.style.display = on ? 'none' : '';
+    settingsBtn?.setAttribute('aria-pressed', String(on));
+    if (!on) {
+      draw();
+      return;
+    }
+    pane.replaceChildren(h('p', { class: 'ed-cs-off' }, 'Loading the settings…'));
+    try {
+      const res = await fetch('/api/v1/chat/settings');
+      if (!res.ok) throw new Error(`the server answered ${res.status}`);
+      fillSettings((await res.json()) as ChatSettingsView);
+    } catch (e) {
+      pane.replaceChildren(h('p', { class: 'ed-cs-result', 'data-kind': 'bad' }, `Couldn’t load the chat settings: ${(e as Error).message}`));
+    }
+  }
+
+  function fillSettings(s: ChatSettingsView): void {
+    if (!pane) return;
+    let picked = s.backend;
+    const url = h('input', { class: 'input', id: 'cs-url', type: 'url', value: s.local.url, placeholder: 'http://127.0.0.1:11434/v1', spellcheck: 'false', autocomplete: 'off' });
+    const models = h('datalist', { id: 'cs-models' });
+    const model = h('input', { class: 'input', id: 'cs-model', value: s.local.model, placeholder: 'qwen3:8b', list: 'cs-models', spellcheck: 'false', autocomplete: 'off' });
+    const result = h('p', { class: 'ed-cs-result', role: 'status' });
+    const say = (text: string, kind = '') => {
+      result.textContent = text.charAt(0).toUpperCase() + text.slice(1);
+      result.dataset.kind = kind;
+    };
+    const local = h(
+      'div',
+      { class: 'ed-cs-local' },
+      h('div', { class: 'field' }, h('label', { for: 'cs-url' }, 'Server address'), url, h('span', { class: 'field-hint' }, 'Ollama: http://127.0.0.1:11434/v1 · llama-server: http://127.0.0.1:8080/v1'), ...(s.suggestions?.length ? [h('span', { class: 'ed-cs-actions' }, ...s.suggestions.map((g) => h('button', { type: 'button', class: 'btn btn-plain btn-sm', onclick: () => ((url.value = g.url), say('')) }, g.label)))] : [])),
+      h('div', { class: 'field' }, h('label', { for: 'cs-model' }, 'Model'), model, models, h('span', { class: 'field-hint' }, 'Small models (qwen3:8b) work; bigger ones follow requests better.')),
+      h(
+        'div',
+        { class: 'ed-cs-actions' },
+        h('button', {
+          type: 'button',
+          class: 'btn btn-secondary btn-sm',
+          onclick: async () => {
+            say('Checking…');
+            try {
+              const res = await fetch('/api/v1/chat/settings/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: url.value.trim(), model: model.value.trim() }) });
+              const body = (await res.json()) as { ok?: boolean; error?: string; api?: string; models?: string[]; hasModel?: boolean };
+              models.replaceChildren(...(body.models ?? []).map((m) => h('option', { value: m })));
+              if (!res.ok || !body.ok) say(body.error ?? `the server answered ${res.status}`, 'bad');
+              else say(`It answers (${body.api === 'ollama' ? 'Ollama' : 'OpenAI-compatible'}). ${body.models?.length ? `${body.models.length} model${body.models.length === 1 ? '' : 's'}: ${body.models.slice(0, 6).join(', ')}${body.models.length > 6 ? '…' : ''}.` : ''}${body.hasModel === false && model.value.trim() ? ` “${model.value.trim()}” isn’t one of them.` : ''}`, body.hasModel === false && model.value.trim() ? 'bad' : '');
+            } catch (e) {
+              say(`Couldn’t check: ${(e as Error).message}`, 'bad');
+            }
+          },
+        }, 'Check the server'),
+        ...(s.links?.models ? [h('a', { class: 'btn btn-plain btn-sm', href: s.links.models }, 'Built-in models…')] : []),
+      ),
+    );
+    const syncLocal = () => (local.hidden = picked !== 'local');
+    const choices = h(
+      'div',
+      { class: 'ed-cs-choices', role: 'radiogroup', 'aria-label': 'Who answers in the chat' },
+      ...s.offered.map((b) => {
+        const radio = h('input', { type: 'radio', name: 'cs-backend', value: b, checked: b === picked, onchange: () => ((picked = b), syncLocal()) });
+        const [title, sub] = BACKEND_TEXT[b] ?? [b, ''];
+        return h('label', { class: 'ed-cs-choice' }, radio, h('span', {}, h('b', {}, title), h('span', { class: 'ed-cs-sub' }, sub)));
+      }),
+    );
+    syncLocal();
+    const saveBtn = h('button', {
+      type: 'button',
+      class: 'btn btn-primary btn-sm',
+      onclick: async () => {
+        saveBtn.disabled = true;
+        say('Saving…');
+        try {
+          const res = await fetch('/api/v1/chat/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: picked, local: { url: url.value.trim(), model: model.value.trim() } }) });
+          const body = (await res.json()) as { backend?: string; error?: string };
+          if (!res.ok) throw new Error(body.error ?? `the server answered ${res.status}`);
+          backend = body.backend ?? picked;
+          syncBackend();
+          session = undefined; // another model: a new conversation
+          checked = false;
+          await showSettings(false);
+          void checkBridge();
+        } catch (e) {
+          say((e as Error).message, 'bad');
+        } finally {
+          saveBtn.disabled = false;
+        }
+      },
+    }, 'Save');
+    pane.replaceChildren(
+      h('p', { class: 'ed-cs-title' }, 'Who answers in the chat'),
+      choices,
+      local,
+      result,
+      h('div', { class: 'ed-cs-actions' }, saveBtn, h('button', { type: 'button', class: 'btn btn-secondary btn-sm', onclick: () => void showSettings(false) }, 'Cancel')),
+    );
+  }
+
+  settingsBtn?.addEventListener('click', () => void showSettings(!settingsOpen));
 
   // ---------- sending ----------
 
@@ -556,7 +724,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
       const res = await fetch(`/api/v1/maps/${encodeURIComponent(host.mapId)}/chat`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ message: text, session, selection: host.selection(), view: host.view(), model: modelSel.value }),
+        body: JSON.stringify({ message: text, session, selection: host.selection(), view: host.view(), ...(backend === 'claude' ? { model: modelSel.value } : {}) }),
         signal: abort.signal,
       });
       if (!res.ok || !res.body) {
@@ -620,7 +788,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
                 if (!retried && /no conversation found/i.test(ev.error ?? '')) restart = true;
                 else {
                   failed = true;
-                  messages.push({ role: 'error', text: ev.error ?? 'Claude stopped with an error.', at: Date.now() });
+                  messages.push({ role: 'error', text: ev.error ?? `${TheAi} stopped with an error.`, at: Date.now() });
                 }
               }
               break;
@@ -636,7 +804,7 @@ export function initChat(host: ChatHost, opts: { model: string }): void {
         }
       }
     } catch (e) {
-      if (abort.signal.aborted) messages.push({ role: 'error', text: 'Stopped. Changes Claude already made are kept (undo removes them).', at: Date.now() });
+      if (abort.signal.aborted) messages.push({ role: 'error', text: `Stopped. Changes ${theAi} already made are kept (undo removes them).`, at: Date.now() });
       else {
         failed = true;
         messages.push({ role: 'error', text: `The chat failed: ${(e as Error).message}`, at: Date.now() });
