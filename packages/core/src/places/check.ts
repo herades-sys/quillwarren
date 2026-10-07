@@ -21,6 +21,7 @@ export type ProblemKind =
   | 'rooms-overlap'
   | 'rooms-touch'
   | 'corridor-through-room'
+  | 'corridor-duplicate'
   | 'corridor-unconnected'
   | 'door-off-wall'
   | 'prop-outside-room'
@@ -166,8 +167,28 @@ function corridorReport(map: DelveMap, c: Extract<MapObject, { type: 'corridor' 
     const r = map.objects.find((o) => o.id === id) as Room;
     return !endsAt(path, r);
   });
-  if (hits.length) return { problems: [{ kind: 'corridor-through-room', ids: [c.id, ...hits], text: `corridor ${c.id} runs through ${hits.join(', ')}` }], fine: [] };
+  const problems: Problem[] = [];
+  if (hits.length) problems.push({ kind: 'corridor-through-room', ids: [c.id, ...hits], text: `corridor ${c.id} runs through ${hits.join(', ')}` });
+  const twin = doubledBy(map, c);
+  if (twin) problems.push({ kind: 'corridor-duplicate', ids: [c.id, twin], text: `corridors ${[c.id, twin].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(' and ')} both join ${c.from} and ${c.to} along the same way: one of them is left over (delete it)` });
+  if (problems.length) return { problems, fine: [] };
   return { problems: [], fine: ['clear of the rooms it does not join'] };
+}
+
+/** Another corridor joining the same two rooms over mostly the same floor (a second connect for a join that was already made). */
+function doubledBy(map: DelveMap, c: Extract<MapObject, { type: 'corridor' }>): string | undefined {
+  if (!c.from || !c.to) return undefined;
+  const pair = [c.from, c.to].sort().join(' ');
+  const mine = objectArea(map, c.id);
+  if (!mine) return undefined;
+  for (const o of map.objects) {
+    if (o.type !== 'corridor' || o.id === c.id || !o.from || !o.to || [o.from, o.to].sort().join(' ') !== pair) continue;
+    const other = objectArea(map, o.id);
+    if (!other) continue;
+    const shared = intersectArea(mine.paths, other.paths);
+    if (shared > 0.5 * Math.min(pathsArea(mine.paths), pathsArea(other.paths))) return o.id;
+  }
+  return undefined;
 }
 
 const distToRing = (p: Point, ring: readonly Point[]): number => {
@@ -228,6 +249,35 @@ function heightReport(map: DelveMap, h: Extract<MapObject, { type: 'height' }>, 
   return { problems: [], fine: [total > 0 && on / total < 0.97 ? `${Math.round((100 * on) / total)} % on floor or terrain` : 'on the ground'] };
 }
 
+/**
+ * How an area sits with the other terrain and the height areas, so a path drawn
+ * in the wrong place shows: "on t1", "off the other terrain (nearest t1, 0.5
+ * squares away)", "reaches h1", "does not reach h1 (20.5 squares away)".
+ */
+function areaRelations(map: DelveMap, self: ObjectArea): string[] {
+  const out: string[] = [];
+  const own = pathsArea(self.paths);
+  const grown = inflatePathsD(self.paths, 0.01, JoinType.Miter, EndType.Polygon, 2, PRECISION);
+  const others = (type: 'terrain' | 'height') =>
+    map.objects
+      .filter((o) => o.type === type && o.id !== self.id)
+      .map((o) => {
+        const a = objectArea(map, o.id)!;
+        return { id: o.id, share: own > 0 ? intersectArea(self.paths, a.paths) / own : 0, meets: intersectArea(grown, a.paths) > 1e-6, gap: boxGap(self.bounds, a.bounds) };
+      })
+      .sort((a, b) => a.gap - b.gap);
+  const terrain = others('terrain');
+  if (terrain.length) {
+    const on = terrain.filter((x) => x.share > 0.02).sort((a, b) => b.share - a.share);
+    const beside = terrain.filter((x) => x.meets && x.share <= 0.02);
+    if (on.length) out.push(on.slice(0, 3).map((x) => (x.share >= 0.97 ? `on ${x.id}` : `${Math.round(x.share * 100)} % on ${x.id}`)).join(', '));
+    else if (beside.length) out.push(`beside ${beside.slice(0, 3).map((x) => x.id).join(', ')}, not on ${beside.length > 1 ? 'them' : 'it'}`);
+    else out.push(`off the other terrain (nearest ${terrain[0]!.id}, ${squares(terrain[0]!.gap)} away)`);
+  }
+  for (const h of others('height').slice(0, 3)) out.push(h.meets ? `reaches ${h.id}` : `does not reach ${h.id} (${squares(h.gap)} away)`);
+  return out;
+}
+
 function terrainReport(map: DelveMap, t: Extract<MapObject, { type: 'terrain' }>): Report {
   const a = objectArea(map, t.id)!;
   const floor = floorPaths(map);
@@ -241,8 +291,9 @@ function terrainReport(map: DelveMap, t: Extract<MapObject, { type: 'terrain' }>
       return { id: r.id, share };
     })
     .filter((x) => x.share > 0.02);
-  if (!covered.length) return { problems: [], fine: [onFloor > 0.05 * own ? 'on the floor' : 'outdoors, outside the rooms'] };
-  return { problems: [], fine: [covered.map((c) => (c.share > 0.97 ? `covers all of ${c.id}` : `covers ${Math.round(c.share * 100)} % of ${c.id}`)).join(', ')] };
+  const relations = areaRelations(map, a);
+  if (!covered.length) return { problems: [], fine: [onFloor > 0.05 * own ? 'on the floor' : 'outdoors, outside the rooms', ...relations] };
+  return { problems: [], fine: [covered.map((c) => (c.share > 0.97 ? `covers all of ${c.id}` : `covers ${Math.round(c.share * 100)} % of ${c.id}`)).join(', '), ...relations] };
 }
 
 function labelReport(map: DelveMap, o: { at: Point }): Report {
@@ -286,7 +337,7 @@ export function checkMap(map: DelveMap): Problem[] {
   // one problem seen from both sides ("c3 runs through r1" and "c3 runs through r1, r2"; "i2 overlaps i1" and "i1 overlaps i2, i3"): keep the fuller one
   const covered = (p: Problem, q: Problem) => p !== q && p.kind === q.kind && p.ids.every((id) => q.ids.includes(id)) && (q.ids.length > p.ids.length || out.indexOf(q) < out.indexOf(p));
   const kept = out.filter((p) => !out.some((q) => covered(p, q)));
-  const order: ProblemKind[] = ['rooms-overlap', 'corridor-through-room', 'door-off-wall', 'rooms-touch', 'corridor-unconnected', 'prop-outside-room', 'prop-overlap', 'prop-in-doorway', 'prop-stray', 'height-off-ground'];
+  const order: ProblemKind[] = ['rooms-overlap', 'corridor-through-room', 'corridor-duplicate', 'door-off-wall', 'rooms-touch', 'corridor-unconnected', 'prop-outside-room', 'prop-overlap', 'prop-in-doorway', 'prop-stray', 'height-off-ground'];
   return kept.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
 }
 

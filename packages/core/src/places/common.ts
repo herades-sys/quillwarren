@@ -160,12 +160,29 @@ export function objectArea(map: DelveMap, id: string): ObjectArea | null {
   }
 }
 
-/** The area of an id, or a ValidationError that says what is there. */
+/** What the ids of each prefix are, for saying which ones a map has. */
+const ID_KINDS: Record<string, { type: MapObject['type']; words: string }> = {
+  c: { type: 'corridor', words: 'corridors' },
+  d: { type: 'door', words: 'doors' },
+  i: { type: 'prop', words: 'props' },
+  t: { type: 'terrain', words: 'terrain areas' },
+  h: { type: 'height', words: 'height areas' },
+  l: { type: 'label', words: 'labels' },
+};
+
+/** The area of an id, or a ValidationError that says what is there (the rooms, and the ids of the kind asked for). */
 export function needArea(map: DelveMap, id: string, field: string): ObjectArea {
   const a = objectArea(map, id);
   if (!a) {
-    const rooms = map.objects.filter((o) => o.type === 'room').map((o) => o.id);
-    throw new ValidationError([`${field}: there is no object "${id}" on this map${rooms.length ? ` (rooms: ${rooms.slice(0, 20).join(', ')})` : ''}`]);
+    const of = (type: MapObject['type']) => map.objects.filter((o) => o.type === type).map((o) => o.id);
+    const rooms = of('room');
+    const kind = ID_KINDS[/^([a-z])\d+$/.exec(String(id).trim())?.[1] ?? ''];
+    const same = kind ? of(kind.type) : [];
+    const parts = [
+      ...(kind ? [`${kind.words}: ${same.length ? same.slice(0, 20).join(', ') : 'none yet'}`] : []),
+      ...(rooms.length ? [`rooms: ${rooms.slice(0, 20).join(', ')}`] : []),
+    ];
+    throw new ValidationError([`${field}: there is no object "${id}" on this map${!map.objects.length ? ' (the map is empty)' : parts.length ? ` (${parts.join('; ')})` : ''}`]);
   }
   return a;
 }

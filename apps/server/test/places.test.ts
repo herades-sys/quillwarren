@@ -133,6 +133,38 @@ describe('placing by meaning over MCP', () => {
     expect((byId(await mapOf(ft), 'h1') as { height: number }).height).toBe(16.4);
   });
 
+  it('what small models got wrong: the map id as a region, a path by from and to, a rotation on a wall, a wrong asset id', async () => {
+    const id = await newMap('empty', '1.5 m');
+    // {"in": "<map id>", "rect": …} is the rect; {"in": "<map id>"} alone on an empty map says to give one
+    const empty = await call('add_terrain', { map: id, asset: 'grass', region: { in: id } });
+    expect(empty.text).toBe('region: the map is still empty, so "all of the map" has no area yet: give a rect {"rect": [x, y, width, height]} (draw the first area there, then use edges and corners)');
+    expect((await call('add_terrain', { map: id, asset: 'grass', region: { in: id, rect: [0, 0, 30, 20] } })).text).toContain('Added Grass terrain t1: 30×20 squares at 0,0');
+    await call('add_height', { map: id, region: { corner: 'sw', size: 10 }, height: '5 m', edge: 'slope' });
+    const band = await call('add_terrain', { map: id, asset: 'dirt', region: { edge: 'east', depth: 3, outside: true } });
+    expect(band.text).toContain('Check: outdoors, outside the rooms, off the other terrain (nearest t1, 0.5 squares away), does not reach h1 (20.5 squares away).');
+    await call('delete', { map: id, ids: ['t2'] });
+    const path = await call('add_terrain', { map: id, asset: 'dirt', region: { from: 'east', to: 'h1' } });
+    expect(path.text).toContain('a 2-square-wide strip from the east edge of the map at [30, 15] to height area h1');
+    expect(path.text).toContain('Check: outdoors, outside the rooms, on t1, reaches h1.');
+    // a region as an end gets through the schema too
+    const toCorner = await call('add_terrain', { map: id, asset: 'dirt', region: { from: 'east', to: { corner: 'sw', size: 10 } } });
+    expect(toCorner.text).toContain('to the middle of the south-west corner of the map');
+    // a wrong asset id names the ones like it
+    expect((await call('add_props_along', { map: id, asset: 'bridge', path: [[1, 1], [5, 1]] })).text).toBe('asset: "bridge" is not a prop (use list_assets). Props like it: plank-bridge, c-bridge-wood, c-bridge-stone.');
+    expect((await call('add_terrain', { map: id, asset: 'dirt-road', rect: [0, 0, 2, 2] })).text).toMatch(/^asset: "dirt-road" is not a terrain tile .*\. Terrain like it: dirt, /);
+    const d = await newMap();
+    await call('add_prop', { map: d, asset: 'table-round', in: 'r2', place: 'center' });
+    await call('add_prop', { map: d, asset: 'chair', place: 'around i1', count: 4 });
+    const taken = await call('add_prop', { map: d, asset: 'bar-counter', in: 'r2', place: 'east wall' });
+    expect(taken.isError).toBe(true);
+    expect(taken.text).toBe('Along the east wall it does not fit (doorways, props or pillars take it); the north, south walls have room for it. Try: add_prop {"asset": "bar-counter", "in": "r2", "place": "north wall"}');
+    const turned = await call('add_prop', { map: d, asset: 'bar-counter', in: 'r2', place: 'south wall', rotation: 270 });
+    expect(turned.text).toMatch(/^Added Bar Counter with Tankards i6 at \[[\d.]+, 20\.5\] turned 180° against the south wall of room 2 Crossroads \(r2\), facing north into the room \(covers x [\d.]+–[\d.]+, y 20–21\)\. Rotation 270 was left out: against the south wall a prop is turned to face into the room \(rotation 180\)\./);
+    // and the whole dungeon's floor by its map id
+    const floor = await call('add_terrain', { map: d, asset: 'flagstones', region: { in: d } });
+    expect(floor.text).toContain("all of the map's floor (every room and corridor");
+  });
+
   it('connect goes round a room in the way, and widths take units', async () => {
     const id = await newMap('empty');
     await call('add_room', { map: id, rect: [0, 0, 4, 4] });

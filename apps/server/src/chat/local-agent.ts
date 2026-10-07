@@ -11,8 +11,13 @@
 // Small models are sloppy, so it repairs JSON arguments, reads tool calls that
 // were written as text, strips <think> blocks (counting them), fixes argument
 // types the schema makes obvious, and tells the model about unknown tools.
+// The calls of one reply run in order; after a failed one the rest are held
+// back and the model is told which (local-steps.ts). Helping steps for small
+// models (next ids, a final check, a digest, a plan) are in local-steps.ts too.
 import http from 'node:http';
 import https from 'node:https';
+import type { DelveMap } from '@delve/core';
+import { finalCheck, heldBackNote, notRunText, parsePlan, planReminder, repeatNote, stateDigest, type HelpingStep, type Steps } from './local-steps.ts';
 
 export type Json = Record<string, unknown>;
 
@@ -828,6 +833,12 @@ export interface AgentOptions {
   maxResultChars?: number;
   /** Stop after this many failed tool calls in a row (default 8). */
   maxErrorsInARow?: number;
+  /** Helping steps for small models (local-steps.ts); default none. final and digest need readMap. */
+  steps?: Steps;
+  /** Reads the map as it is now (the final check and the digest compare it with the map at the start). */
+  readMap?: () => Promise<DelveMap>;
+  /** The request in the user's own words (without the context block): the final check restates it after a held-back batch. */
+  request?: string;
   onEvent?: (e: AgentEvent) => void;
   now?: () => number;
 }
@@ -835,7 +846,8 @@ export interface AgentOptions {
 export type AgentEvent =
   | { type: 'reply'; turn: number; ms: number; content: string; think: string; calls: number; promptTokens?: number; completionTokens?: number }
   | { type: 'call'; record: CallRecord }
-  | { type: 'nudge'; text: string };
+  | { type: 'nudge'; text: string }
+  | { type: 'step'; step: HelpingStep; text: string };
 
 export interface CallRecord {
   turn: number;
@@ -850,6 +862,8 @@ export interface CallRecord {
   /** The arguments needed repairing (JSON, types, wrapping). */
   repaired: boolean;
   local?: boolean;
+  /** Held back: an earlier call in the same reply failed (ok is false, but it is no error). */
+  notRun?: boolean;
 }
 
 export type StopReason = 'answer' | 'turns' | 'tool_calls' | 'time' | 'errors' | 'empty' | 'model_error';
@@ -882,6 +896,10 @@ export interface AgentStats {
   /** The largest prompt of the run (tokens). */
   maxPrompt: number;
   wallMs: number;
+  /** Calls held back because an earlier call in the same reply failed (not in toolCalls). */
+  notRun: number;
+  /** Times the final check handed problems back (step final). */
+  finalChecks: number;
 }
 
 export interface AgentRun {
@@ -893,10 +911,12 @@ export interface AgentRun {
   stats: AgentStats;
   calls: CallRecord[];
   messages: AgentMessage[];
+  /** The model's numbered plan (step plan). */
+  plan?: string[];
 }
 
 export function emptyStats(): AgentStats {
-  return { turns: 0, toolCalls: 0, toolErrors: 0, badJson: 0, repaired: 0, textCalls: 0, unknownTools: 0, empty: 0, promptTokens: 0, completionTokens: 0, thinkChars: 0, outputChars: 0, modelMs: 0, evalMs: 0, promptMs: 0, loadMs: 0, maxPrompt: 0, wallMs: 0 };
+  return { turns: 0, toolCalls: 0, toolErrors: 0, badJson: 0, repaired: 0, textCalls: 0, unknownTools: 0, empty: 0, promptTokens: 0, completionTokens: 0, thinkChars: 0, outputChars: 0, modelMs: 0, evalMs: 0, promptMs: 0, loadMs: 0, maxPrompt: 0, wallMs: 0, notRun: 0, finalChecks: 0 };
 }
 
 /** Malformed calls in the report: unreadable or repaired arguments, calls written as text, unknown tool names. */
@@ -941,6 +961,14 @@ export async function runAgent(o: AgentOptions): Promise<AgentRun> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeLimit);
   timer.unref?.();
+  const steps = o.steps ?? {};
+  // the map at the start, for the final check and the digest
+  const readMap = o.readMap;
+  const start = readMap && (steps.final || steps.digest) ? await readMap() : undefined;
+  let finalDone = false;
+  /** The answer the final check sent back: still the answer if the run ends before another one. */
+  let checkedAnswer = '';
+  let plan: string[] = [];
 
   const nudge = (text: string) => {
     messages.push({ role: 'user', content: text });
@@ -1013,11 +1041,25 @@ export async function runAgent(o: AgentOptions): Promise<AgentRun> {
       stats.outputChars += content.length + raw.reduce((s, r) => s + (typeof r.call.arguments === 'string' ? r.call.arguments.length : JSON.stringify(r.call.arguments).length), 0);
       if (content) lastText = content;
       emit({ type: 'reply', turn: stats.turns, ms, content, think: thinking, calls: raw.length, ...(reply.promptTokens !== undefined ? { promptTokens: reply.promptTokens } : {}), ...(reply.completionTokens !== undefined ? { completionTokens: reply.completionTokens } : {}) });
+      // step plan: the model's numbered plan, from its text (or its thinking, where a thinking model often writes it)
+      if (steps.plan && !plan.length) plan = parsePlan(content).length ? parsePlan(content) : parsePlan(thinking);
 
       if (!raw.length) {
         if (content) {
-          answer = content;
           messages.push({ role: 'assistant', content });
+          // step final: once, check the map before taking the answer
+          if (steps.final && !finalDone && start && readMap) {
+            finalDone = true;
+            const back = finalCheck({ answer: content, calls, start, now: await readMap(), plan, ...(o.request ? { request: o.request } : {}) });
+            if (back) {
+              stats.finalChecks++;
+              checkedAnswer = content;
+              messages.push({ role: 'user', content: back });
+              emit({ type: 'step', step: 'final', text: back });
+              continue;
+            }
+          }
+          answer = content;
           stop = 'answer';
           break;
         }
@@ -1033,10 +1075,22 @@ export async function runAgent(o: AgentOptions): Promise<AgentRun> {
 
       const prepared = raw.map((r, i) => prepare(r.call, r.source, i));
       messages.push({ role: 'assistant', content, toolCalls: prepared.map((p) => ({ id: p.id, name: p.name, args: p.args })) });
-      for (const p of prepared) {
+      // the calls run in order, each on the map the earlier ones left; after a failed one the rest are held back
+      let failedAt: { index: number; name: string } | null = null;
+      const turnStart = messages.length;
+      for (const [k, p] of prepared.entries()) {
         if (stats.toolCalls >= maxToolCalls) {
           stop = 'tool_calls';
           messages.push({ role: 'tool', toolCallId: p.id, name: p.name, content: 'Not run: the limit of tool calls is reached.' });
+          continue;
+        }
+        if (failedAt) {
+          const text = notRunText(failedAt);
+          stats.notRun++;
+          messages.push({ role: 'tool', toolCallId: p.id, name: p.name, content: text });
+          const record: CallRecord = { turn: stats.turns, name: p.name, args: p.args, ok: false, result: text, ms: 0, source: p.source, repaired: p.repaired, notRun: true, ...(p.local ? { local: true } : {}) };
+          calls.push(record);
+          emit({ type: 'call', record });
           continue;
         }
         stats.toolCalls++;
@@ -1060,23 +1114,41 @@ export async function runAgent(o: AgentOptions): Promise<AgentRun> {
         const key = `${p.name} ${JSON.stringify(p.args)}`;
         repeats = key === lastKey ? repeats + 1 : 0;
         lastKey = key;
-        if (repeats >= 2) text += `\nYou have now made this same call ${repeats + 1} times in a row. Do something else, or give your final answer.`;
+        if (repeats >= 2) text += repeatNote(repeats + 1);
         if (res.isError) {
           stats.toolErrors++;
           errorsInARow++;
+          failedAt = { index: k, name: p.name };
+          text += heldBackNote(k, prepared.slice(k + 1));
         } else errorsInARow = 0;
         messages.push({ role: 'tool', toolCallId: p.id, name: p.name, content: text });
         const record: CallRecord = { turn: stats.turns, name: p.name, args: p.args, ok: !res.isError, result: text, ms: now() - tc, source: p.source, repaired: p.repaired, ...(p.local ? { local: true } : {}) };
         calls.push(record);
         emit({ type: 'call', record });
       }
+      // steps digest and plan: a line after this turn's results
+      const extra: string[] = [];
+      if (steps.digest && start && readMap && !stop) {
+        const digest = stateDigest({ start, now: await readMap(), calls });
+        extra.push(digest);
+        emit({ type: 'step', step: 'digest', text: digest });
+      }
+      if (steps.plan && plan.length && !stop) {
+        const reminder = planReminder(plan);
+        extra.push(reminder);
+        emit({ type: 'step', step: 'plan', text: reminder });
+      }
+      const last = messages[messages.length - 1];
+      if (extra.length && messages.length > turnStart && last?.role === 'tool') last.content += `\n${extra.join('\n')}`;
       if (!stop && errorsInARow >= maxErrors) stop = 'errors';
     }
   } finally {
     clearTimeout(timer);
   }
   stats.wallMs = now() - t0;
-  return { answer, lastText, stop: stop ?? 'answer', ...(error ? { error } : {}), stats, calls, messages };
+  // the final check sent the answer back and the run then ended at a limit: that answer still stands
+  if (!answer && checkedAnswer) answer = checkedAnswer;
+  return { answer, lastText, stop: stop ?? 'answer', ...(error ? { error } : {}), stats, calls, messages, ...(plan.length ? { plan } : {}) };
 }
 
 /** Generated tokens per second: from the server's generation time when it says, else from the request times. */

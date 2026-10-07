@@ -34,8 +34,31 @@ import {
   type ToolDef,
   type ToolExecutor,
 } from '../src/chat/local-agent.ts';
-import { buildSetup, LEAN_TOOLS, leanContext, leanPrompt, taskTools } from '../src/chat/local-setup.ts';
+import { buildSetup, LEAN_TOOLS, leanContext, leanPrompt, leanUser, taskTools } from '../src/chat/local-setup.ts';
+import {
+  callText,
+  finalCheck,
+  heldBackNote,
+  inventedIds,
+  madeText,
+  LEAN_STEPS,
+  mapChanges,
+  newProblems,
+  nextIdsLine,
+  notRunText,
+  parsePlan,
+  parseSteps,
+  planLine,
+  planReminder,
+  repeatNote,
+  stateDigest,
+  stepsText,
+  unresolvedCalls,
+} from '../src/chat/local-steps.ts';
 import { chatContext } from '../src/chat/prompt.ts';
+import { newMap as templateMap } from '../src/api.ts';
+import { applyOps, type MapObject } from '@delve/core';
+import type { CallRecord } from '../src/chat/local-agent.ts';
 
 // ---------- pure helpers ----------
 
@@ -210,6 +233,114 @@ describe('tool results', () => {
     expect(contentText([{ type: 'image' }, { type: 'text', text: '"Map" rev 3' }])).toEqual({ text: `${IMAGE_NOTE}\n"Map" rev 3`, images: 1 });
     expect(trimText('abcdefghij', 4)).toBe('abcd\n… (6 more characters cut)');
     expect(trimText('abc', 4)).toBe('abc');
+  });
+});
+
+// ---------- helping steps (local-steps.ts): the messages the harness writes ----------
+
+describe('helping steps', () => {
+  const dungeon = () => templateMap({ name: 'steps', template: 'test-dungeon' });
+  const add = (map: ReturnType<typeof dungeon>, ...objects: MapObject[]) => applyOps(map, objects.map((object) => ({ op: 'add' as const, object }))).map;
+  const rec = (name: string, args: Record<string, unknown>, ok: boolean, result = '', extra: Partial<CallRecord> = {}): CallRecord => ({ turn: 1, name, args, ok, result, ms: 1, source: 'native', repaired: false, ...extra });
+
+  it('are picked by name, all or none', () => {
+    expect(parseSteps(undefined, LEAN_STEPS)).toBe(LEAN_STEPS);
+    expect(stepsText(LEAN_STEPS)).toBe('ids, final');
+    expect(stepsText(parseSteps('all', {}))).toBe('ids, final, digest, plan');
+    expect(stepsText(parseSteps('none', LEAN_STEPS))).toBe('none');
+    expect(stepsText(parseSteps('digest, ids', {}))).toBe('ids, digest');
+    expect(() => parseSteps('ids,nap', {})).toThrow(/unknown step "nap"/);
+  });
+
+  it('batches: the failed call says which calls were held back, and each of those says why', () => {
+    expect(heldBackNote(0, [{ name: 'add_height' }, { name: 'add_terrain' }])).toBe(
+      '\nThe 2 calls after this one in your reply were not run (2. add_height, 3. add_terrain). Fix this call, then send them again; the calls before this one are done.',
+    );
+    expect(heldBackNote(1, [{ name: 'add_prop' }])).toBe('\nThe call after this one in your reply was not run (3. add_prop). Fix this call, then send that one again; the calls before this one are done.');
+    expect(heldBackNote(2, [])).toBe('');
+    expect(notRunText({ index: 0, name: 'add_terrain' })).toBe(
+      'Not run: call 1 of this reply (add_terrain) failed, and this call may need what that one was meant to make. It was not tried, so nothing in it is known to be wrong: send it again unchanged once that call works.',
+    );
+    expect(repeatNote(3)).toBe('\nYou have now made this same call 3 times in a row. Do something else, or give your final answer.');
+  });
+
+  it('ids: the next new ids, in the context block', () => {
+    const m = dungeon();
+    const line = nextIdsLine(m);
+    expect(line).toBe('Next new ids: room r7 (number 7), corridor c6, door d7, prop i1, terrain t1, height area h1, label l1; several props take the next ids in a row. The calls in one reply run in order, so a later call can use an id that an earlier one makes.');
+    const ctx = leanContext({ map: m, rev: 1 }, { ids: true });
+    expect(ctx.split('\n').slice(-2)).toEqual([line, '[End of Delve context]']);
+    expect(leanContext({ map: m, rev: 1 })).not.toContain('Next new ids');
+    expect(leanUser({ map: m, rev: 1 }, ' Add a room. ', { plan: true })).toMatch(/\[End of Delve context\]\n\nAdd a room\.\n\nFirst write a short numbered plan/);
+    expect(planLine()).toBe('First write a short numbered plan: one line for each part of this request (at most 6). Then make the calls for it.');
+  });
+
+  it('what a request did: changes, unresolved calls, the digest', () => {
+    const start = dungeon();
+    const now = applyOps(add(start, { id: 't1', type: 'terrain', asset: 'grass', shape: { rect: [0, 0, 4, 4] } }), [{ op: 'update', id: 'r3', set: { name: 'Armoury' } }, { op: 'delete', ids: ['d6'] }]).map;
+    const ch = mapChanges(start, now);
+    expect(ch.added.map((o) => o.id)).toEqual(['t1']);
+    expect(ch.changed.map((o) => o.id)).toEqual(['r3']);
+    expect(ch.removed).toEqual(['d6']);
+    const calls = [
+      rec('add_prop', { asset: 'bar-counter', in: 'r2', place: 'east wall', map: 'm' }, false, 'Along the east wall it does not fit.'),
+      rec('add_prop', { asset: 'chair', in: 'r2', map: 'm' }, true),
+      rec('add_terrain', { asset: 'dirt', map: 'm' }, false, 'region.between: there is no object "h1"'),
+      rec('add_height', { height: 5, map: 'm' }, false, notRunText({ index: 2, name: 'add_terrain' }), { notRun: true }),
+      rec('add_terrain', { asset: 'dirt', map: 'm' }, true),
+    ];
+    // the bar counter was never done again (a chair is something else); the dirt was; the held-back hill never sent again
+    expect(unresolvedCalls(calls).map((c) => `${c.name} ${String(c.args.asset ?? '')}`)).toEqual(['add_prop bar-counter', 'add_height ']);
+    expect(callText('add_prop', { asset: 'bar-counter', in: 'r2', map: 'm' })).toBe('add_prop {"asset": "bar-counter", "in": "r2"}');
+    expect(stateDigest({ start, now, calls })).toBe(
+      '[So far in this request: made t1 (Grass); changed r3 (room 3 "Armoury"); removed d6. Not done yet: add_prop {"asset": "bar-counter", "in": "r2", "place": "east wall"} failed: Along the east wall it does not fit.; add_height {"height": 5} was not run. Next new ids: room r7 (number 7), corridor c6, door d6, prop i1, terrain t2, height area h1, label l1.]',
+    );
+  });
+
+  it('final: layout problems with what was made, made-up ids, failed calls never done again; or nothing', () => {
+    const start = dungeon();
+    const clean = add(start, { id: 'i1', type: 'prop', asset: 'table-rect', at: [10, 18] });
+    expect(finalCheck({ answer: 'Added table i1 in room 2.', calls: [rec('add_prop', { asset: 'table-rect' }, true)], start, now: clean })).toBeNull();
+    // a question: nothing changed, and the answer names doors that are there
+    expect(finalCheck({ answer: 'Room 1 has 2 doors: d1 and d5.', calls: [], start, now: start })).toBeNull();
+    const sloppy = add(start, { id: 'i1', type: 'prop', asset: 'bar-counter', at: [10, 15] });
+    expect(newProblems(start, sloppy).map((p) => p.kind)).toContain('prop-outside-room');
+    expect(inventedIds('Added i1, i6 and the secret door d9 next to d5.', start, sloppy)).toEqual(['i6', 'd9']);
+    expect(inventedIds('Roll a d20 at the door.', start, sloppy)).toEqual([]);
+    const back = finalCheck({
+      answer: 'Added bar counter i1 and stool i6.',
+      calls: [rec('add_door', { room: 'r2', wall: 'west', style: 'secret' }, false, 'wall: no free stretch of 1 square on the west wall of r2')],
+      start,
+      now: sloppy,
+      plan: ['Bar counter', 'Secret door'],
+    })!;
+    expect(back).toMatch(/^Before you finish, check your work\. The map shows:\n- check_map: half of i1 \(Bar Counter with Tankards\) is outside r2/);
+    expect(back).toContain('\n- Your answer names i6, but the map has no i6.');
+    expect(back).toContain('\n- Not done: add_door {"room": "r2", "wall": "west", "style": "secret"} failed: wall: no free stretch of 1 square on the west wall of r2');
+    expect(back).toContain('\nYour plan was:\n1. Bar counter\n2. Secret door\n');
+    expect(back.endsWith('Fix what you can with tool calls. Then give your final answer again, and say plainly what could not be done.')).toBe(true);
+    // after a held-back batch: the request again, and what was made where (final run 2 of the first pair dropped a crypt room this way)
+    const crypt = add(templateMap({ name: 'c', template: 'empty' }), { id: 'r1', type: 'room', label: '1', name: 'Antechamber', shape: { rect: [0, 0, 6, 4] } }, { id: 'r2', type: 'room', label: '2', shape: { rect: [0, 6, 6, 4] } });
+    const empty0 = templateMap({ name: 'c', template: 'empty' });
+    expect(madeText(empty0, crypt)).toBe('r1 (room 1 "Antechamber", north), r2 (room 2, south)');
+    const held = [rec('add_room', { beside: 'r1', side: 'east' }, false, 'beside: there is no room "r1"'), rec('add_room', { beside: 'r2', side: 'south' }, false, 'Not run', { notRun: true }), rec('add_room', { rect: [0, 0, 6, 4] }, true), rec('add_room', { beside: 'r1', side: 'south' }, true)];
+    const review = finalCheck({ answer: 'Added rooms r1 and r2.', calls: held, start: empty0, now: crypt, request: ' Build 3 rooms in a row. ' })!;
+    expect(review).toBe(
+      'Before you finish, check your work.\nSome calls of this request were held back after a failed one and sent again, so check that every part of it is done (how many, which kinds, where). The request was: "Build 3 rooms in a row."\nIt made: r1 (room 1 "Antechamber", north), r2 (room 2, south).\nFix what you can with tool calls. Then give your final answer again, and say plainly what could not be done.',
+    );
+    // without the request (or with nothing held back) there is nothing to restate
+    expect(finalCheck({ answer: 'Added rooms r1 and r2.', calls: held, start: empty0, now: crypt })).toBeNull();
+    expect(finalCheck({ answer: 'Added rooms r1 and r2.', calls: held.filter((c) => !c.notRun), start: empty0, now: crypt, request: 'Build 3 rooms.' })).toBeNull();
+    // problems that were on the map before (or with things this request didn't touch) are not handed back
+    expect(newProblems(sloppy, add(sloppy, { id: 'i2', type: 'prop', asset: 'table-rect', at: [10, 18] }))).toHaveLength(0);
+    expect(newProblems(sloppy, add(sloppy, { id: 'i2', type: 'prop', asset: 'chair', at: [3, 3] })).map((p) => p.kind)).toEqual(['prop-stray']);
+  });
+
+  it('plan: the numbered lines of a reply, and the reminder', () => {
+    expect(parsePlan('Plan:\n1. Grass over the area\n2) **The hill** in the south-west\n3: A path to it\nThen I call the tools.')).toEqual(['Grass over the area', 'The hill in the south-west', 'A path to it']);
+    expect(parsePlan('1. Only one step')).toEqual([]);
+    expect(parsePlan('2. Starts at two\n3. And three')).toEqual([]);
+    expect(planReminder(['Grass', 'Hill'])).toBe('[Your plan: 1. Grass 2. Hill Go on with the next part that is not done yet, or give your final answer when every part is done.]');
   });
 });
 
@@ -410,6 +541,61 @@ describe('the agent loop', () => {
     expect(down.error).toBeTruthy();
   });
 
+  it('runs a batch in order and holds back the calls after a failed one', async () => {
+    const batch = (calls: [string, Json][]): Json => ({
+      choices: [{ message: { role: 'assistant', content: '', tool_calls: calls.map(([name, args], k) => ({ id: `b${k}`, type: 'function', function: { name, arguments: JSON.stringify(args) } })) }, finish_reason: 'tool_calls' }],
+      usage,
+    });
+    const s = await fakeServer([batch([['describe_map', {}], ['add_room', { rect: 'big' }], ['add_room', { rect: [1, 2, 3, 4] }], ['describe_map', {}]]), say('Done.')]);
+    const exec = fakeExec();
+    const r = await run(s.url, { exec });
+    // the first two ran, in order; the two after the failed one did not
+    expect(exec.seen.map((c) => c.name)).toEqual(['describe_map', 'add_room']);
+    const tools = (s.requests[1]!.body.messages as { role: string; content: string }[]).filter((m) => m.role === 'tool').map((m) => m.content);
+    expect(tools).toEqual([
+      '1 room',
+      `rect: expected array${heldBackNote(1, [{ name: 'add_room' }, { name: 'describe_map' }])}`,
+      notRunText({ index: 1, name: 'add_room' }),
+      notRunText({ index: 1, name: 'add_room' }),
+    ]);
+    expect(r.stats).toMatchObject({ toolCalls: 2, toolErrors: 1, notRun: 2 });
+    expect(r.calls.map((c) => [c.name, c.ok, Boolean(c.notRun)])).toEqual([
+      ['describe_map', true, false],
+      ['add_room', false, false],
+      ['add_room', false, true],
+      ['describe_map', false, true],
+    ]);
+  });
+
+  it('final check: hands what it finds back once, then takes the answer', async () => {
+    const start = templateMap({ name: 'x', template: 'test-dungeon' });
+    const s = await fakeServer([say('Added room r9 east of room 1.'), say('I could not add the room: nothing was made.')]);
+    let reads = 0;
+    const r = await run(s.url, { steps: { final: true }, readMap: async () => (reads++, start) });
+    expect(reads).toBe(2); // at the start and before the answer
+    expect(r.stats.finalChecks).toBe(1);
+    expect(r.answer).toBe('I could not add the room: nothing was made.');
+    const sent = s.requests[1]!.body.messages as { role: string; content: string }[];
+    expect(sent.slice(-2)).toEqual([
+      { role: 'assistant', content: 'Added room r9 east of room 1.' },
+      { role: 'user', content: finalCheck({ answer: 'Added room r9 east of room 1.', calls: [], start, now: start })! },
+    ]);
+    expect(sent.at(-1)!.content).toContain('Your answer names r9, but the map has no r9.');
+    // without the step (or without a way to read the map) the first answer stands
+    const plain = await fakeServer([say('Added room r9 east of room 1.')]);
+    expect((await run(plain.url, { steps: { final: true } })).answer).toBe('Added room r9 east of room 1.');
+  });
+
+  it('digest and plan: a line after each turn of tool results', async () => {
+    const start = templateMap({ name: 'x', template: 'test-dungeon' });
+    const s = await fakeServer([call('describe_map', {}, '1. Look at the map\n2. Answer'), say('It has 6 rooms.')]);
+    const r = await run(s.url, { steps: { digest: true, plan: true }, readMap: async () => start });
+    expect(r.plan).toEqual(['Look at the map', 'Answer']);
+    const tool = (s.requests[1]!.body.messages as { role: string; content: string }[]).find((m) => m.role === 'tool')!;
+    expect(tool.content).toBe(`1 room\n${stateDigest({ start, now: start, calls: r.calls })}\n${planReminder(['Look at the map', 'Answer'])}`);
+    expect(tool.content).toContain('[So far in this request: nothing made yet. Next new ids: room r7');
+  });
+
   it('answers the task list itself in the full setup', async () => {
     const s = await fakeServer([call('TaskCreate', { subject: 'Build the rooms' }), call('TaskUpdate', { taskId: 1, status: 'in_progress' }), say('ok')]);
     const r = await run(s.url, { local: taskTools() });
@@ -502,6 +688,12 @@ describe('lean and full setups on a real Delve', () => {
     expect(chatContext({ map: m.map, rev: m.rev })).toContain('Plan: if this request');
     expect(ctx).not.toContain('Plan: if this request');
     expect(ctx).toContain('r1 room "Entrance hall" label "1" rect [7, 25, 6, 6]');
+    // the lean setup runs with LEAN_STEPS: its first message names the next ids; full has no steps
+    expect(lean.steps).toBe(LEAN_STEPS);
+    expect(lean.user({ map: m.map, rev: m.rev }, 'Add a room.')).toBe(leanUser({ map: m.map, rev: m.rev }, 'Add a room.', LEAN_STEPS));
+    expect(lean.user({ map: m.map, rev: m.rev }, 'Add a room.')).toContain(nextIdsLine(m.map));
+    expect(full.steps).toEqual({});
+    expect(buildSetup('lean', tools, m.id, { steps: {} }).user({ map: m.map, rev: m.rev }, 'Add a room.')).toBe(`${ctx}\n\nAdd a room.`);
   });
 
   it('a scripted model builds through MCP, with the map id filled in', async () => {

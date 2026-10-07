@@ -460,6 +460,8 @@ export interface RunResult {
   tools: ToolSet;
   /** --name: tells repeated runs of one model and tool set apart. */
   name?: string;
+  /** The helping steps the harness ran with ("ids, final", "none"); runs from before them have none. */
+  steps?: string;
   api: string;
   baseUrl: string;
   numCtx?: number;
@@ -475,8 +477,9 @@ export interface RunResult {
   tasks: TaskResult[];
 }
 
+/** Tool names in order: ✗ a failed call, ⊘ one held back after a failed call in the same reply. */
 export function callLog(calls: readonly CallRecord[]): string {
-  return calls.map((c) => `${c.name}${c.ok ? '' : '✗'}`).join(' ');
+  return calls.map((c) => `${c.name}${c.notRun ? '⊘' : c.ok ? '' : '✗'}`).join(' ');
 }
 
 const secs = (ms: number) => {
@@ -542,6 +545,7 @@ export function renderReport(runs: readonly RunResult[], now = new Date()): stri
     lines.push(
       `${r.api === 'ollama' ? `Ollama ${r.serverVersion ?? ''} native API` : 'OpenAI-compatible API'} at ${r.baseUrl}${r.numCtx ? `, num_ctx ${r.numCtx}` : ''}${r.think ? `, think ${r.think}` : ''}. ` +
         `${r.toolCount} tools; system prompt ${kTok(sz.system)} characters, tool definitions ${kTok(sz.tools)}, first message ${kTok(sz.user)}. ` +
+        (r.steps ? `Helping steps: ${r.steps}. ` : '') +
         `Delve ${r.delveVersion}; ${r.started.slice(0, 16).replace('T', ' ')} to ${r.finished.slice(11, 16)} UTC${r.warmupMs ? `; loading the model took ${secs(r.warmupMs)} (not counted)` : ''}.`,
       '',
     );
@@ -559,7 +563,9 @@ export function renderReport(runs: readonly RunResult[], now = new Date()): stri
       const pics = [t.png ? `[picture](${t.png})` : '', t.transcript ? `[transcript](${t.transcript})` : ''].filter(Boolean).join(' · ');
       lines.push(`- **${t.n}. ${cell(t.title)}** (${t.grade}) ${pics}`);
       if (failed.length) lines.push(`  - not met: ${failed.map((c) => `${c.name}${c.detail ? ` (${oneLine(c.detail, 120)})` : ''}`).join('; ')}`);
-      lines.push(`  - calls: ${t.callLog ? oneLine(t.callLog, 400) : 'none'}`);
+      const held = t.stats.notRun ? `; ${t.stats.notRun} held back after a failed call (⊘)` : '';
+      const back = t.stats.finalChecks ? '; the final check handed problems back once' : '';
+      lines.push(`  - calls: ${t.callLog ? oneLine(t.callLog, 400) : 'none'}${held}${back}`);
     }
     lines.push('');
   }

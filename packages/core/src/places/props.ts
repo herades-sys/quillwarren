@@ -81,7 +81,7 @@ export interface PlaceRequest {
   place?: string;
   /** How many (default 1; around: 4). */
   count?: number;
-  /** Turns every copy this way instead of facing into the room. */
+  /** Turns every copy this way (center, corners, near, around). Against a wall it is left out: there a prop always faces into the room, and the notes say so. */
   rotation?: number;
   scale?: number;
 }
@@ -299,6 +299,8 @@ export function placeProps(map: DelveMap, req: PlaceRequest): PlaceResult {
     ctx.blocks.push({ id: `new${placed.length}`, b: boxAt(at, w, h) });
   };
   const given = req.rotation !== undefined ? turnOf(req.rotation) : undefined;
+  /** A taken wall with room on another: the call to try there. */
+  let wallTry: string | undefined;
 
   if (spec.kind === 'around') {
     aroundTarget(ctx, req, target!, count, given, inWords, add, notes);
@@ -320,7 +322,9 @@ export function placeProps(map: DelveMap, req: PlaceRequest): PlaceResult {
         add(hit.at, rot, k === 0 && hit.score < 0.75 ? `in the middle of ${inWords}` : `near the middle of ${inWords}`, w, h);
       } else if (spec.kind === 'wall') {
         const side = spec.side;
-        const rot = given ?? BACK_TO[side];
+        // against a wall a prop always faces into the room: a rotation of its own would turn a long prop across the wall
+        const rot = BACK_TO[side];
+        if (k === 0 && given !== undefined && given !== rot) notes.push(`Rotation ${given} was left out: against the ${side} wall a prop is turned to face into the room (rotation ${rot}).`);
         const { w, h } = footprintSize(req.asset, rot, req.scale);
         const mid = boxCentre(ctx.area);
         const along = side === 'north' || side === 'south' ? 0 : 1;
@@ -330,17 +334,21 @@ export function placeProps(map: DelveMap, req: PlaceRequest): PlaceResult {
         const freeWalls = () =>
           (['north', 'south', 'east', 'west'] as const).filter((s2) => {
             if (s2 === side) return false;
-            const f = footprintSize(req.asset, given ?? BACK_TO[s2], req.scale);
+            const f = footprintSize(req.asset, BACK_TO[s2], req.scale);
             return best(ctx, f.w, f.h, (_p, b) => gapTo(ctx, b, s2))?.score === 0;
           });
         const roomFor = (free: readonly string[]) => (free.length ? `the ${free.join(', ')} wall${free.length > 1 ? 's have' : ' has'} room for it` : '');
         if (!hit) {
-          const free = roomFor(freeWalls());
-          if (free) notes.push(`Along the ${side} wall it does not fit (doorways, props or pillars take it); ${free}.`);
+          const walls = freeWalls();
+          const free = roomFor(walls);
+          if (free) {
+            notes.push(`Along the ${side} wall it does not fit (doorways, props or pillars take it); ${free}.`);
+            wallTry = tryCall(req, container, `${walls[0]} wall`);
+          }
           break;
         }
         const off = gapTo(ctx, boxAt(hit.at, w, h), side);
-        const face = given === undefined ? `, facing ${FACING[rot]} into the room` : '';
+        const face = `, facing ${FACING[rot]} into the room`;
         let taken = '';
         if (off > 0) {
           const free = roomFor(freeWalls());
@@ -371,12 +379,20 @@ export function placeProps(map: DelveMap, req: PlaceRequest): PlaceResult {
     }
   }
   const missing = count - placed.length;
-  if (missing > 0) {
+  if (missing > 0 && !(wallTry && !placed.length)) {
+    // (a wall that is taken while others have room already said so, with what to try)
     const f = footprintSize(req.asset, 0, req.scale);
     const why = container ? `${inWords} has no free spot left for a ${fmt(f.w)}×${fmt(f.h)} footprint (props, stairs, pillars and doorways take the rest)` : 'there is no free spot near it';
     notes.push(`${placed.length ? `Only ${placed.length} of ${count} fit` : count === 1 ? 'It does not fit' : `None of the ${count} fit`}: ${why}.`);
   }
+  if (wallTry) notes.push(`Try: ${wallTry}`);
   return { placed, ...(container ? { container } : {}), missing, notes };
+}
+
+/** The add_prop call that tries the same prop in another place: `add_prop {"asset": "bar-counter", "in": "r2", "place": "north wall"}`. */
+function tryCall(req: PlaceRequest, container: ObjectArea | undefined, place: string): string {
+  const args: Record<string, unknown> = { asset: req.asset, ...(container ? { in: container.id } : {}), place, ...(req.count && req.count > 1 ? { count: req.count } : {}) };
+  return `add_prop {${Object.entries(args).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(', ')}}`;
 }
 
 /** Copies round a target (chairs round a table): spread over its sides, long sides first, each facing it. */

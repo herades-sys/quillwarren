@@ -33,20 +33,25 @@ export const heightArg = z
   .describe('Relative to the floor: a number in the map\'s units (feet, or metres on a metric map: 10 for a 10 ft ledge, -5 for a pit), or with its unit: "5 m", "10 ft", "2 squares". Give it with the unit the user said ("5 m"); don\'t convert it yourself');
 
 export const REGION_HELP =
-  'Where, by meaning instead of coordinates. One of: {"edge": "north", "depth": 3} a band along that edge of the map (north is the top, small y; on a map of rooms only, the band lies just outside the rooms), ' +
-  '{"corner": "sw", "size": 8} a square in that corner of the map, {"in": "r5"} all of a room or area, {"in": "r2", "edge": "north"} or {"in": "r2", "corner": "ne"} part of one, ' +
-  '{"around": "r3", "margin": 2} a ring around something, {"between": ["east", "h1"], "width": 2} a strip from one thing to another (ids, map edges or points [x, y]); a plain {"rect": [x, y, w, h]}, poly or circle works too. Lengths take units ("5 m")';
+  'Where, by meaning instead of coordinates. One of: {"edge": "north", "depth": 3} a band along the whole of that edge of the map (north is the top, small y; on a map of rooms only, the band lies just outside the rooms), ' +
+  '{"corner": "sw", "size": 8} a square in that corner of the map, {"in": "r5"} all of a room or area (the map\'s own id: all of the map), {"in": "r2", "edge": "north"} or {"in": "r2", "corner": "ne"} part of one, ' +
+  '{"around": "r3", "margin": 2} a ring around something, {"from": "east", "to": "h1", "width": 2} a path or strip from one thing to another (ids, map edges or points [x, y]; also written {"between": ["east", "h1"]}); a plain {"rect": [x, y, w, h]}, poly or circle works too. Lengths take units ("5 m")';
+
+/** One end of a path: an id or a map edge, a point, or a region such as {"corner": "sw"} (its middle). */
+const endArg = z.union([z.string().max(64), point, z.record(z.string(), z.unknown())]);
 
 export const regionArg = z
   .object({
-    edge: z.string().max(20).optional().describe('north, south, east or west: a band along that edge of the map (or of the room in in)'),
+    edge: z.string().max(20).optional().describe('north, south, east or west: a band along the whole of that edge of the map (or of the room in in)'),
     depth: lengthArg('How deep the band is (default 3 squares; 2 in a room)').optional(),
     corner: z.string().max(20).optional().describe('ne, nw, se or sw: a square in that corner of the map (or of the room in in)'),
     size: lengthArg('The corner square\'s side (default about a third of the map; up to 3 squares in a room)').optional(),
-    in: z.string().max(64).optional().describe('A room or area id: all of it, or with edge or corner, part of it'),
+    in: z.string().max(64).optional().describe('A room or area id: all of it, or with edge or corner, part of it. The map\'s own id: all of the map'),
     around: z.string().max(64).optional().describe('An object id: a ring around it'),
     margin: lengthArg('How far the ring reaches out (default 2 squares)').optional(),
-    between: z.array(z.union([z.string().max(64), point])).length(2).optional().describe('Two ends: object ids ("h1", "r4"), map edges ("east") or points [x, y]: a strip from the first to the second'),
+    from: endArg.optional().describe('With to: a path from here (an object id, a map edge such as "east", a point [x, y], or a region such as {"corner": "sw"})'),
+    to: endArg.optional().describe('With from: to here (an object id such as "h1", a map edge or a point [x, y])'),
+    between: z.array(endArg).length(2).optional().describe('Two ends: object ids ("h1", "r4"), map edges ("east") or points [x, y]: a strip from the first to the second (the same as from and to)'),
     width: lengthArg('The strip\'s width (default 2 squares)').optional(),
     outside: z.boolean().optional().describe('Map edges only: true for a band just outside everything on the map, false for inside the map\'s edge'),
     rect: z.array(z.number()).optional().describe('Or a plain area: [x, y, width, height] in squares'),
@@ -110,7 +115,7 @@ export function registerCheckTools(server: McpServer, service: MapService): void
     {
       title: 'Check the map',
       description:
-        'List layout problems: rooms that overlap or touch (they merge into one space), corridors running through rooms they don\'t join, doors that aren\'t on a wall, props half outside their room, on top of each other or in a doorway, height areas off the ground. Cheap; call it after building, and fix what it lists.',
+        'List layout problems: rooms that overlap or touch (they merge into one space), corridors running through rooms they don\'t join, a second corridor for a join already made, doors that aren\'t on a wall, props half outside their room, on top of each other or in a doorway, height areas off the ground. Cheap; call it after building, and fix what it lists.',
       inputSchema: { map: z.string().describe('Map id') },
       annotations: { readOnlyHint: true },
     },

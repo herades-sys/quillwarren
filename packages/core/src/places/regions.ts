@@ -6,7 +6,7 @@
 // map (small y), east the right (big x).
 import { EndType, FillRule, inflatePathsD, intersectD, JoinType, type PathsD } from 'clipper2-ts';
 import { PRECISION, shapeArea, shapeBounds, shapePath, toPath, type Bounds, type Polygon } from '../geometry/shapes.ts';
-import { polygonsOf } from '../geometry/floor.ts';
+import { floorPaths, polygonsOf } from '../geometry/floor.ts';
 import type { DelveMap, Point, Shape } from '../schema.ts';
 import { halfSquares, lengthInSquares, parseSquareUnit, type Length } from '../units.ts';
 import { ValidationError } from '../validate.ts';
@@ -32,6 +32,9 @@ import {
   type Side,
 } from './common.ts';
 
+/** One end of a path: an object id, a map edge ("east"), a point [x, y], or a region (its middle). */
+export type RegionEnd = string | Point | RegionSpec;
+
 /** A region as the tools take it (one of edge, corner, in, around or between; in also goes with edge or corner). */
 export interface RegionSpec {
   /** A band along this edge of the map, or of the room or area given by in. */
@@ -48,8 +51,11 @@ export interface RegionSpec {
   around?: string;
   /** How far the ring reaches out (default 2 squares). */
   margin?: Length;
-  /** A strip between two things: object ids, map edges ("east") or points [x, y]. */
-  between?: readonly (string | Point)[];
+  /** A strip between two things: object ids, map edges ("east"), points [x, y] or regions (their middle: {"corner": "sw"}). */
+  between?: readonly RegionEnd[];
+  /** A path from one thing to another: the same strip as between [from, to], written the way a request says it. */
+  from?: RegionEnd;
+  to?: RegionEnd;
   /** The strip's width (default 2 squares). */
   width?: Length;
   /**
@@ -159,26 +165,57 @@ function cornerBox(box: Bounds, c: Corner, size: number): Bounds {
   return { x0: x[0]!, x1: x[1]!, y0: y[0]!, y1: y[1]! };
 }
 
-/** One end of a "between" strip: the centre of an object, a point, or a map edge (found once the other end is known). */
+/** One end of a "between" strip: the centre of an object or a region, a point, or a map edge (found once the other end is known). */
 interface End {
-  given: string | Point;
+  given: RegionEnd;
   p?: Point;
   side?: Side;
   area?: ObjectArea;
   text: string;
 }
 
-function resolveEnd(map: DelveMap, e: string | Point): End {
+function resolveEnd(map: DelveMap, e: RegionEnd, field: string): End {
   if (Array.isArray(e)) {
-    if (e.length !== 2 || !e.every((v) => typeof v === 'number' && Number.isFinite(v))) throw new ValidationError(['region.between: a point is [x, y]']);
+    if (e.length !== 2 || !e.every((v) => typeof v === 'number' && Number.isFinite(v))) throw new ValidationError([`${field}: a point is [x, y]`]);
     return { given: e, p: [e[0]!, e[1]!], text: `[${fmt(e[0]!)}, ${fmt(e[1]!)}]` };
   }
+  if (e && typeof e === 'object') {
+    // a region as an end ({"corner": "sw"}): its middle
+    if ((e as RegionSpec).from !== undefined || (e as RegionSpec).between !== undefined) throw new ValidationError([`${field}: an end is an id, a map edge, a point [x, y] or a region such as {"corner": "sw"}, not another path`]);
+    const r = resolveRegion(map, e as RegionSpec);
+    return { given: e, p: regionCentre(r), text: `the middle of ${r.text}` };
+  }
   const s = String(e).trim();
-  const word = s.replace(/\s*(edge|side)(\s+of\s+the\s+map)?$/i, '').replace(/^(the|map)\s+/i, '');
+  // "east", "the east edge", "east side of the map", "the east side of the area"
+  const word = s.replace(/\s*(edge|side|border)(\s+of\s+(the\s+)?(map|area|ground|grass|land))?$/i, '').replace(/^(the|map)\s+/i, '');
   const side = sideOf(word);
   if (side && !objectArea(map, s)) return { given: e, side, text: `the ${side} edge of the map` };
-  const area = needArea(map, s, 'region.between');
+  const area = needArea(map, s, field);
   return { given: e, p: boxCentre(area.bounds), area, text: area.title };
+}
+
+/**
+ * Does `in` mean the whole map? Its own id (models copy it from the context
+ * block: {"in": "map_1a2b…"}), or "map", "the map", "the whole map".
+ */
+export function isWholeMap(map: DelveMap, s: string): boolean {
+  const t = s.trim();
+  return t === map.id || /^(the\s+)?(whole\s+|entire\s+)?map$/i.test(t);
+}
+
+/**
+ * All of the map: on a map of rooms only, its floor (every room and corridor);
+ * with open ground (or no rooms at all), the map's box.
+ */
+function wholeMap(map: DelveMap, notes: string[]): Region {
+  const box = mapBox(map);
+  if (!box) throw new ValidationError(['region: the map is still empty, so "all of the map" has no area yet: give a rect {"rect": [x, y, width, height]} (draw the first area there, then use edges and corners)']);
+  const rooms = map.objects.some((o) => o.type === 'room');
+  if (rooms && !hasOpenGround(map)) {
+    return finish('in', polygonsOf(floorPaths(map)), `all of the map's floor (every room and corridor; ${boxText(box)})`, notes);
+  }
+  // open ground: the whole box, and props filled into it keep off the rooms
+  return finish('in', polygonsOf(boxPath(box)), `all of the map (${boxText(box)})`, notes, { offFloor: rooms });
 }
 
 function edgePoint(box: Bounds, side: Side, toward: Point | undefined): Point {
@@ -217,8 +254,23 @@ function strip(a: Point, b: Point, width: number): PathsD {
  * reply notes say what they came to. Throws a ValidationError for a region
  * that doesn't make sense (unknown ids, two kinds at once, an empty map).
  */
-export function resolveRegion(map: DelveMap, spec: RegionSpec): Region {
-  if (!spec || typeof spec !== 'object') throw new ValidationError(['region: an object such as {"edge": "north"}, {"corner": "sw"}, {"in": "r2"}, {"around": "r3"} or {"between": ["east", "h1"]}']);
+export function resolveRegion(map: DelveMap, given: RegionSpec): Region {
+  if (!given || typeof given !== 'object') throw new ValidationError(['region: an object such as {"edge": "north"}, {"corner": "sw"}, {"in": "r2"}, {"around": "r3"} or {"from": "east", "to": "h1"}']);
+  let spec = given;
+  // from / to: a path from one thing to another, the same strip as between
+  if (spec.from !== undefined || spec.to !== undefined) {
+    if (spec.between !== undefined) throw new ValidationError(['region: give from and to, or between, not both']);
+    if (spec.from === undefined || spec.to === undefined) throw new ValidationError(['region: a path needs both ends, from and to, e.g. {"from": "east", "to": "h1"} (ids, map edges or points [x, y])']);
+    const { from, to, ...rest } = spec;
+    spec = { ...rest, between: [from, to] };
+  }
+  // the map's own id (or "map") in `in`: all of the map
+  if (spec.in !== undefined && isWholeMap(map, String(spec.in))) {
+    const { in: _whole, ...rest } = spec;
+    const more = (['edge', 'corner', 'around', 'between', 'rect', 'poly', 'circle'] as const).some((k) => rest[k] !== undefined);
+    if (!more) return wholeMap(map, []);
+    spec = rest;
+  }
   const unit = parseSquareUnit(map.grid.unit);
   const notes: string[] = [];
   const len = (v: Length | undefined, fallback: number, field: string): number => {
@@ -231,7 +283,7 @@ export function resolveRegion(map: DelveMap, spec: RegionSpec): Region {
   const shapes = (['rect', 'poly', 'circle'] as const).filter((k) => spec[k] !== undefined);
   const kinds = (['edge', 'corner', 'around', 'between'] as const).filter((k) => spec[k] !== undefined);
   if (kinds.length + shapes.length > 1) throw new ValidationError([`region: give one of edge, corner, around, between or a shape, not ${[...kinds, ...shapes].join(' and ')}`]);
-  if (!kinds.length && !shapes.length && spec.in === undefined) throw new ValidationError(['region: give edge, corner, in, around or between, e.g. {"edge": "north", "depth": 3}, or a shape such as {"rect": [x, y, width, height]}']);
+  if (!kinds.length && !shapes.length && spec.in === undefined) throw new ValidationError(['region: give edge, corner, in, around, from + to (or between), e.g. {"edge": "north", "depth": 3}, or a shape such as {"rect": [x, y, width, height]}']);
   if (spec.in !== undefined && (spec.around !== undefined || spec.between !== undefined)) throw new ValidationError(['region: in goes alone or with edge, corner or a shape']);
   const within = spec.in !== undefined ? needArea(map, String(spec.in), 'region.in') : undefined;
 
@@ -254,7 +306,12 @@ export function resolveRegion(map: DelveMap, spec: RegionSpec): Region {
     const of = within ? within.title : 'the map';
     if (kind === 'edge') {
       const side = sideOf(String(spec.edge));
-      if (!side) throw new ValidationError([`region.edge: north, south, east or west, got ${JSON.stringify(spec.edge)}`]);
+      if (!side) {
+        // "center", "all": the whole of it was meant
+        const whole = /^(the\s+)?(cent(er|re)|middle|mid|all|whole|full|inside|everything)$/i.test(String(spec.edge).trim());
+        const hint = whole ? `; for all of ${within ? within.id : 'the map'} leave edge out: {"in": "${within ? within.id : map.id}"}` : '';
+        throw new ValidationError([`region.edge: north, south, east or west, got ${JSON.stringify(spec.edge)}${hint}`]);
+      }
       const depth = halfSquares(len(spec.depth, within ? Math.min(DEFAULT_DEPTH_IN, (side === 'north' || side === 'south' ? boxH(box) : boxW(box)) / 2) : DEFAULT_DEPTH_MAP, 'depth'));
       const outside = !within && (spec.outside ?? !(hasOpenGround(map) || !map.objects.some((o) => o.type === 'room')));
       const b = bandBox(box, side, depth, outside);
@@ -282,8 +339,9 @@ export function resolveRegion(map: DelveMap, spec: RegionSpec): Region {
   // between
   const ends = spec.between ?? [];
   if (ends.length !== 2) throw new ValidationError(['region.between: two things, e.g. ["east", "h1"] (a map edge and a hill) or ["r1", "r4"]']);
-  const a = resolveEnd(map, ends[0]!);
-  const b = resolveEnd(map, ends[1]!);
+  const field = given.from !== undefined ? 'region.from/to' : 'region.between';
+  const a = resolveEnd(map, ends[0]!, field);
+  const b = resolveEnd(map, ends[1]!, field);
   if (a.side || b.side) {
     const box = mapBox(map);
     if (!box) throw new ValidationError(['region.between: the map is still empty, so it has no edges yet']);
@@ -294,7 +352,7 @@ export function resolveRegion(map: DelveMap, spec: RegionSpec): Region {
   }
   const pa = a.p!;
   const pb = b.p!;
-  if (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) < 0.5) throw new ValidationError(['region.between: the two ends are in the same place']);
+  if (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) < 0.5) throw new ValidationError([`${field}: the two ends are in the same place`]);
   const width = halfSquares(len(spec.width, DEFAULT_WIDTH, 'width'));
   let paths = strip(pa, pb, width);
   // a path between rooms stops at their walls rather than running over their floor

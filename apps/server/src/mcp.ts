@@ -81,7 +81,7 @@ const BY = 'claude';
 const INSTRUCTIONS = `Delve is a dungeon map editor for tabletop games. You build maps with these tools while the user watches them change live in their browser.
 Coordinates are grid squares (1 square = 5 ft unless the map says otherwise): x grows to the right, y grows downward, the origin is top-left, and positions use whole or half squares.
 Typical flow: create_map, then add_room (rect [x, y, width, height]) for each room, connect rooms (auto-routed corridors, optional doors at the ends), add_cutout for pillars or pits, add_door / add_stairs / add_label for details.
-Place things by meaning and let the tools do the geometry: add_room beside "r2" side "north" (connect true, door "normal"); add_door room "r3" wall "east"; add_prop in "r2" place "north wall" / "ne corner" / "center" / "around i1" (count 4); add_terrain, add_height, add_props_along and add_label take a region ({"edge": "north"}, {"corner": "sw", "size": 8}, {"in": "r5"}, {"around": "r3"}, {"between": ["east", "h1"]}); lengths and heights take units ("5 m", "10 ft"). North is always up (small y).
+Place things by meaning and let the tools do the geometry: add_room beside "r2" side "north" (connect true, door "normal"); add_door room "r3" wall "east"; add_prop in "r2" place "north wall" / "ne corner" / "center" / "around i1" (count 4); add_terrain, add_height, add_props_along and add_label take a region ({"edge": "north"}, {"corner": "sw", "size": 8}, {"in": "r5"}, {"around": "r3"}, a path {"from": "east", "to": "h1"}); lengths and heights take units ("5 m", "10 ft"). North is always up (small y).
 Each tool call is one undoable step. Building tools end their reply with a short check (inside the room? overlaps? on a wall?); check_map lists every layout problem. Check your work with render (returns a picture) or describe_map (text). Use focus to point the user's viewer at what you just did.
 Room labels are room numbers: shown in the GM view, hidden in the players' view, which also draws secret doors as plain wall. Exports default to Roll20's 70 pixels per square.
 Furnish with add_prop (see list_assets for the ids; at is the centre of the footprint, fronts face south at rotation 0) and paint ground with add_terrain (water, grass, lava…). GM symbols (category symbols) only show in the GM view.
@@ -174,6 +174,32 @@ function addedIds(ops: readonly Op[], types: readonly MapObject['type'][]): stri
 
 /** At most this many lines from list_assets; narrower filters list the rest. */
 const LIST_MAX = 200;
+
+/**
+ * Ids of the given kind that look like a wrong one ("bridge" → plank-bridge,
+ * c-bridge-wood, c-bridge-stone), for the refusal: the words of the id matched
+ * against ids, names and tags, the most words first.
+ */
+export function similarAssets(wrong: string, kind: 'prop' | 'terrain', max = 5): string[] {
+  const words = wrong.toLowerCase().replace(/^c-/, '').split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  if (!words.length) return [];
+  const scored = allAssets()
+    .filter((x) => x.kind === kind)
+    .map((x) => {
+      const hay = `${x.id} ${x.name} ${x.tags.join(' ')} ${x.group ?? ''}`.toLowerCase();
+      return { id: x.id, score: words.filter((w) => hay.includes(w)).length, ink: x.palette !== 'colour' };
+    })
+    .filter((x) => x.score > 0)
+    // most words matched first, the ink library before the colour one, then the catalog's order
+    .sort((a, b) => b.score - a.score || Number(b.ink) - Number(a.ink));
+  return scored.slice(0, max).map((x) => x.id);
+}
+
+/** " Props like it: plank-bridge, c-bridge-wood." or "" (for a refused asset id). */
+function likeIt(wrong: string, kind: 'prop' | 'terrain'): string {
+  const ids = similarAssets(wrong, kind);
+  return ids.length ? ` ${kind === 'prop' ? 'Props' : 'Terrain'} like it: ${ids.join(', ')}.` : '';
+}
 
 function where(shape: Shape): string {
   const b = shapeBounds(shape);
@@ -651,7 +677,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
         in: z.string().max(64).optional().describe('Place it by meaning in this room or area, e.g. "r2" (with place; default "center")'),
         place: placeArg.optional(),
         count: z.number().int().min(1).max(50).optional().describe('With place: how many (default 1; for "around": 4)'),
-        rotation: z.number().optional().describe('Degrees clockwise: 0 (faces south), 90 (faces west), 180 (north), 270 (east). With place: leave it out to face into the room'),
+        rotation: z.number().optional().describe('Degrees clockwise: 0 (faces south), 90 (faces west), 180 (north), 270 (east). With a wall place it is left out (the prop faces into the room); with other places it turns every copy'),
         scale: z.number().positive().max(4).optional(),
         name: z.string().max(200).optional(),
         notes: z.string().max(10_000).optional().describe('GM notes, e.g. what is inside a chest'),
@@ -669,7 +695,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const info = assetInfo(a.asset);
-        if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets; terrain goes in add_terrain)`]);
+        if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets; terrain goes in add_terrain).${likeIt(a.asset, 'prop')}`]);
         const map = store.get(a.map).map;
         const extras = {
           ...(a.scale && a.scale !== 1 ? { scale: a.scale } : {}),
@@ -681,7 +707,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           // by meaning: the code finds the spot
           if (a.at) throw new ValidationError(['give at, or in and place: not both']);
           const r = placeProps(map, { asset: a.asset, in: a.in, place: a.place, count: a.count, rotation: a.rotation, scale: a.scale });
-          if (!r.placed.length) throw new ValidationError(r.notes.length ? r.notes : ['no free spot there']);
+          // one message: why it doesn't fit, what was left out, and what to try instead
+          if (!r.placed.length) throw new ValidationError([r.notes.length ? r.notes.join(' ') : 'no free spot there']);
           const ops: Op[] = r.placed.map((p, k) => ({
             op: 'add',
             object: { id: k === 0 && a.id ? a.id : nextId(map, 'i', k), type: 'prop', asset: p.asset, at: p.at, ...(p.rotation ? { rotation: p.rotation } : {}), ...extras },
@@ -755,7 +782,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const info = assetInfo(a.asset);
-        if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets)`]);
+        if (!info || info.kind !== 'prop') throw new ValidationError([`asset: "${a.asset}" is not a prop (use list_assets).${likeIt(a.asset, 'prop')}`]);
         const map = store.get(a.map).map;
         const notes: string[] = [];
         const spacingSq = squaresArg(map, a.spacing, 'spacing', notes, { min: 0.5 });
@@ -839,7 +866,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
       title: 'Add terrain',
       description:
         'Fill an area with a terrain tile (water, grass, lava, rubble… see list_assets category terrain) or a colour terrain texture (ids c-…: floorboards, flagstones, grass, sand, water… see list_assets palette colour, categories floors, ground and water). ' +
-        'Give exactly one shape, or a region by meaning ({"in": "r5"} all of room 5, {"edge": "north", "depth": 3}, {"corner": "sw"}, {"between": ["east", "h1"], "width": 2} a path to a hill, {"around": "t2"} a shore round a pond); it may cover a whole room or open ground outside rooms. Tiles repeat on the map grid, so neighbouring areas of one texture join without a seam. ' +
+        'Give exactly one shape, or a region by meaning ({"in": "r5"} all of room 5, {"edge": "north", "depth": 3}, {"corner": "sw"}, {"from": "east", "to": "h1", "width": 2} a path from the east edge to a hill (also written {"between": ["east", "h1"]}), {"around": "t2"} a shore round a pond; the map\'s own id in in: all of the map); it may cover a whole room or open ground outside rooms. Tiles repeat on the map grid, so neighbouring areas of one texture join without a seam. ' +
         'Areas fade into each other instead of meeting at straight edges: natural ground and water fade (deep water → shallows → sand → grass, in that order), indoor floors stay crisp, and against bare floor or the background an edge is at most ragged. A later area still covers an earlier one where they overlap (a pond over a field). ' +
         'edge, fade_width, edge_details and stack change that per area.',
       inputSchema: {
@@ -867,7 +894,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     (a) =>
       guarded(() => {
         const info = assetInfo(a.asset);
-        if (!info || info.kind !== 'terrain') throw new ValidationError([`asset: "${a.asset}" is not a terrain tile (see list_assets with category "terrain")`]);
+        if (!info || info.kind !== 'terrain') throw new ValidationError([`asset: "${a.asset}" is not a terrain tile (see list_assets with category "terrain").${likeIt(a.asset, 'terrain')}`]);
         const map = store.get(a.map).map;
         const { shape, holes, region } = shapeOrRegion(map, a, Boolean(a.rect || a.poly || a.circle), () => oneShape(a));
         const id = a.id ?? nextId(map, 't');

@@ -19,7 +19,7 @@ export {
   type Corner,
   type ObjectArea,
 } from './common.ts';
-export { resolveRegion, regionCentre, ringShape, type Region, type RegionKind, type RegionSpec } from './regions.ts';
+export { resolveRegion, regionCentre, ringShape, isWholeMap, type Region, type RegionEnd, type RegionKind, type RegionSpec } from './regions.ts';
 export { parsePlace, placeProps, doorwayZones, PLACE_WORDS, type PlaceSpec, type PlaceRequest, type PlaceResult, type PlacedProp } from './props.ts';
 export { besideRect, routeAround, corridorThrough, ROOM_CLEARANCE, type BesideRequest, type BesideResult } from './rooms.ts';
 export { doorOnRoomWall, doorLeadsTo, type WallDoor } from './wall-doors.ts';

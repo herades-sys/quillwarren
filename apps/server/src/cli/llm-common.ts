@@ -8,6 +8,12 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { DelveMap } from '@delve/core';
 import { detectApi, ollamaClient, openAiClient, type ClientOptions, type McpToolInfo, type ModelClient } from '../chat/local-agent.ts';
 import { TOOL_SETS, type ToolSet } from '../chat/local-setup.ts';
+import { LEAN_STEPS, NO_STEPS, parseSteps, type Steps } from '../chat/local-steps.ts';
+
+/** The helping steps from --steps (default: LEAN_STEPS for lean, none for full). */
+export function stepsOf(f: { steps?: string }, tools: ToolSet): Steps {
+  return parseSteps(f.steps, tools === 'lean' ? LEAN_STEPS : NO_STEPS);
+}
 
 /** parseArgs options for the model and the loop. */
 export const MODEL_OPTIONS = {
@@ -22,6 +28,7 @@ export const MODEL_OPTIONS = {
   seed: { type: 'string' },
   timeout: { type: 'string', default: '600' },
   tools: { type: 'string', default: 'lean' },
+  steps: { type: 'string' },
   'prompt-file': { type: 'string' },
   'max-turns': { type: 'string', default: '30' },
   'max-calls': { type: 'string', default: '80' },
@@ -42,6 +49,7 @@ export interface ModelFlags {
   seed?: string;
   timeout?: string;
   tools?: string;
+  steps?: string;
   'prompt-file'?: string;
   'max-turns'?: string;
   'max-calls'?: string;
@@ -60,6 +68,7 @@ export const MODEL_HELP = `Model:
   --api-key KEY      for servers that want one (or LLM_API_KEY)
 Loop:
   --tools lean|full  the tool set and prompt (default lean)
+  --steps LIST       helping steps for small models: ids, final, digest, plan, "all", "none" (default: ids,final for lean, none for full)
   --prompt-file F    another system prompt (lean: placeholders {{PROPS}}, {{TERRAIN}}, {{DOOR_STYLES}})
   --max-turns N (30)  --max-calls N (80)  --time-limit S (600 per task)  --max-result N (4000 characters per tool result)
   --verbose          print every reply and tool call

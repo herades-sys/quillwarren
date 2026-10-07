@@ -11,8 +11,9 @@ import { parseArgs } from 'node:util';
 import type { DelveMap } from '@delve/core';
 import { mcpExecutor, runAgent, tokensPerSecond, malformed, type AgentEvent, type CallRecord } from '../chat/local-agent.ts';
 import { buildSetup, setupSize } from '../chat/local-setup.ts';
+import { stepsText } from '../chat/local-steps.ts';
 import { callLog, grade, pickTasks, renderReport, TASKS, type RunResult, type TaskResult } from './llm-bench-lib.ts';
-import { connectDelve, createMap, fmtMs, getMap, makeModel, MODEL_HELP, MODEL_OPTIONS, num, renderPng, slug, toolSet } from './llm-common.ts';
+import { connectDelve, createMap, fmtMs, getMap, makeModel, MODEL_HELP, MODEL_OPTIONS, num, renderPng, slug, stepsOf, toolSet } from './llm-common.ts';
 
 const { values } = parseArgs({
   options: {
@@ -81,6 +82,7 @@ if (values.report || values.regrade) {
 }
 
 const tools = toolSet(values.tools);
+const steps = stepsOf(values, tools);
 const model = await makeModel(values, tools);
 const tasks = pickTasks(values.tasks);
 if (!tasks.length) throw new Error(`no task matches "${values.tasks}"`);
@@ -88,7 +90,7 @@ const runDir = `${slug(model.model)}-${tools}${values.name ? `-${slug(values.nam
 mkdirSync(join(out, runDir), { recursive: true });
 
 const delve = await connectDelve();
-console.log(`model ${model.client.label} (${model.api} API) · tools ${tools} · Delve ${delve.version} at ${delve.base} · ${tasks.length} tasks`);
+console.log(`model ${model.client.label} (${model.api} API) · tools ${tools} · steps ${stepsText(steps)} · Delve ${delve.version} at ${delve.base} · ${tasks.length} tasks`);
 
 const started = new Date().toISOString();
 let warmupMs: number | undefined;
@@ -113,14 +115,15 @@ const verbose = values.verbose;
 const log = (e: AgentEvent) => {
   if (!verbose) return;
   if (e.type === 'reply') console.log(`    · reply ${e.turn}: ${fmtMs(e.ms)}, ${e.promptTokens ?? '?'} → ${e.completionTokens ?? '?'} tokens, ${e.calls} call(s)${e.think ? `, thought ${e.think.length} chars` : ''}${e.content ? `: ${e.content.slice(0, 200).replace(/\s+/g, ' ')}` : ''}`);
-  else if (e.type === 'call') console.log(`      ${e.record.ok ? '✓' : '✗'} ${e.record.name} ${JSON.stringify(e.record.args).slice(0, 200)}${e.record.repaired ? ' (repaired)' : ''}${e.record.source === 'text' ? ' (from text)' : ''} → ${e.record.result.slice(0, 160).replace(/\s+/g, ' ')}`);
+  else if (e.type === 'call') console.log(`      ${e.record.notRun ? '⊘' : e.record.ok ? '✓' : '✗'} ${e.record.name} ${JSON.stringify(e.record.args).slice(0, 200)}${e.record.repaired ? ' (repaired)' : ''}${e.record.source === 'text' ? ' (from text)' : ''} → ${e.record.result.slice(0, 160).replace(/\s+/g, ' ')}`);
+  else if (e.type === 'step') console.log(`      step ${e.step}: ${e.text.slice(0, 400).replace(/\s+/g, ' ')}`);
   else console.log(`      nudge: ${e.text}`);
 };
 
 for (const task of tasks) {
   const created = await createMap(delve, { name: `llm-bench ${task.id} · ${model.model} · ${tools}`, template: task.template, ...(task.unit ? { unit: task.unit } : {}) });
   const before = await getMap(delve, created.id);
-  const setup = buildSetup(tools, delve.tools, created.id, values['prompt-file'] ? { promptFile: values['prompt-file'] } : {});
+  const setup = buildSetup(tools, delve.tools, created.id, { steps, ...(values['prompt-file'] ? { promptFile: values['prompt-file'] } : {}) });
   const user = setup.user({ map: before.map, rev: before.rev }, task.prompt);
   if (!results.length) {
     size = setupSize(setup, user);
@@ -138,6 +141,9 @@ for (const task of tasks) {
     maxToolCalls: num(values['max-calls'], 'max-calls')!,
     timeLimitMs: num(values['time-limit'], 'time-limit')! * 1000,
     maxResultChars: num(values['max-result'], 'max-result')!,
+    steps: setup.steps,
+    readMap: async () => (await getMap(delve, created.id)).map,
+    request: task.prompt,
     onEvent: log,
   });
   const after = await getMap(delve, created.id);
@@ -164,6 +170,8 @@ for (const task of tasks) {
         stop: run.stop,
         error: run.error,
         stats: run.stats,
+        steps: stepsText(steps),
+        ...(run.plan ? { plan: run.plan } : {}),
         systemPromptChars: setup.system.length,
         messages: run.messages.slice(1),
         calls: run.calls,
@@ -198,7 +206,7 @@ for (const task of tasks) {
   const s = run.stats;
   const tps = tokensPerSecond(s);
   console.log(
-    `   ${g.toUpperCase()} ${checks.filter((c) => c.ok).length}/${checks.length} · ${s.toolCalls} calls, ${s.toolErrors} errors, ${malformed(s)} malformed · ${fmtMs(s.wallMs)}${tps ? ` · ${Math.round(tps)} tok/s` : ''} · stop ${run.stop}${run.error ? ` (${run.error})` : ''}`,
+    `   ${g.toUpperCase()} ${checks.filter((c) => c.ok).length}/${checks.length} · ${s.toolCalls} calls, ${s.toolErrors} errors, ${malformed(s)} malformed${s.notRun ? `, ${s.notRun} not run` : ''}${s.finalChecks ? `, final check handed back` : ''} · ${fmtMs(s.wallMs)}${tps ? ` · ${Math.round(tps)} tok/s` : ''} · stop ${run.stop}${run.error ? ` (${run.error})` : ''}`,
   );
   for (const c of checks.filter((x) => !x.ok)) console.log(`     ✗ ${c.name}${c.detail ? `: ${c.detail}` : ''}`);
   if (run.answer) console.log(`   answer: ${run.answer.replace(/\s+/g, ' ').slice(0, 300)}`);
@@ -207,6 +215,7 @@ for (const task of tasks) {
     model: model.model,
     tools,
     ...(values.name ? { name: values.name } : {}),
+    steps: stepsText(steps),
     api: model.api,
     baseUrl: model.baseUrl,
     ...(model.numCtx ? { numCtx: model.numCtx } : {}),

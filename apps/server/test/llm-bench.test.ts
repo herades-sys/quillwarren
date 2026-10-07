@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyOps, connectOps, type DelveMap, type MapObject, type Op } from '@delve/core';
 import { buildApp } from '../src/app.ts';
 import { emptyStats, type CallRecord } from '../src/chat/local-agent.ts';
-import { allConnected, grade, pickTasks, renderReport, TASKS, toOutline, type BenchTask, type Check, type CheckInput, type RunResult } from '../src/cli/llm-bench-lib.ts';
+import { allConnected, callLog, grade, pickTasks, renderReport, TASKS, toOutline, type BenchTask, type Check, type CheckInput, type RunResult } from '../src/cli/llm-bench-lib.ts';
 
 const TOKEN = 'llm-bench-test-token';
 let app: ReturnType<typeof buildApp>;
@@ -211,5 +211,14 @@ describe('the report', () => {
     expect(md).toContain('not met: its door is locked (d2 normal)');
     expect(md).toContain('[picture](qwen3-8b-lean/t2-rename-lock.png)');
     expect(md).toContain('calls: update update✗');
+    // runs with helping steps say which; held-back calls and a final check that handed back are noted per task
+    const helped = renderReport([{ ...run, steps: 'ids, final', tasks: [{ ...run.tasks[0]!, stats: { ...stats, notRun: 2, finalChecks: 1 }, callLog: 'add_terrain✗ add_height⊘ add_terrain⊘' }] }]);
+    expect(helped).toContain('Helping steps: ids, final.');
+    expect(helped).toContain('calls: add_terrain✗ add_height⊘ add_terrain⊘; 2 held back after a failed call (⊘); the final check handed problems back once');
+    expect(md).not.toContain('Helping steps');
+  });
+
+  it('marks failed and held-back calls in the call log', () => {
+    expect(callLog([call('add_terrain', {}, false), { ...call('add_height', {}, false), notRun: true }, call('add_terrain', {})])).toBe('add_terrain✗ add_height⊘ add_terrain');
   });
 });

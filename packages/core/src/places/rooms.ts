@@ -46,7 +46,12 @@ const snap = (v: number, whole: boolean) => (whole ? Math.round(v) : Math.round(
  */
 export function besideRect(map: DelveMap, req: BesideRequest): BesideResult {
   const base = map.objects.find((o) => o.id === req.beside);
-  if (!base || base.type !== 'room') throw new ValidationError([`beside: there is no room "${req.beside}" (rooms: ${rooms(map).map((r) => r.id).join(', ') || 'none yet'})`]);
+  if (!base || base.type !== 'room') {
+    const list = rooms(map).map((r) => r.id);
+    // a first room made beside one that doesn't exist yet: say how to start
+    const first = list.length ? '' : ': the map has no rooms yet, so make the first one with rect [x, y, width, height], then add the others beside it';
+    throw new ValidationError([`beside: there is no room "${req.beside}" (rooms: ${list.join(', ') || 'none yet'})${first}`]);
+  }
   const b = shapeBounds(base.shape);
   const { w, h } = req;
   const gap = req.gap ?? 2;

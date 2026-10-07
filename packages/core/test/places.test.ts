@@ -121,11 +121,47 @@ describe('regions', () => {
 
   it('says what is wrong', () => {
     expect(() => resolveRegion(dungeon, { edge: 'up-ish' })).toThrow(/region.edge: north, south, east or west/);
+    // think-off sent {"in": "r5", "edge": "center"} seven times: say how to get all of it
+    expect(() => resolveRegion(dungeon, { in: 'r5', edge: 'center', depth: 4 })).toThrow('region.edge: north, south, east or west, got "center"; for all of r5 leave edge out: {"in": "r5"}');
     expect(() => resolveRegion(dungeon, { edge: 'north', corner: 'ne' })).toThrow(/give one of/);
     expect(() => resolveRegion(dungeon, { in: 'r99' })).toThrow(/no object "r99"/);
     expect(() => resolveRegion(empty(), { edge: 'north' })).toThrow(/still empty/);
     expect(() => resolveRegion(dungeon, {})).toThrow(/or a shape such as \{"rect": \[x, y, width, height\]\}/);
     expect(() => resolveRegion(dungeon, { rect: [0, 0, -2, 3] })).toThrow(/region.rect: \[x, y, width, height\]/);
+  });
+
+  it('from and to: a path from one thing to another, the same strip as between', () => {
+    const withHill = add(outdoor, { id: 'h1', type: 'height', height: 5, shape: { rect: [0, 12, 8, 8] } });
+    const path = resolveRegion(withHill, { from: 'east', to: 'h1', width: 2 });
+    expect(path.bounds).toEqual(resolveRegion(withHill, { between: ['east', 'h1'], width: 2 }).bounds);
+    expect(path.line).toEqual([[30, 16], [4, 16]]);
+    // the end written the way a request says it
+    expect(resolveRegion(withHill, { from: 'the east side of the area', to: 'h1' }).line).toEqual([[30, 16], [4, 16]]);
+    // a region as an end: its middle (trial B wrote {"to": {"corner": "sw", "size": 10}})
+    const toCorner = resolveRegion(withHill, { from: 'east', to: { corner: 'sw', size: 8 } });
+    expect(toCorner.line).toEqual([[30, 16], [4, 16]]);
+    expect(toCorner.text).toBe('a 2-square-wide strip from the east edge of the map at [30, 16] to the middle of the south-west corner of the map, 8×8 squares (x 0–8, y 12–20)');
+    expect(() => resolveRegion(withHill, { from: 'east', to: { from: 'west', to: 'h1' } })).toThrow(/not another path/);
+    expect(() => resolveRegion(withHill, { from: 'east' })).toThrow(/a path needs both ends, from and to/);
+    expect(() => resolveRegion(withHill, { from: 'east', to: 'h1', between: ['east', 'h1'] })).toThrow(/not both/);
+    // an end that isn't there yet says which ids of that kind there are
+    expect(() => resolveRegion(outdoor, { from: 'east', to: 'h1' })).toThrow(/region.from\/to: there is no object "h1" on this map \(height areas: none yet\)/);
+  });
+
+  it("the map's own id in `in` is all of the map: its floor on a dungeon, its box outdoors", () => {
+    const floor = resolveRegion(dungeon, { in: dungeon.id });
+    expect(floor.text).toMatch(/^all of the map's floor \(every room and corridor/);
+    expect(floor.offFloor).toBe(false);
+    // the floor, not the box: the gap between room 1 and room 3 is no part of it
+    expect(floor.polygons.some((g) => g.outer.length > 4)).toBe(true);
+    expect(resolveRegion(dungeon, { in: 'the whole map' }).text).toBe(floor.text);
+    const box = resolveRegion(outdoor, { in: outdoor.id });
+    expect(box.shape).toEqual({ rect: [0, 0, 30, 20] });
+    expect(box.text).toBe('all of the map (x 0–30, y 0–20)');
+    // with a shape or an edge it is as if `in` were left out
+    expect(resolveRegion(empty(), { in: 'map_t', rect: [0, 0, 30, 20] }).shape).toEqual({ rect: [0, 0, 30, 20] });
+    expect(resolveRegion(outdoor, { in: outdoor.id, corner: 'sw', size: 8 }).bounds).toEqual({ x0: 0, y0: 12, x1: 8, y1: 20 });
+    expect(() => resolveRegion(empty(), { in: 'map_t' })).toThrow('the map is still empty, so "all of the map" has no area yet: give a rect {"rect": [x, y, width, height]}');
   });
 
   it('a plain shape is a region too, even on an empty map', () => {
@@ -179,6 +215,31 @@ describe('props by place', () => {
     const west = placeProps(map, { asset: 'bookshelf', in: 'r3', place: 'west wall' }).placed[0]!;
     expect(west.rotation).toBe(270);
     expect(propBounds(west).x0 + 0).toBe(0);
+  });
+
+  it('against a wall a rotation of its own is left out (and said so); elsewhere it turns the prop', () => {
+    // the smarter-tools run: rotation 270 on the south wall stood a 3×1 counter across the wall, and it never fitted
+    const bar = placeProps(map, { asset: 'bar-counter', in: 'r2', place: 'south wall', rotation: 270 });
+    expect(bar.placed).toHaveLength(1);
+    expect(bar.placed[0]!.rotation).toBe(180);
+    expect(propBounds(bar.placed[0]!).y1).toBe(21);
+    expect(bar.notes).toContain('Rotation 270 was left out: against the south wall a prop is turned to face into the room (rotation 180).');
+    // the turn it would get anyway is no news
+    expect(placeProps(map, { asset: 'bar-counter', in: 'r2', place: 'north wall', rotation: 0 }).notes).toEqual([]);
+    // in a corner or the middle a rotation still turns it
+    expect(placeProps(map, { asset: 'chest-closed', in: 'r2', place: 'ne corner', rotation: 90 }).placed[0]!.rotation).toBe(90);
+    expect(placeProps(map, { asset: 'table-rect', in: 'r2', place: 'center', rotation: 90 }).placed[0]!.rotation).toBe(90);
+  });
+
+  it('a taken wall with room on another says what to try, without the "no free spot" line', () => {
+    const withTable = add(map, { id: 'i1', type: 'prop', asset: 'table-round', at: [10, 18] });
+    const tavern = add(withTable, ...placeProps(withTable, { asset: 'chair', place: 'around i1', count: 4 }).placed.map((p, k) => ({ id: `i${k + 2}`, type: 'prop' as const, asset: p.asset, at: p.at, rotation: p.rotation })));
+    const r = placeProps(tavern, { asset: 'bar-counter', in: 'r2', place: 'east wall', rotation: 90 });
+    expect(r.placed).toHaveLength(0);
+    expect(r.notes.join('\n')).not.toMatch(/no free spot left/);
+    expect(r.notes.at(-1)).toBe('Try: add_prop {"asset": "bar-counter", "in": "r2", "place": "north wall"}');
+    // and the call it names works
+    expect(placeProps(tavern, { asset: 'bar-counter', in: 'r2', place: 'north wall' }).placed).toHaveLength(1);
   });
 
   it('in corners and the middle', () => {
@@ -280,6 +341,8 @@ describe('rooms beside rooms', () => {
   });
   it('unknown rooms are refused', () => {
     expect(() => besideRect(map, { beside: 'r42', side: 'east', w: 4, h: 4 })).toThrow(/no room "r42"/);
+    // on an empty map: how to start (trial runs sent beside r1 before r1 existed)
+    expect(() => besideRect(empty(), { beside: 'r1', side: 'east', w: 4, h: 4 })).toThrow('beside: there is no room "r1" (rooms: none yet): the map has no rooms yet, so make the first one with rect [x, y, width, height], then add the others beside it');
   });
 });
 
@@ -373,6 +436,30 @@ describe('checks', () => {
     expect(problems.filter((p) => p.kind === 'prop-overlap').map((p) => p.text)).toEqual(['i1 (Rectangular Table) overlaps i2 (Wooden Chair), i3 (Wooden Chair)']);
     expect(problems.filter((p) => p.kind === 'corridor-through-room').map((p) => p.text)).toEqual(['corridor c9 runs through r5']);
   });
+  it('a second corridor for a join that was already made is left over', () => {
+    // trial D: add_room beside r1 with connect made c6, then a connect r1–r7 made c7 on the same floor
+    const base = add(testMap(), { id: 'r7', type: 'room', label: '7', shape: { rect: [15, 26, 6, 4] } }, { id: 'c6', type: 'corridor', from: 'r1', to: 'r7', width: 2 });
+    expect(checkMap(base)).toEqual([]);
+    const twice = add(base, { id: 'c7', type: 'corridor', from: 'r7', to: 'r1', width: 2 });
+    const problems = checkMap(twice);
+    expect(problems.map((p) => p.text)).toEqual(['corridors c6 and c7 both join r1 and r7 along the same way: one of them is left over (delete it)']);
+    expect(checkObjects(twice, ['c7'])).toMatch(/^Check: WARNING: corridors c6 and c7 both join/);
+    // two corridors between the same rooms on different ways are fine
+    const loop = add(base, { id: 'c7', type: 'corridor', from: 'r1', to: 'r7', width: 1, path: [[10, 31], [10, 33], [18, 33], [18, 30]] });
+    expect(checkMap(loop).filter((p) => p.kind === 'corridor-duplicate')).toEqual([]);
+  });
+
+  it('terrain says what it lies on and which height areas it reaches, so a path in the wrong place shows', () => {
+    const outdoor = add(empty('1.5 m'), { id: 't1', type: 'terrain', asset: 'grass', shape: { rect: [0, 0, 30, 20] } }, { id: 'h1', type: 'height', height: 5, edge: 'slope', shape: { rect: [0, 10, 10, 10] } });
+    // the smarter-tools run 2 path: a band just outside the east edge
+    const band = add(outdoor, { id: 't2', type: 'terrain', asset: 'dirt', shape: { rect: [30.5, 0, 3, 20] } });
+    expect(checkObjects(band, ['t2'])).toBe('Check: outdoors, outside the rooms, off the other terrain (nearest t1, 0.5 squares away), does not reach h1 (20.5 squares away).');
+    const path = add(outdoor, { id: 't2', type: 'terrain', asset: 'dirt', shape: resolveRegion(outdoor, { from: 'east', to: 'h1' }).shape });
+    expect(checkObjects(path, ['t2'])).toBe('Check: outdoors, outside the rooms, on t1, reaches h1.');
+    // water in a room of the test dungeon: no other terrain, no heights, the old line
+    expect(checkObjects(add(testMap(), { id: 't1', type: 'terrain', asset: 'water-shallow', shape: { rect: [4, 1, 12, 10] } }), ['t1'])).toBe('Check: covers all of r5.');
+  });
+
   it('says what is fine in a few words', () => {
     const map = add(testMap(), { id: 'i1', type: 'prop', asset: 'table-rect', at: [10, 18] });
     expect(checkObjects(map, ['i1'])).toBe('Check: inside r2, doorways clear, no overlaps.');

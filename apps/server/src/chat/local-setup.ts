@@ -7,17 +7,20 @@
 //   everyday parameters (the meaning-level ones first: beside, in + place,
 //   region, room + wall), the map id filled in by the harness, and the short
 //   prompt in lean-prompt.md. Tune both here; `npm run llm-bench` measures it.
+// buildSetup is the one place the system prompt, the tools, the first message
+// and the helping steps (local-steps.ts; LEAN_STEPS for lean) come from.
 import { readFileSync } from 'node:fs';
 import { ASSETS, CATEGORIES, DOOR_STYLES } from '@delve/core';
 import { CHAT_SYSTEM_PROMPT, chatContext, type ChatContextInput } from './prompt.ts';
 import { toToolDefs, type Json, type LocalTool, type McpToolInfo, type ToolDef, type ToolPick } from './local-agent.ts';
+import { LEAN_STEPS, NO_STEPS, nextIdsLine, planLine, type Steps } from './local-steps.ts';
 
 export const TOOL_SETS = ['lean', 'full'] as const;
 export type ToolSet = (typeof TOOL_SETS)[number];
 
 /** What the lean tools say about a region (the nested fields keep their own short descriptions). */
 const LEAN_REGION =
-  'Where, by meaning: {"edge": "north", "depth": 3} a band along that edge of the map; {"corner": "sw", "size": 8}; {"in": "r5"} all of a room; {"in": "r2", "edge": "north"} part of one; {"around": "r3", "margin": 2}; {"between": ["east", "h1"], "width": 2} a strip from one thing to another';
+  'Where, by meaning: {"edge": "north", "depth": 3} a band along the whole of that edge of the map; {"corner": "sw", "size": 8}; {"in": "r5"} all of a room (the map id: all of the map); {"in": "r2", "edge": "north"} part of one; {"around": "r3", "margin": 2}; {"from": "west", "to": "r2", "width": 2} a path or road from one thing (an id, a map edge, a point) to another';
 
 /** The lean tools, in the order the model sees them, with what it is told about each. */
 export const LEAN_TOOLS: Record<string, ToolPick> = {
@@ -26,7 +29,7 @@ export const LEAN_TOOLS: Record<string, ToolPick> = {
     params: [],
   },
   check_map: {
-    description: 'List layout problems: rooms overlapping or touching, corridors through rooms, doors not on a wall, props outside their room, on each other or in a doorway. Call it once after building and fix what it lists.',
+    description: 'List layout problems: rooms overlapping or touching, corridors through rooms or doubled, doors not on a wall, props outside their room, on each other or in a doorway. Call it once after building and fix what it lists.',
     params: [],
   },
   list_assets: {
@@ -59,7 +62,7 @@ export const LEAN_TOOLS: Record<string, ToolPick> = {
     description:
       'Place props by meaning: {"asset": "bed-single", "in": "r4", "place": "north wall"} stands against the inside of that wall, facing into the room; also "center", "ne corner" (nw, se, sw), "near i3", and "around i1" with count (chairs round a table). It finds a free spot inside the room, off other props and out of doorways. Or at [x, y], the centre of the prop.',
     params: ['asset', 'in', 'place', 'count', 'at', 'rotation', 'notes'],
-    paramDescriptions: { rotation: 'Leave it out with place. With at: 0 faces south, 90 west, 180 north, 270 east' },
+    paramDescriptions: { rotation: 'Leave it out with a wall place (the prop faces into the room). With at or another place: 0 faces south, 90 west, 180 north, 270 east' },
   },
   add_props_along: {
     description:
@@ -69,7 +72,7 @@ export const LEAN_TOOLS: Record<string, ToolPick> = {
     bare: ['region'],
   },
   add_terrain: {
-    description: 'Fill an area with terrain (water, grass, dirt, lava…): asset plus a region, e.g. {"in": "r5"} all of room 5, or rect [x, y, w, h] or poly [[x, y], ...].',
+    description: 'Fill an area with terrain (water, grass, dirt, lava…): asset plus a region, e.g. {"in": "r5"} all of room 5, {"from": "south", "to": "t2"} a path, or rect [x, y, w, h] or poly [[x, y], ...].',
     params: ['asset', 'region', 'rect', 'poly'],
     paramDescriptions: { region: LEAN_REGION },
     bare: ['region'],
@@ -120,12 +123,18 @@ export function leanPrompt(file?: string): string {
 
 const PLAN_LINE = /^Plan: if this request takes 3 or more steps/;
 
-/** The context block without the task-list reminder (the lean set has no task list). */
-export function leanContext(input: ChatContextInput): string {
-  return chatContext(input)
+/** The context block without the task-list reminder (the lean set has no task list); with step ids, the next new ids before its end. */
+export function leanContext(input: ChatContextInput, steps: Steps = NO_STEPS): string {
+  const lines = chatContext(input)
     .split('\n')
-    .filter((l) => !PLAN_LINE.test(l))
-    .join('\n');
+    .filter((l) => !PLAN_LINE.test(l));
+  if (steps.ids) lines.splice(lines.length - 1, 0, nextIdsLine(input.map));
+  return lines.join('\n');
+}
+
+/** The lean first message: the context block, the request, and with step plan the line asking for a plan. */
+export function leanUser(input: ChatContextInput, message: string, steps: Steps = NO_STEPS): string {
+  return `${leanContext(input, steps)}\n\n${message.trim()}${steps.plan ? `\n\n${planLine()}` : ''}`;
 }
 
 /** Claude Code's task list as the full prompt describes it, answered by the harness (the chat panel's plan card lives elsewhere). */
@@ -176,28 +185,37 @@ export interface Setup {
   system: string;
   tools: ToolDef[];
   local: LocalTool[];
+  /** The helping steps (local-steps.ts) the harness runs with this setup; pass them to runAgent. */
+  steps: Steps;
   /** The user message: context block, then the request. */
   user(input: ChatContextInput, message: string): string;
 }
 
-/** Everything the model gets for one map. */
-export function buildSetup(kind: ToolSet, mcpTools: readonly McpToolInfo[], mapId: string, opts: { promptFile?: string } = {}): Setup {
+/**
+ * Everything the model gets for one map. The helping steps default to none
+ * for full and to LEAN_STEPS for lean; with ids the context block names the
+ * next ids, with plan the request is followed by planLine().
+ */
+export function buildSetup(kind: ToolSet, mcpTools: readonly McpToolInfo[], mapId: string, opts: { promptFile?: string; steps?: Steps } = {}): Setup {
   if (kind === 'full') {
     return {
       kind,
       system: opts.promptFile ? readFileSync(opts.promptFile, 'utf8') : CHAT_SYSTEM_PROMPT,
       tools: toToolDefs(mcpTools),
       local: taskTools(),
+      steps: opts.steps ?? NO_STEPS,
       user: (input, message) => `${chatContext(input)}\n\n${message.trim()}`,
     };
   }
   const fixed: Json = { map: mapId };
+  const steps = opts.steps ?? LEAN_STEPS;
   return {
     kind,
     system: leanPrompt(opts.promptFile),
     tools: toToolDefs(mcpTools, { only: LEAN_TOOLS, fixed }),
     local: [],
-    user: (input, message) => `${leanContext(input)}\n\n${message.trim()}`,
+    steps,
+    user: (input, message) => leanUser(input, message, steps),
   };
 }
 
