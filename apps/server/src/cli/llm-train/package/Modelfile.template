@@ -1,0 +1,30 @@
+# Ollama Modelfile for the fine-tuned Delve model.
+#
+# The safe way to make one: start from the base model's own Modelfile, so the
+# chat template (with tool calls and the think switch) is exactly the one the
+# base model uses, then point FROM at your GGUF:
+#
+#     ollama show qwen3:4b --modelfile > Modelfile      (qwen3:8b for an 8B fine-tune)
+#     # edit the FROM line to:  FROM ./delve-qwen3-lora-gguf/unsloth.Q4_K_M.gguf
+#     ollama create delve-qwen3-4b -f Modelfile
+#
+# If you write the Modelfile by hand instead, use this file: replace the FROM
+# path, and paste the TEMPLATE block from `ollama show qwen3:4b --modelfile`
+# where it says so. Without the base model's TEMPLATE, Ollama may not know how
+# to pass tools to the model or switch thinking off, and every tool call breaks.
+
+FROM ./delve-qwen3-lora-gguf/unsloth.Q4_K_M.gguf
+
+# TEMPLATE """ ... paste the base model's TEMPLATE here ... """
+
+# The lean setup is about 5.3k tokens before the first reply and conversations
+# grow to 10k: the harness asks for 16384 anyway (llm-bench --num-ctx).
+PARAMETER num_ctx 16384
+
+# Qwen's recommended sampling for non-thinking mode.
+PARAMETER temperature 0.7
+PARAMETER top_p 0.8
+PARAMETER top_k 20
+
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"

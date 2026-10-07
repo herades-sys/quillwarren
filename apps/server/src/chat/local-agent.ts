@@ -926,6 +926,8 @@ interface Prepared {
   id: string;
   name: string;
   args: Json;
+  /** The arguments as the model wrote them (after repair), without the fixed ones (the map id): what the conversation history shows. */
+  shown?: Json;
   problem?: string;
   repaired: boolean;
   source: 'native' | 'text';
@@ -991,7 +993,7 @@ export async function runAgent(o: AgentOptions): Promise<AgentRun> {
     const { args, changed } = coerceArgs(parsed.args, def.parameters);
     const repaired = parsed.repaired || changed.length > 0 || name !== c.name;
     if (repaired) stats.repaired++;
-    return { id, name, args: { ...args, ...def.fixed }, source, repaired, ...(local.has(name) ? { local: local.get(name)! } : {}) };
+    return { id, name, args: { ...args, ...def.fixed }, shown: args, source, repaired, ...(local.has(name) ? { local: local.get(name)! } : {}) };
   };
 
   try {
@@ -1074,7 +1076,7 @@ export async function runAgent(o: AgentOptions): Promise<AgentRun> {
       }
 
       const prepared = raw.map((r, i) => prepare(r.call, r.source, i));
-      messages.push({ role: 'assistant', content, toolCalls: prepared.map((p) => ({ id: p.id, name: p.name, args: p.args })) });
+      messages.push({ role: 'assistant', content, toolCalls: prepared.map((p) => ({ id: p.id, name: p.name, args: p.shown ?? p.args })) });
       // the calls run in order, each on the map the earlier ones left; after a failed one the rest are held back
       let failedAt: { index: number; name: string } | null = null;
       const turnStart = messages.length;

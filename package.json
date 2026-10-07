@@ -15,6 +15,7 @@
     "trace-bench": "node apps/server/src/cli/trace-bench.ts",
     "llm-bench": "node apps/server/src/cli/llm-bench.ts",
     "local-llm": "node apps/server/src/cli/local-llm.ts",
+    "llm-train-data": "node apps/server/src/cli/llm-train-data.ts",
     "demo": "node apps/server/src/cli/demo.ts",
     "mcp": "node apps/server/src/cli/mcp-call.ts",
     "assets": "node scripts/build-assets.ts",

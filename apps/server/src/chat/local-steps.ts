@@ -166,13 +166,25 @@ const firstLine = (s: string, max = 180) => {
 /** What a call is about, to tell a retry from another call of the same tool: the tool plus its asset or id. */
 const callKey = (c: Pick<CallRecord, 'name' | 'args'>) => `${c.name} ${typeof c.args.asset === 'string' ? c.args.asset : ''} ${typeof c.args.id === 'string' ? c.args.id : ''}`;
 
-/** Calls that failed (or were held back) and were never done again: no later call of the same tool and the same asset or id worked. */
+/** The object ids a call acts on (id, ids). */
+const callIds = (c: Pick<CallRecord, 'args'>): string[] => [c.args.id, ...(Array.isArray(c.args.ids) ? c.args.ids : [])].filter((x): x is string => typeof x === 'string' && x !== '');
+
+/** Whether a refusal names this id as a word ("Door d1 (normal) is in that wall already"). */
+const names = (text: string, id: string) => text.split(/[^\w-]+/).includes(id);
+
+/**
+ * Calls that failed (or were held back) and were never done again: no later
+ * call of the same tool and the same asset or id worked, and no later call that
+ * worked acted on an object the refusal named (the door already in that wall,
+ * restyled with update instead of a second door).
+ */
 export function unresolvedCalls(calls: readonly CallRecord[]): CallRecord[] {
   const out: CallRecord[] = [];
   calls.forEach((c, k) => {
     if (c.ok) return;
     const key = callKey(c);
     if (calls.slice(k + 1).some((d) => d.ok && callKey(d) === key)) return;
+    if (!c.notRun && calls.slice(k + 1).some((d) => d.ok && callIds(d).some((id) => names(c.result, id)))) return;
     // the same thing failing again later is listed once, as its last try
     if (calls.slice(k + 1).some((d) => !d.ok && callKey(d) === key)) return;
     out.push(c);

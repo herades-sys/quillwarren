@@ -291,6 +291,10 @@ describe('helping steps', () => {
     ];
     // the bar counter was never done again (a chair is something else); the dirt was; the held-back hill never sent again
     expect(unresolvedCalls(calls).map((c) => `${c.name} ${String(c.args.asset ?? '')}`)).toEqual(['add_prop bar-counter', 'add_height ']);
+    // a refused door dealt with by restyling the door the refusal named is done; one that names d12 is not dealt with by d1
+    const door = rec('add_door', { room: 'r2', wall: 'west', style: 'locked', map: 'm' }, false, 'wall: no free stretch on the west wall of r2. Door d1 (normal) is in that wall already: update {"id": "d1", "set": {"style": "…"}} changes its style.');
+    expect(unresolvedCalls([door, rec('update', { id: 'd1', set: { style: 'locked' }, map: 'm' }, true)])).toEqual([]);
+    expect(unresolvedCalls([{ ...door, result: 'Door d12 is in that wall already.' }, rec('update', { id: 'd1', set: { style: 'locked' }, map: 'm' }, true)])).toHaveLength(1);
     expect(callText('add_prop', { asset: 'bar-counter', in: 'r2', map: 'm' })).toBe('add_prop {"asset": "bar-counter", "in": "r2"}');
     expect(stateDigest({ start, now, calls })).toBe(
       '[So far in this request: made t1 (Grass); changed r3 (room 3 "Armoury"); removed d6. Not done yet: add_prop {"asset": "bar-counter", "in": "r2", "place": "east wall"} failed: Along the east wall it does not fit.; add_height {"height": 5} was not run. Next new ids: room r7 (number 7), corridor c6, door d6, prop i1, terrain t2, height area h1, label l1.]',
@@ -444,7 +448,7 @@ describe('the agent loop', () => {
     ]);
     const second = s.requests[1]!.body as { messages: Json[] };
     expect(second.messages.slice(2)).toEqual([
-      { role: 'assistant', content: '', tool_calls: [{ id: 'id_add_room', type: 'function', function: { name: 'add_room', arguments: JSON.stringify({ rect: [16, 26, 6, 4], name: 'Guard post', map: 'map_x' }) } }] },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'id_add_room', type: 'function', function: { name: 'add_room', arguments: JSON.stringify({ rect: [16, 26, 6, 4], name: 'Guard post' }) } }] },
       { role: 'tool', tool_call_id: 'id_add_room', name: 'add_room', content: 'Added room r7 (label 7).' },
     ]);
     expect(r.stats).toMatchObject({ turns: 2, toolCalls: 1, toolErrors: 0, promptTokens: 2000, completionTokens: 100, maxPrompt: 1000 });
@@ -620,7 +624,7 @@ describe("Ollama's own API", () => {
     expect(s.requests[0]!.path).toBe('/api/chat');
     expect(body).toMatchObject({ options: { num_ctx: 16384 }, think: false, stream: false });
     expect(body.messages.slice(2)).toEqual([
-      { role: 'assistant', content: '', tool_calls: [{ function: { name: 'add_room', arguments: { rect: [1, 2, 6, 4], map: 'map_x' } } }] },
+      { role: 'assistant', content: '', tool_calls: [{ function: { name: 'add_room', arguments: { rect: [1, 2, 6, 4] } } }] },
       { role: 'tool', content: 'Added room r7 (label 7).', tool_name: 'add_room' },
     ]);
     expect(r.stats).toMatchObject({ completionTokens: 240, evalMs: 4000, promptMs: 2000, loadMs: 1000, thinkChars: 5 });
