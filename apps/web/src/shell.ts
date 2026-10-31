@@ -1,8 +1,9 @@
 // The map page's chrome (the markup is apps/server/src/editor-page.ts): the
-// Export and ⋯ menus, the GM / Players switch, the zoom and storeys controls,
-// toasts, the live and saved status, the shortcuts dialog, and which layout is
-// on: desk (≥ 1024), narrow (768–1023, the inspector is a drawer) or phone
-// (< 768, sheets and a bottom toolbar).
+// Export and ⋯ menus, the GM / Players switch, the zoom controls, the storey
+// button in the top bar (and PgUp / PgDn), toasts, the live and saved status,
+// the shortcuts dialog, and which layout is on: desk (≥ 1024), narrow
+// (768–1023, the inspector is a drawer) or phone (< 768, sheets and a bottom
+// toolbar).
 import { floorText, storeyTitle, type View } from '@delve/core';
 import type { IconName } from '@delve/ui';
 import { h, iconEl } from './dom.ts';
@@ -77,7 +78,6 @@ export function initShell(o: { mapId: string; edit: boolean; snip?: boolean; vie
   const conn = [$('conn'), $('conn-mini')].filter((e): e is HTMLElement => Boolean(e));
   const save = $('save-state');
   const pct = $('zoom-pct');
-  const storeysBox = $('storeys');
   const storeyBtn = $<HTMLButtonElement>('storey-btn');
   const storeyChip = $('storey-chip');
   const shortcuts = $('shortcuts');
@@ -118,7 +118,8 @@ export function initShell(o: { mapId: string; edit: boolean; snip?: boolean; vie
     menu.hidden = false;
     btn.setAttribute('aria-expanded', 'true');
     openMenu = { btn, menu, temp };
-    menu.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    // the checked item (the storey you're on), else the first one
+    (menu.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') ?? menu.querySelector<HTMLElement>('[role^="menuitem"]'))?.focus();
   }
   for (const [b, m] of [
     ['export-btn', 'export-menu'],
@@ -141,7 +142,7 @@ export function initShell(o: { mapId: string; edit: boolean; snip?: boolean; vie
   });
   document.addEventListener('keydown', (e) => {
     if (!openMenu) return;
-    const items = [...openMenu.menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].filter((el) => !el.closest('[hidden]'));
+    const items = [...openMenu.menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')].filter((el) => !el.closest('[hidden]'));
     const i = items.indexOf(document.activeElement as HTMLElement);
     if (e.key === 'Escape') {
       const btn = openMenu.btn;
@@ -218,15 +219,20 @@ export function initShell(o: { mapId: string; edit: boolean; snip?: boolean; vie
     const [ic, text] = state === 'saving' ? (['upload', 'Saving…'] as const) : state === 'saved' ? (['check', 'Saved'] as const) : (['alert', 'Not saved'] as const);
     save.classList.toggle('is-warning', state === 'failed');
     save.replaceChildren(iconEl(ic, 14), h('span', {}, text));
+    save.title = text; // the compact top bar shows only the icon
     const mini = $('conn-mini');
     if (mini?.classList.contains('status-live')) mini.textContent = `Live · ${text.toLowerCase()}`;
   }
 
   // ---------- storeys ----------
+  // The storey button after the place's name ("1 · Belfry"), its menu (each storey once; Add above / below for
+  // editors) and PgUp / PgDn. A map that isn't one of several storeys has no storey control (add storeys in
+  // Map settings).
 
   let storeyList: Storey[] = [];
   let storeyOpts: { canAdd: boolean; onAdd(position: 'above' | 'below'): void } = { canAdd: false, onAdd: () => {} };
   const number = (s: Storey, i: number, list: Storey[]) => (s.level ? floorText(s.level.order) : String(list.length - 1 - i));
+  const nameOf = (s: Storey) => s.level?.name ?? s.name;
   function goStorey(id: string): void {
     if (id === o.mapId) return;
     const url = new URL(location.href);
@@ -234,56 +240,18 @@ export function initShell(o: { mapId: string; edit: boolean; snip?: boolean; vie
     location.href = url.toString();
   }
   function renderStoreys(): void {
-    const list = storeyList.length ? storeyList : [{ id: o.mapId, name: '' }];
-    const many = storeyList.length > 1;
-    if (storeyBtn) storeyBtn.hidden = !many;
+    if (!storeyBtn) return;
+    const list = storeyList;
     const cur = list.findIndex((s) => s.id === o.mapId);
-    if (storeyChip) storeyChip.textContent = cur >= 0 ? number(list[cur]!, cur, list) : '';
-    if (!storeysBox) return;
-    if (!many && !storeyOpts.canAdd) {
-      storeysBox.hidden = true;
-      return;
-    }
-    storeysBox.hidden = false;
-    // + goes up a storey and − down one (like PgUp / PgDn); at the top or bottom they offer a new storey there
-    const step = (dir: 'above' | 'below') => {
-      const next = cur < 0 ? undefined : list[dir === 'above' ? cur - 1 : cur + 1];
-      const label = next
-        ? `${dir === 'above' ? 'Up' : 'Down'} one storey: ${storeyTitle(next)} · ${dir === 'above' ? 'PgUp' : 'PgDn'}`
-        : storeyOpts.canAdd
-          ? `Add a new storey ${dir}`
-          : `No storey ${dir}`;
-      return h(
-        'button',
-        {
-          type: 'button',
-          class: 'ed-sbtn ed-sbtn-step',
-          'aria-label': label,
-          title: label,
-          disabled: !next && !storeyOpts.canAdd,
-          onclick: () => {
-            if (next) return goStorey(next.id);
-            if (storeyOpts.canAdd && confirm(`Add a new, empty storey ${dir} this one?`)) storeyOpts.onAdd(dir);
-          },
-        },
-        dir === 'above' ? '+' : '−',
-      );
-    };
-    storeysBox.replaceChildren(
-      ...(many || storeyOpts.canAdd ? [step('above')] : []),
-      ...list.map((s, i) => {
-        const here = s.id === o.mapId;
-        const title = many ? storeyTitle(s) : 'This map';
-        return h(
-          'div',
-          { style: 'position:relative' },
-          h('button', { type: 'button', class: 'ed-sbtn', 'aria-current': String(here), 'aria-label': `Storey ${number(s, i, list)}, ${title}`, title, onclick: () => goStorey(s.id) }, number(s, i, list)),
-          here && many ? h('span', { class: 'ed-sname' }, s.level?.name ?? s.name) : null,
-        );
-      }),
-      ...(many || storeyOpts.canAdd ? [step('below')] : []),
-      ...(many ? [h('span', { class: 'ed-skeys' }, 'PgUp/Dn')] : []),
-    );
+    const many = list.length > 1 && cur >= 0;
+    storeyBtn.hidden = !many;
+    if (storeyBtn.parentElement?.classList.contains('ed-storey')) storeyBtn.parentElement.hidden = !many;
+    if (!many) return;
+    const s = list[cur]!;
+    const text = `${number(s, cur, list)} · ${nameOf(s)}`;
+    storeyChip?.replaceChildren(h('span', { class: 'ed-storey-num' }, number(s, cur, list)), h('span', { class: 'ed-storey-name' }, nameOf(s)));
+    storeyBtn.title = `Storey: ${text} — change (PgUp / PgDn)`;
+    storeyBtn.setAttribute('aria-label', `Storey ${text}: change storey`);
   }
   function setStoreys(list: Storey[], opts?: typeof storeyOpts): void {
     storeyList = list;
@@ -292,17 +260,29 @@ export function initShell(o: { mapId: string; edit: boolean; snip?: boolean; vie
   }
   storeyBtn?.addEventListener('click', () => {
     const list = storeyList;
+    const cur = list.findIndex((s) => s.id === o.mapId);
+    // the storeys next to this one carry their key
+    const key = (i: number) => (i === cur - 1 ? 'PgUp' : i === cur + 1 ? 'PgDn' : null);
     const menu = h(
       'div',
-      { class: 'menu ed-menu', role: 'menu', style: 'right:0;top:48px;width:240px' },
-      ...list.map((s, i) =>
-        h('button', { type: 'button', class: 'menu-item', role: 'menuitemradio', 'aria-checked': String(s.id === o.mapId), onclick: () => goStorey(s.id) }, h('span', { style: 'min-width:22px;font-weight:600;font-variant-numeric:tabular-nums' }, number(s, i, list)), storeyTitle(s)),
-      ),
+      { class: 'menu ed-menu ed-storey-menu', role: 'menu', 'aria-label': 'Storeys, top first' },
+      ...list.map((s, i) => {
+        const k = key(i);
+        return h(
+          'button',
+          { type: 'button', class: 'menu-item', role: 'menuitemradio', 'aria-checked': String(i === cur), title: storeyTitle(s), onclick: () => goStorey(s.id) },
+          h('span', { class: 'ed-storey-num' }, number(s, i, list)),
+          h('span', { class: 'spacer ed-storey-item' }, nameOf(s)),
+          k ? h('kbd', {}, k) : null,
+        );
+      }),
       ...(storeyOpts.canAdd
-        ? (['above', 'below'] as const).map((p) => h('button', { type: 'button', class: 'menu-item has-icon', role: 'menuitem', onclick: () => (closeMenu(), storeyOpts.onAdd(p)) }, iconEl('plus', 16), `Add a storey ${p}`))
+        ? [
+            h('div', { class: 'ed-menu-sep', role: 'separator' }),
+            ...(['above', 'below'] as const).map((p) => h('button', { type: 'button', class: 'menu-item has-icon', role: 'menuitem', onclick: () => (closeMenu(), storeyOpts.onAdd(p)) }, iconEl('plus', 16), `Add a storey ${p}`)),
+          ]
         : []),
     );
-    storeyBtn.parentElement!.style.position = 'relative';
     storeyBtn.after(menu);
     showMenu(storeyBtn, menu, true);
   });

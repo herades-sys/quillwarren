@@ -5,15 +5,15 @@ import type { Shell } from './shell.ts';
 export const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
- * True when a pointer went down on a control floating over the map (the storey
- * and zoom buttons, the context bar, a picker, a menu, a toast). The stage's
- * handlers leave those alone: a drag or a pointer capture started there takes
- * the click away from the button.
+ * True when a pointer went down on a control floating over the map (the zoom
+ * buttons, a picker, a menu, a toast, the snip bar). The stage's handlers leave
+ * those alone: a drag or a pointer capture started there takes the click away
+ * from the button. (The context strip sits outside the stage, above it.)
  */
 export function onControl(e: Event): boolean {
   return (
     e.target instanceof Element &&
-    e.target.closest('button, a, input, select, textarea, label, [role="menu"], #storeys, .ed-zoom, #ctxbar, #flyout, .ed-float-bottom, .snip-bar, .snip-hint') !== null
+    e.target.closest('button, a, input, select, textarea, label, [role="menu"], .ed-zoom, #ctxbar, #flyout, .ed-float-bottom, .snip-bar, .snip-hint') !== null
   );
 }
 

@@ -209,7 +209,7 @@ function rail(): string {
 <div class="stack" style="flex:1; min-width:0; gap:16px; padding-top:150px">
 <div class="stack sg-note" style="gap:7px"><span><b>Default</b> muted ink. <b>Hover</b> shows the tooltip after 400 ms, or at once while another is open.</span><span><b>Active</b> accent tint, a 1 px accent edge and aria-pressed. <b>Focus</b> 2 px ring. Arrow keys move along the rail.</span><span><b>Disabled</b> 45 %, for example Fog reveal on a storey without fog.</span></div>
 <div class="ctxbar" style="align-self:flex-start"><span class="ctxbar-title">${i('room', 16)}Room</span><span class="vsep"></span>${shapes.map((s, n) => `<span class="ctxbar-opt${s === 'shape-octagon' ? ' is-active' : ''}">${i(s, 17)}<span class="ctxbar-num">${n + 1}</span></span>`).join('')}</div>
-<span class="sg-note">The context bar floats top-centre on the canvas and changes with the tool: options, sliders, then shortcut hints.</span></div></div>`);
+<span class="sg-note">The context bar is a strip above the canvas (below it on phones) and changes with the tool: its name and key, options, sliders, then a line of help.</span></div></div>`);
 }
 
 function fields(): string {

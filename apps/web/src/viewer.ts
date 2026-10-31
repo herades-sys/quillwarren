@@ -111,7 +111,7 @@ function render(): void {
   art.ensure(map);
   const m = styleOverride ? { ...map, style: { ...map.style, preset: styleOverride } } : map;
   // fog of war: the GM sees unrevealed parts shaded, the players' view doesn't draw them;
-  // the floor number is the storeys control here, not part of the picture
+  // the floor number is on the top bar's storey button here, not part of the picture
   const scene = buildScene(m, { view, assets: art.body, fog: view === 'players' ? 'hide' : 'dim', floorNumber: false });
   if (!grid) scene.layers = scene.layers.filter((l) => l.name !== 'grid');
   stage.style.background = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : '';

@@ -320,7 +320,9 @@ export function initSnip(ctx: SnipCtx): Snip {
     ctx.stage.classList.add('snipping');
     ctx.overlay.appendChild(layer);
     buildBar();
-    ctx.stage.append(hint, bar);
+    // the hint takes the editor's context strip's place (hidden while snipping); the bar sits by the box
+    (document.getElementById('ctx-dock') ?? ctx.stage).append(hint);
+    ctx.stage.append(bar);
     button?.setAttribute('aria-pressed', 'true');
     update();
   }

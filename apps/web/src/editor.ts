@@ -1,4 +1,4 @@
-// The map editor: the tool rail, the context bar, the pickers, selection, drag
+// The map editor: the tool rail, the context strip, the pickers, selection, drag
 // previews, keyboard shortcuts and the inspector, laid out as in the design
 // (docs/design/ui-v1/Delve Editor.dc.html). Every edit is sent as ops over the
 // live socket; the map on screen only changes when the server's broadcast
@@ -126,36 +126,51 @@ interface ToolInfo {
   tip?: string;
 }
 
-/** The rail, in the design's groups and with its letters. Polygon lives under Room (shape 8, or O). */
-const TOOL_GROUPS: ToolInfo[][] = [
-  [
-    { id: 'select', name: 'Select', short: 'Select', key: 'V', icon: 'select' },
-    { id: 'pan', name: 'Pan', short: 'Pan', key: 'H', icon: 'pan', tip: 'or hold Space' },
-  ],
-  [
-    { id: 'room', name: 'Room', short: 'Room', key: 'R', icon: 'room', tip: '1–8 change shape' },
-    { id: 'corridor', name: 'Corridor', short: 'Corridor', key: 'C', icon: 'corridor' },
-    { id: 'door', name: 'Door', short: 'Door', key: 'D', icon: 'door' },
-    { id: 'stairs', name: 'Stairs', short: 'Stairs', key: 'S', icon: 'stairs' },
-    { id: 'cutout', name: 'Pillar / cutout', short: 'Pillar', key: 'I', icon: 'pillar' },
-    { id: 'opening', name: 'Open area', short: 'Open', key: 'N', icon: 'eraser', tip: 'no hatching or shading here' },
-    { id: 'height', name: 'Height', short: 'Height', key: 'K', icon: 'layers', tip: 'ledges, hills, pits · Shift K where you can go' },
-  ],
-  [
-    { id: 'prop', name: 'Prop', short: 'Prop', key: 'P', icon: 'prop', tip: 'Q / E rotate' },
-    { id: 'terrain', name: 'Terrain', short: 'Terrain', key: 'G', icon: 'terrain' },
-    { id: 'label', name: 'Label', short: 'Label', key: 'T', icon: 'label' },
-  ],
-  [
-    { id: 'marker', name: 'GM marker', short: 'Marker', key: 'M', icon: 'marker' },
-    { id: 'reveal', name: 'Fog reveal', short: 'Fog', key: 'F', icon: 'fog' },
-  ],
-  [
-    { id: 'image', name: 'Image upload', short: 'Image', key: 'U', icon: 'image' },
-    { id: 'segment', name: 'Segment', short: 'Segment', key: 'B', icon: 'segment' },
-  ],
+/** The rail, in the design's groups (each a labelled group) and with its letters. Polygon lives under Room (shape 8, or O). */
+const TOOL_GROUPS: { name: string; tools: ToolInfo[] }[] = [
+  {
+    name: 'Select',
+    tools: [
+      { id: 'select', name: 'Select', short: 'Select', key: 'V', icon: 'select' },
+      { id: 'pan', name: 'Pan', short: 'Pan', key: 'H', icon: 'pan', tip: 'or hold Space' },
+    ],
+  },
+  {
+    name: 'Build',
+    tools: [
+      { id: 'room', name: 'Room', short: 'Room', key: 'R', icon: 'room', tip: '1–8 change shape' },
+      { id: 'corridor', name: 'Corridor', short: 'Corridor', key: 'C', icon: 'corridor' },
+      { id: 'door', name: 'Door', short: 'Door', key: 'D', icon: 'door' },
+      { id: 'stairs', name: 'Stairs', short: 'Stairs', key: 'S', icon: 'stairs' },
+      { id: 'cutout', name: 'Pillar / cutout', short: 'Pillar', key: 'I', icon: 'pillar' },
+      { id: 'opening', name: 'Open area', short: 'Open', key: 'N', icon: 'eraser', tip: 'no hatching or shading here' },
+      { id: 'height', name: 'Height', short: 'Height', key: 'K', icon: 'layers', tip: 'ledges, hills, pits · Shift K where you can go' },
+    ],
+  },
+  {
+    name: 'Furnish',
+    tools: [
+      { id: 'prop', name: 'Prop', short: 'Prop', key: 'P', icon: 'prop', tip: 'Q / E rotate' },
+      { id: 'terrain', name: 'Terrain', short: 'Terrain', key: 'G', icon: 'terrain' },
+      { id: 'label', name: 'Label', short: 'Label', key: 'T', icon: 'label' },
+    ],
+  },
+  {
+    name: 'GM tools',
+    tools: [
+      { id: 'marker', name: 'GM marker', short: 'Marker', key: 'M', icon: 'marker' },
+      { id: 'reveal', name: 'Fog reveal', short: 'Fog', key: 'F', icon: 'fog' },
+    ],
+  },
+  {
+    name: 'Images and segments',
+    tools: [
+      { id: 'image', name: 'Image upload', short: 'Image', key: 'U', icon: 'image' },
+      { id: 'segment', name: 'Segment', short: 'Segment', key: 'B', icon: 'segment' },
+    ],
+  },
 ];
-const TOOLS = TOOL_GROUPS.flat();
+const TOOLS = TOOL_GROUPS.flatMap((g) => g.tools);
 const POLY: ToolInfo = { id: 'poly', name: 'Room', short: 'Room', key: 'O', icon: 'room' };
 const infoOf = (t: Tool): ToolInfo => TOOLS.find((x) => x.id === t) ?? POLY;
 
@@ -482,6 +497,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     tab = t;
     tabInspector.setAttribute('aria-selected', String(t === 'inspector'));
     tabMap.setAttribute('aria-selected', String(t === 'map'));
+    props.setAttribute('aria-labelledby', t === 'map' ? 'tab-map' : 'tab-inspector');
     if (render) {
       renderPanel(true);
       syncLayout();
@@ -519,7 +535,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   // ---------- pointer ----------
 
   function onDown(e: PointerEvent): void {
-    if (suspended || onControl(e)) return; // the storey, zoom and context-bar buttons keep their clicks
+    if (suspended || onControl(e)) return; // the zoom buttons, pickers and menus keep their clicks
     if (e.pointerType === 'touch') {
       touches.add(e.pointerId);
       if (touches.size > 1) {
@@ -1370,43 +1386,38 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   }
 
   const railButtons = new Map<Tool, HTMLButtonElement>();
+  /** The tooltip on hover and on keyboard focus, for the tools and the toggles alike. */
+  function withTip(b: HTMLElement, t: { name: string; key: string; tip?: string }): void {
+    b.addEventListener('pointerenter', () => showTip(b, t));
+    b.addEventListener('pointerleave', hideTip);
+    b.addEventListener('focus', () => showTip(b, t));
+    b.addEventListener('blur', hideTip);
+  }
   function buildRail(): void {
     const kids: HTMLElement[] = [];
     TOOL_GROUPS.forEach((g, gi) => {
-      if (gi) kids.push(h('span', { class: 'rail-sep' }));
-      for (const t of g) {
+      if (gi) kids.push(h('span', { class: 'rail-sep', 'aria-hidden': 'true' }));
+      const buttons = g.tools.map((t) => {
         const b = h(
           'button',
-          {
-            type: 'button',
-            class: 'tool',
-            'aria-label': t.name,
-            'aria-keyshortcuts': t.key,
-            'aria-pressed': 'false',
-            onclick: () => setTool(t.id),
-            onpointerenter: () => showTip(b, t),
-            onpointerleave: hideTip,
-            onfocus: () => showTip(b, t),
-            onblur: hideTip,
-          },
+          { type: 'button', class: 'tool', 'aria-label': t.name, 'aria-keyshortcuts': t.key, 'aria-pressed': 'false', onclick: () => setTool(t.id) },
           iconEl(t.icon, 20),
           h('span', { class: 'tool-key' }, t.key),
         );
+        withTip(b, t);
         railButtons.set(t.id, b);
-        kids.push(b);
-      }
+        return b;
+      });
+      kids.push(h('div', { class: 'ed-railgroup', role: 'group', 'aria-label': g.name }, ...buttons));
     });
-    const gridBtn = h('button', { type: 'button', class: 'tool is-toggle', 'aria-label': 'Toggle grid', 'aria-pressed': String(ctx.grid()), onclick: () => (ctx.toggleGrid(), gridBtn.setAttribute('aria-pressed', String(ctx.grid()))) }, iconEl('grid', 19));
-    gridBtn.addEventListener('pointerenter', () => showTip(gridBtn, { name: 'Grid', key: 'Shift G' }));
-    gridBtn.addEventListener('pointerleave', hideTip);
-    const keysBtn = h('button', { type: 'button', class: 'tool', 'aria-label': 'Keyboard shortcuts', onclick: () => ctx.shell.openShortcuts() }, iconEl('keyboard', 19));
-    keysBtn.addEventListener('pointerenter', () => showTip(keysBtn, { name: 'Shortcuts', key: '?' }));
-    keysBtn.addEventListener('pointerleave', hideTip);
+    const gridBtn = h('button', { type: 'button', class: 'tool is-toggle', 'aria-label': 'Toggle grid', 'aria-keyshortcuts': 'Shift+G', 'aria-pressed': String(ctx.grid()), onclick: () => (ctx.toggleGrid(), gridBtn.setAttribute('aria-pressed', String(ctx.grid()))) }, iconEl('grid', 19));
+    withTip(gridBtn, { name: 'Grid', key: 'Shift G' });
+    const keysBtn = h('button', { type: 'button', class: 'tool', 'aria-label': 'Keyboard shortcuts', 'aria-keyshortcuts': '?', onclick: () => ctx.shell.openShortcuts() }, iconEl('keyboard', 19));
+    withTip(keysBtn, { name: 'Shortcuts', key: '?' });
     ctx.onRender(() => gridBtn.setAttribute('aria-pressed', String(ctx.grid())));
-    moveBtn = h('button', { type: 'button', class: 'tool is-toggle', 'aria-label': 'Where you can go', 'aria-pressed': String(movement), onclick: () => toggleMovement() }, movementIcon(19));
-    moveBtn.addEventListener('pointerenter', () => showTip(moveBtn!, { name: 'Where you can go', key: 'Shift K', tip: 'heights: red blocks, green crosses' }));
-    moveBtn.addEventListener('pointerleave', hideTip);
-    rail.replaceChildren(...kids, h('span', { class: 'spacer' }), moveBtn, gridBtn, keysBtn);
+    moveBtn = h('button', { type: 'button', class: 'tool is-toggle', 'aria-label': 'Where you can go', 'aria-keyshortcuts': 'Shift+K', 'aria-pressed': String(movement), onclick: () => toggleMovement() }, movementIcon(19));
+    withTip(moveBtn, { name: 'Where you can go', key: 'Shift K', tip: 'heights: red blocks, green crosses' });
+    rail.replaceChildren(...kids, h('span', { class: 'spacer' }), h('div', { class: 'ed-railgroup', role: 'group', 'aria-label': 'View and help' }, moveBtn, gridBtn, keysBtn));
     // arrow keys move along the rail
     rail.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -1446,7 +1457,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     );
   const group = (label: string, ...kids: HTMLElement[]) => h('div', { role: 'radiogroup', 'aria-label': label, style: 'display:flex;gap:2px;align-items:center' }, ...kids);
   const keyHint = (k: string, t: string) => h('span', { class: 'ed-ctx-key' }, h('kbd', {}, k), t);
-  const hint = (t: string) => h('span', { class: 'ed-ctx-hint' }, t);
+  /** The tool's help, one line: cut short with … when the options need the room; the whole text is its title. */
+  const hint = (t: string) => h('span', { class: 'ed-ctx-hint', title: t }, t);
   const ctxLabel = (t: string) => h('span', { class: 'ed-ctx-label' }, t);
 
   function pickShape(i: number): void {
@@ -1492,7 +1504,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       case 'pan':
         return [hint('Drag to pan · scroll to zoom'), keyHint('Ctrl 0', 'fit'), keyHint('+ −', 'zoom')];
       case 'room':
-        return [shapeChips(), shapeOf('room') === 'freehand' ? hint('Hold and draw the outline') : keyHint('Shift', 'square')];
+        return [shapeChips(), hint(drawHint(shapeOf('room'), 'room'))];
       case 'poly':
         return [shapeChips(), hint(poly.length ? `${poly.length} corner${poly.length === 1 ? '' : 's'} · click the first one or press Enter` : 'Click the corners'), keyHint('Esc', 'cancel')];
       case 'cutout':
@@ -1500,6 +1512,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           shapeChips(),
           h('span', { class: 'vsep' }),
           group('Fill', ...FILL_CHOICES.map(([k, l]) => chip(k === 'rock' ? 'Rock' : 'Solid', settings.pillarFill === k, () => ((settings.pillarFill = k), renderTools()), { title: l }))),
+          hint(drawHint(shapeOf('cutout'), 'pillar')),
         ];
       case 'opening': {
         const count = m.objects.filter((o) => o.type === 'opening').length;
@@ -1511,7 +1524,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
             chip('Keep walls', !settings.openWalls, () => ((settings.openWalls = false), renderTools()), { title: 'Only the hatching and shading go' }),
             chip('Open walls', settings.openWalls, () => ((settings.openWalls = true), renderTools()), { title: 'The wall lines inside go too: a cave mouth, a ledge' }),
           ),
-          hint(shapeOf('opening') === 'freehand' ? 'Hold and draw the outline' : `Drag over a wall or an edge${count ? ` · click one to select it (${count} on this map)` : ''}`),
+          hint(`${drawHint(shapeOf('opening'), 'opening')}${count && shapeOf('opening') !== 'freehand' ? ` Click one to select it (${count} on this map).` : ''}`),
         ];
       }
       case 'height': {
@@ -1528,6 +1541,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           h('span', { class: 'vsep' }),
           chip(movementIcon(16), movement, () => toggleMovement(), { title: 'Where you can go · Shift K' }),
           ...(movement ? [movementLegend()] : [keyHint('Shift K', 'where you can go')]),
+          hint(HEIGHT_HINT),
         ];
       }
       case 'corridor':
@@ -1622,10 +1636,10 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     syncRail();
     const t = infoOf(tool);
     const content = ctxContent().filter((k): k is Node | string => Boolean(k));
-    ctxbar.replaceChildren(h('span', { class: 'ctxbar-title' }, iconEl(t.icon, 16), t.name), h('span', { class: 'vsep' }), ...content);
-    if (drawsShape(tool)) ctxbar.title = drawHint(shapeOf(tool), tool === 'room' ? 'room' : tool === 'cutout' ? 'pillar' : 'opening');
-    else ctxbar.removeAttribute('title');
-    if (tool === 'height') ctxbar.title = HEIGHT_HINT;
+    // the tool's icon, name and key, its options, and its help as text (cut short, the whole of it in the title;
+    // when the options fill the strip, the tool's name carries the help as its tooltip too)
+    const help = content.find((k): k is HTMLElement => k instanceof HTMLElement && k.classList.contains('ed-ctx-hint'))?.title;
+    ctxbar.replaceChildren(h('span', { class: 'ctxbar-title', title: help }, iconEl(t.icon, 16), t.name, h('kbd', { class: 'ed-ctx-tkey' }, t.key)), h('span', { class: 'vsep' }), ...content);
   }
 
   // ---------- the pickers (props, terrain, images, segments) ----------
@@ -2102,13 +2116,13 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   function inspectorPane(): HTMLElement {
     const sel = selection.map(byId).filter((o): o is MapObject => Boolean(o));
     if (!sel.length) {
+      // the Map settings tab is right above (and on narrow screens in the ⋯ menu), so no second way in here
       return h(
         'div',
         { class: 'ed-empty' },
         iconEl('select', 22),
         h('div', { class: 'ed-empty-title' }, 'Nothing selected'),
-        h('p', { class: 'hint', style: 'margin:0;color:var(--color-text-muted);line-height:1.5' }, 'Click a room, door or prop with Select (V) to edit it here. Shift-click adds to the selection; drag on empty ground to box-select.'),
-        btn('Map settings', { kind: 'ghost', icon: 'settings', onclick: () => setTab('map'), attrs: { style: 'padding-left:0' } }),
+        h('p', { class: 'ed-empty-hint' }, 'Select something with ', h('kbd', {}, 'V'), ' to edit it here.'),
       );
     }
     const kids: HTMLElement[] = [];
@@ -2276,7 +2290,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
                 ),
               ),
             ]
-          : [h('p', { class: 'hint' }, 'A tower, a keep with a cellar: add storeys, and switch between them bottom left.')]),
+          : [h('p', { class: 'hint' }, 'A tower, a keep with a cellar: add storeys, then switch between them with the storey button in the top bar (or PgUp / PgDn).')]),
         guide ? h('p', { class: 'hint' }, `The dashed outline is the floor of “${guide.name}”, so the storeys line up.`) : null,
         h('div', { class: 'ed-row' }, btn('Add above', { icon: 'plus', size: 'sm', onclick: () => void addStorey('above') }), btn('Add below', { icon: 'plus', size: 'sm', onclick: () => void addStorey('below') }), btn('Number the stairs', { icon: 'stairs', size: 'sm', title: 'Label every stair, ladder and trapdoor in the GM view: floor, then a letter per flight (0A, 1A, 2A)', onclick: () => void numberStairs() })),
       ),

@@ -256,7 +256,15 @@ describe('desktop mode', () => {
     expect(page).toContain('id="view-handout" href="/maps/map_test4p/handout"');
     expect(page).toContain('href="/maps/map_test4p/3d"');
     expect(page).toContain('data-crop="png-players"');
-    const players = (await app.inject({ method: 'GET', url: '/maps/map_test4p?view=players', headers: ok })).body;
+    // the web's grouped top bar, its view group without the players' screen, and the context strip docked above the canvas
+    expect([...page.matchAll(/<div class="ed-group[^"]*"(?: role="group" aria-label="([^"]+)")?/g)].map((m) => m[1] ?? 'status and panels')).toEqual(['Editing', 'View', 'Export', 'status and panels']);
+    const view = /aria-label="View">([\s\S]*?)<div class="ed-top-end">/.exec(page)![1]!;
+    expect(view).toContain('name="view" value="players"');
+    expect(view).toContain('id="view-3d"');
+    expect(view).not.toContain('id="screen-link"');
+    expect(page).toMatch(/<div class="ed-main">\s*<div class="ed-ctx-dock" id="ctx-dock">/);
+    expect(page).not.toContain('id="storeys"');
+    const players =(await app.inject({ method: 'GET', url: '/maps/map_test4p?view=players', headers: ok })).body;
     expect(players).toContain('id="png-link" href="/api/v1/maps/map_test4p/render.png?view=players"');
     expect((await app.inject({ method: 'GET', url: '/api/v1/maps/map_test4p/render.png?view=players', headers: ok })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/api/v1/maps/map_test4p/handout.svg', headers: ok })).statusCode).toBe(200);

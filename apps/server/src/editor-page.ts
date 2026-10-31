@@ -4,10 +4,16 @@
 // Claude floats, below 1024 the inspector becomes a drawer, below 768 the phone
 // layout takes over: a bottom toolbar, and sheets for the inspector and Claude.
 //
+// The top bar comes in groups: where you are (Library › place › storey), editing
+// (undo, redo, saved), the view (GM / Players, 3D, the players' screen) in the
+// middle, then export (Snip, Export) and status and panels (live, chat, who) at
+// the end. The context strip (the active tool, its options and help) is docked
+// above the canvas, so it never covers the map.
+//
 // The first picture is rendered here, so it shows before the script loads; the
-// script (apps/web/src/viewer.ts) then fills the rail, the context bar and the
+// script (apps/web/src/viewer.ts) then fills the rail, the context strip and the
 // panels, and follows changes over the WebSocket.
-import { sceneToSvg, type DelveMap, type Level } from '@delve/core';
+import { floorText, sceneToSvg, type DelveMap, type Level } from '@delve/core';
 import { esc, htmlDocument, icon, type IconName } from '@delve/ui';
 import type { AppInfo } from './app.ts';
 import { sceneFor } from './render.ts';
@@ -67,7 +73,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   const { view, style } = o;
   const enc = encodeURIComponent(id);
   const scene = sceneFor(map, { view, style, fog: '1' });
-  // the storeys control shows the floor number instead
+  // the top bar's storey button shows the floor number instead
   scene.layers = scene.layers.filter((l) => l.name !== 'floor-number');
   const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : 'var(--canvas-parchment)';
   const edit = o.loggedIn;
@@ -136,30 +142,45 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
     ? `<span class="avatar ed-avatar" title="${esc(o.account.name)} · ${o.account.role === 'admin' ? 'Admin' : 'GM'}">${esc(initials(o.account.name))}</span>`
     : '';
 
+  // The storey button after the place's name: "1 · Belfry" (apps/web/src/shell.ts keeps it
+  // current and opens its menu). A map that isn't one of several storeys shows none.
+  const many = o.levels.length > 1;
+  const at = o.levels.findIndex((l) => l.id === id);
+  const here = o.levels[at];
+  const storeyNum = here ? (here.level ? floorText(here.level.order) : String(o.levels.length - 1 - at)) : '';
+  const storeyName = here ? (here.level?.name ?? here.name) : '';
+  const storeyText = esc(`${storeyNum} · ${storeyName}`);
+  const storey = `<div class="ed-menu-wrap ed-storey"${many ? '' : ' hidden'}>${icon('chevron-right', { size: 14, className: 'crumb-sep ed-desk' })}<button class="btn btn-plain ed-storey-btn" type="button" id="storey-btn" aria-label="Storey ${storeyText}: change storey" title="Storey: ${storeyText} — change (PgUp / PgDn)" aria-haspopup="menu" aria-expanded="false"${many ? '' : ' hidden'}><span class="ed-storey-chip" id="storey-chip"><span class="ed-storey-num">${esc(storeyNum)}</span><span class="ed-storey-name">${esc(storeyName)}</span></span>${icon('chevron-down', { size: 14, className: 'text-muted' })}</button></div>`;
+
   const top = `<header class="topbar ed-top">
 <div class="ed-top-start">
   <a class="ed-back btn btn-icon" href="/" aria-label="Back to library">${icon('chevron-right', { size: 22, className: 'flip' })}</a>
   <a class="topbar-brand" href="/">Delve</a><span class="vsep ed-desk"></span>
-  <a class="crumb ed-desk" href="/">Library</a>${icon('chevron-right', { size: 14, className: 'crumb-sep ed-desk' })}
+  <a class="crumb ed-desk ed-crumb-lib" href="/">Library</a>${icon('chevron-right', { size: 14, className: 'crumb-sep ed-desk ed-crumb-lib' })}
   <div class="ed-title"><span class="crumb-title" id="map-name">${esc(map.name)}</span><span class="ed-subline"><span class="status status-connecting" id="conn-mini">Connecting…</span></span></div>
-  ${edit ? `<span class="save-state ed-desk" id="save-state" role="status">${ic('check', 14)}<span>Saved</span></span>` : ''}
-  ${edit ? `<div class="ed-history"><button class="btn btn-icon" type="button" id="undo" aria-label="Undo" title="Undo · Ctrl Z">${ic('undo')}</button><button class="btn btn-icon" type="button" id="redo" aria-label="Redo" title="Redo · Ctrl Shift Z">${ic('redo')}</button></div>` : ''}
+  ${storey}
+  ${edit ? `<span class="vsep ed-desk"></span>
+  <div class="ed-group ed-edit" role="group" aria-label="Editing"><div class="ed-history"><button class="btn btn-icon" type="button" id="undo" aria-label="Undo" title="Undo · Ctrl Z">${ic('undo')}</button><button class="btn btn-icon" type="button" id="redo" aria-label="Redo" title="Redo · Ctrl Shift Z">${ic('redo')}</button></div><span class="save-state ed-desk" id="save-state" role="status" title="Saved">${ic('check', 14)}<span>Saved</span></span></div>` : ''}
 </div>
-${viewSeg('view', '')}
+<div class="ed-group ed-group-view" role="group" aria-label="View">
+  ${viewSeg('view', '')}
+  <a class="btn btn-plain ed-wide" id="view-3d" href="/maps/${enc}/3d" title="All storeys stacked in 3D">${ic('3d', 17)}3D</a>
+  ${screen ? `<a class="btn btn-primary ed-wide" id="screen-link" href="/maps/${enc}/screen" target="_blank" rel="noopener" aria-label="Players’ screen" title="Open the players' screen in a new window">${ic('screen', 17)}<span class="lbl">Players’ screen</span></a>` : ''}
+</div>
 <div class="ed-top-end">
-  <span class="status status-connecting ed-desk" id="conn" role="status" title="Connecting to the live map">Connecting…</span>
-  <span class="vsep ed-wide"></span>
-  <a class="btn btn-plain ed-wide" id="view-3d" href="/maps/${enc}/3d" title="All storeys stacked in 3D · Shift 3">${ic('3d', 17)}3D</a>
-  ${screen ? `<a class="btn btn-primary ed-wide" id="screen-link" href="/maps/${enc}/screen" target="_blank" rel="noopener" title="Open the players' screen in a new window">${ic('screen', 17)}Players’ screen</a>` : ''}
-  ${o.snip ? `<button class="btn btn-plain ed-wide" type="button" id="snip-btn" aria-pressed="false" title="Snip an area and save it as a PNG · Shift S">${SNIP_ICON}Snip</button>` : ''}
-  <div class="ed-menu-wrap ed-wide"><button class="btn btn-secondary" type="button" id="export-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu">${ic('download', 17)}Export${icon('chevron-down', { size: 14, className: 'text-muted' })}</button>
-    <div class="menu ed-menu" role="menu" id="export-menu" hidden>${exportItems}</div></div>
-  <button class="btn btn-icon ed-storey-btn" type="button" id="storey-btn" aria-label="Change storey" aria-haspopup="menu" aria-expanded="false"${o.levels.length > 1 ? '' : ' hidden'}><span class="ed-storey-chip" id="storey-chip"></span></button>
+  <div class="ed-group ed-wide" role="group" aria-label="Export">
+    ${o.snip ? `<button class="btn btn-plain" type="button" id="snip-btn" aria-pressed="false" aria-label="Snip" title="Snip an area and save it as a PNG · Shift S">${SNIP_ICON}<span class="lbl">Snip</span></button>` : ''}
+    <div class="ed-menu-wrap"><button class="btn btn-secondary" type="button" id="export-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu">${ic('download', 17)}Export${icon('chevron-down', { size: 14, className: 'text-muted' })}</button>
+      <div class="menu ed-menu" role="menu" id="export-menu" hidden>${exportItems}</div></div>
+  </div>
   <div class="ed-menu-wrap ed-narrow"><button class="btn btn-icon" type="button" id="more-btn" aria-label="More: export, 3D, ${screen ? 'players’ screen, ' : ''}settings" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">${ic('more', 20)}</button>
     <div class="menu ed-menu" role="menu" id="more-menu" hidden>${moreItems}</div></div>
   <span class="vsep ed-desk"></span>
-  ${chat ? `<button class="btn btn-icon ed-chat-btn" type="button" id="chat-toggle" aria-pressed="false" aria-label="Chat with ${ai}" title="${ai} · Ctrl .">${ic('chat')}</button>` : ''}
-  ${edit ? who : `<a class="btn btn-secondary" id="login-link" href="${esc(loginHref)}">${ic('lock', 15)}<span class="lbl">Log in to edit</span></a>`}
+  <div class="ed-group ed-status">
+    <span class="status status-connecting ed-desk" id="conn" role="status" title="Connecting to the live map">Connecting…</span>
+    ${chat ? `<button class="btn btn-icon ed-chat-btn" type="button" id="chat-toggle" aria-pressed="false" aria-label="Chat with ${ai}" title="${ai} · Ctrl .">${ic('chat')}</button>` : ''}
+    ${edit ? who : `<a class="btn btn-secondary" id="login-link" href="${esc(loginHref)}">${ic('lock', 15)}<span class="lbl">Log in to edit</span></a>`}
+  </div>
 </div>
 </header>`;
 
@@ -187,26 +208,28 @@ ${chatSettings ? `  <div class="ed-chat-settings" id="chat-settings-pane" hidden
   const editorParts = edit
     ? {
         rail: `<nav class="rail ed-rail" id="rail" aria-label="Tools"></nav>`,
-        overlays: `<div class="ctxbar ed-ctx" id="ctxbar" role="toolbar" aria-label="Tool options"></div>
-    <aside class="ed-flyout" id="flyout" hidden></aside>`,
+        // the context strip: a row above the canvas (below it on phones), one fixed height
+        dock: `<div class="ed-ctx-dock" id="ctx-dock"><div class="ctxbar ed-ctx" id="ctxbar" role="toolbar" aria-label="Tool options"></div></div>`,
+        overlays: `<aside class="ed-flyout" id="flyout" hidden></aside>`,
         inspector: `<aside class="ed-inspector ed-sheet" id="panel" aria-label="Properties">
     <span class="sheet-handle ed-phone-only"></span>
-    <div class="tabs ed-tabs" role="tablist"><button class="tab" type="button" role="tab" id="tab-inspector" aria-selected="true">Inspector</button><button class="tab" type="button" role="tab" id="tab-map" aria-selected="false">Map settings</button><span class="spacer"></span><button class="btn btn-icon ed-drawer-close" type="button" id="panel-close" aria-label="Close the panel">${ic('x', 17)}</button></div>
-    <div class="ed-scroll" id="props"></div>
+    <div class="tabs ed-tabs" role="tablist"><button class="tab" type="button" role="tab" id="tab-inspector" aria-selected="true" aria-controls="props">Inspector</button><button class="tab" type="button" role="tab" id="tab-map" aria-selected="false" aria-controls="props">Map settings</button><span class="spacer"></span><button class="btn btn-icon ed-drawer-close" type="button" id="panel-close" aria-label="Close the panel">${ic('x', 17)}</button></div>
+    <div class="ed-scroll" id="props" role="tabpanel" aria-labelledby="tab-inspector"></div>
   </aside>`,
         phonebar: `<nav class="ed-phonebar" id="phonebar" aria-label="Tools"><div class="ed-phonetools" id="phonetools" role="toolbar"></div>${chat ? `<span class="vsep"></span><button class="ed-phonetool" type="button" id="chat-phone" aria-pressed="false">${ic('chat', 22)}${ai}</button>` : ''}</nav>`,
       }
-    : { rail: '', overlays: '', inspector: '', phonebar: '' };
+    : { rail: '', dock: '', overlays: '', inspector: '', phonebar: '' };
 
   const body = `${top}
 <div class="ed-body">
   ${editorParts.rail}
+  <div class="ed-main">
+  ${editorParts.dock}
   <main id="stage" style="background:${esc(bg)}" data-tool="">
     <div id="canvas">${sceneToSvg(scene, { ppg: 20 })}</div>
     <svg id="overlay" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" viewBox="${scene.bounds.x0} ${scene.bounds.y0} ${scene.bounds.x1 - scene.bounds.x0} ${scene.bounds.y1 - scene.bounds.y0}"></svg>
     ${editorParts.overlays}
     ${viewSeg('view-phone', ' ed-view-phone')}
-    <div class="ed-storeys" id="storeys" role="group" aria-label="Storeys"${o.levels.length > 1 || edit ? '' : ' hidden'}></div>
     <div class="ed-zoom" role="group" aria-label="Zoom">
       <button class="ed-zbtn" type="button" id="zoom-out" aria-label="Zoom out" title="Zoom out · −">${ic('zoom-out')}</button>
       <span class="ed-zpct" id="zoom-pct" aria-live="polite">100%</span>
@@ -217,6 +240,7 @@ ${chatSettings ? `  <div class="ed-chat-settings" id="chat-settings-pane" hidden
     <div class="ed-float-bottom"><div class="toasts ed-toasts" id="toasts"></div>
       <div class="ed-banner" id="players-banner"${view === 'players' ? '' : ' hidden'}>${ic('eye-off', 15)}<span>Players’ view: GM markers, secret doors and fogged rooms are hidden</span><kbd>Shift P</kbd></div></div>
   </main>
+  </div>
   ${editorParts.inspector}
   ${chatPanel}
 </div>
@@ -236,14 +260,38 @@ export const EDITOR_CSS = `
   html, body { height: 100%; }
   body.ed { display: flex; flex-direction: column; overflow: hidden; background: var(--color-bg); }
   .flip { transform: scaleX(-1); }
-  .ed-top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; padding: 0 8px 0 16px; }
-  .ed-top-start { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .ed-top-end { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0; }
+  /* the top bar: where you are and editing on the left, the view group midway, export and status on the right;
+     when room runs out the place's and storey's names give way (cut short with …), nothing else */
+  .ed-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 8px 0 16px; }
+  .ed-top-start { flex: 0 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .ed-top-start > * { flex: none; }
+  .ed-top > .ed-group-view { flex: none; }
+  .ed-top-end { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
   .ed-top-end > * { flex: none; }
+  .ed-top-start > .ed-title { flex: 0 1 auto; min-width: 40px; }
   .ed-title { display: flex; flex-direction: column; min-width: 0; }
   .ed-subline { display: none; }
-  .ed-history { display: flex; gap: 2px; margin-left: 2px; }
+  .ed-group { display: flex; align-items: center; gap: 4px; flex: none; }
+  .ed-edit { gap: 10px; }
+  .ed-history { display: flex; gap: 2px; }
+  .ed-group-view { gap: 6px; }
+  .ed-status { gap: 6px; padding-left: 2px; }
   .ed-view .seg-opt { padding: 6px 12px; }
+  /* the storey button, after the place's name: the floor number and the storey's name */
+  .ed-top-start > .ed-storey { flex: 0 2 auto; min-width: 0; }
+  .ed-storey { display: flex; align-items: center; gap: 10px; }
+  .ed-storey-btn { min-width: 0; max-width: 100%; gap: 6px; padding: 0 6px 0 4px; }
+  .ed-storey-chip { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ed-storey-num { min-width: 24px; height: 24px; padding: 0 5px; flex: none; display: grid; font-family: var(--font-ui); place-items: center; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--color-accent); color: var(--color-accent); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .ed-storey-name { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ed-storey-btn > .icon { flex: none; }
+  .ed-storey-menu { left: 22px; right: auto; width: 280px; }
+  .ed-storey-menu .menu-item { padding: 7px 10px; }
+  .ed-storey-menu .menu-item[aria-checked="true"] { padding-left: 10px; }
+  .ed-storey-menu .ed-storey-num { min-width: 28px; height: 22px; box-shadow: none; color: inherit; }
+  .ed-storey-menu .menu-item[aria-checked="true"] .ed-storey-num { box-shadow: inset 0 0 0 1px currentColor; }
+  .ed-storey-menu .ed-storey-item { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ed-storey-menu .ed-menu-sep { height: 1px; margin: 4px 2px; background: var(--color-border); }
   .ed-view .lbl-short, .ed-back, .ed-narrow, .ed-phone-only, .ed-view-phone, .ed-drawer-close { display: none; }
   .ed-menu-wrap { position: relative; }
   .ed-menu { position: absolute; right: 0; top: 40px; width: 300px; padding: 6px; border-radius: 10px; z-index: 50; }
@@ -253,14 +301,18 @@ export const EDITOR_CSS = `
   .ed-crop { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-top: 6px; box-shadow: inset 0 1px 0 var(--color-border); }
   .ed-crop[hidden] { display: none; }
   .ed-menu-label { padding: 4px 10px 2px; }
-  .ed-storey-chip { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--color-accent); color: var(--color-accent); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
-  .ed-avatar { margin-left: 4px; }
+  .ed-avatar { margin-left: 2px; }
 
   .ed-body { flex: 1; min-height: 0; display: flex; position: relative; }
   .ed-rail { box-shadow: inset -1px 0 0 var(--color-border); position: relative; z-index: 15; overflow-y: auto; scrollbar-width: none; }
   .ed-rail .spacer { flex: 1; min-height: 8px; }
   .ed-rail .tool.is-toggle[aria-pressed="true"] { background: transparent; box-shadow: none; color: var(--color-accent); }
-  #stage { flex: 1; min-width: 0; position: relative; overflow: hidden; touch-action: none; cursor: grab; z-index: 1; user-select: none; -webkit-user-select: none; }
+  /* the rail's groups (select, build, furnish, GM, images and segments; the view toggles at the bottom) */
+  .ed-railgroup { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; }
+  .ed-rail .rail-sep { margin: 7px 0; }
+  /* the canvas column: the context strip on top, the stage below it */
+  .ed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+  #stage { flex: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; touch-action: none; cursor: grab; z-index: 1; user-select: none; -webkit-user-select: none; }
   #stage input, #stage textarea { user-select: text; -webkit-user-select: text; }
   #stage[data-tool="select"] { cursor: default; }
   #stage[data-tool]:not([data-tool=""]):not([data-tool="select"]):not([data-tool="pan"]) { cursor: crosshair; }
@@ -272,13 +324,20 @@ export const EDITOR_CSS = `
   #canvas svg { width: 100%; height: 100%; display: block; }
   #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 
-  /* floating canvas controls, 12 px in from the edges */
-  .ed-ctx { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none; }
+  /* the context strip: the active tool (icon, name, key), its options and its help, docked above the canvas so it
+     never covers the map; one fixed height, so the map doesn't move when the tool changes */
+  .ed-ctx-dock { flex: none; height: 44px; display: flex; align-items: center; min-width: 0; position: relative; z-index: 2; background: var(--color-surface); box-shadow: inset 0 -1px 0 var(--color-border); }
+  .ed-ctx { flex: 1; min-width: 0; height: 100%; max-width: none; border-radius: 0; background: transparent; box-shadow: none; padding: 0 12px 0 14px; overflow-x: auto; scrollbar-width: none; }
+  .ed-ctx::-webkit-scrollbar { display: none; }
   .ed-ctx:empty { display: none; }
+  .ed-ctx > * { flex: none; }
+  .ed-ctx-tkey { margin-left: 1px; }
   .ed-ctx .range { width: 84px; }
   .ed-ctx-slider { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: var(--text-sm); color: var(--color-text-muted); }
   .ed-ctx-slider output { min-width: 34px; color: var(--color-text); font-variant-numeric: tabular-nums; }
-  .ed-ctx-hint { color: var(--color-text-muted); font-size: 12.5px; padding: 0 4px; }
+  /* the tool's help: one line, cut short with … when the options need the room (the whole text is its title) */
+  .ed-ctx-hint { color: var(--color-text-muted); font-size: 12.5px; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ed-ctx > .ed-ctx-hint { flex: 0 1 auto; min-width: 7em; }
   .ed-ctx-key { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-sm); color: var(--color-text-muted); padding: 0 4px; }
   .ed-ctx .btn { height: 30px; font-size: 12.5px; }
   .ed-ctx select.input { min-height: 28px; padding: 2px 24px 2px 8px; font-size: 12.5px; width: auto; }
@@ -330,16 +389,6 @@ export const EDITOR_CSS = `
   .ed-propdlg-preview { border-radius: 8px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--color-border); background: var(--canvas-floor); }
   .ed-propdlg-preview img { display: block; width: 100%; height: auto; }
 
-  .ed-storeys { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; width: 46px; border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-md); z-index: 5; }
-  .ed-storeys[hidden], .ed-storeys:empty { display: none; }
-  .ed-sbtn { width: 38px; height: 34px; border: 0; border-radius: 7px; cursor: pointer; font-family: var(--font-ui); font-weight: 600; font-variant-numeric: tabular-nums; font-size: 15px; line-height: 1; background: transparent; color: var(--color-text-muted); position: relative; }
-  .ed-sbtn:hover { background: var(--color-hover); color: var(--color-text); }
-  .ed-sbtn[aria-current="true"] { background: var(--tint-accent-bg); color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent); }
-  /* + and − step a storey up or down; the floor numbers use the UI font (the numeral font draws 1 and 0 like I and O) */
-  .ed-sbtn-step { height: 28px; display: grid; place-items: center; font-size: 19px; font-weight: 500; }
-  .ed-sbtn:disabled { opacity: .35; cursor: default; background: transparent; }
-  .ed-sname { position: absolute; left: 48px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-family: var(--font-ui); font-size: var(--text-sm); padding: 4px 8px; border-radius: 6px; background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-sm); pointer-events: none; }
-  .ed-skeys { font-size: 9.5px; color: var(--color-text-faint); padding: 2px 0 1px; }
   .ed-zoom { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-md); z-index: 5; }
   .ed-zbtn { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 7px; cursor: pointer; background: transparent; color: var(--color-text-muted); }
   .ed-zbtn:hover { background: var(--color-hover); color: var(--color-text); }
@@ -421,6 +470,8 @@ export const EDITOR_CSS = `
   .ed-empty { padding: 40px 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
   .ed-empty > .icon { color: var(--color-text-faint); }
   .ed-empty-title { font-family: var(--font-display); font-size: 19px; }
+  .ed-empty-hint { margin: 0; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 1.5; }
+  .ed-empty-hint kbd { margin: 0 1px; }
   .ed-seg-full { display: flex; }
   .ed-seg-full .seg-opt { flex: 1; justify-content: center; padding: 5px 8px; }
   .ed-pane .check { font-size: var(--text-md); padding: 2px 0; }
@@ -569,6 +620,8 @@ export const EDITOR_CSS = `
   body.snipping #ctxbar, body.snipping #flyout { display: none; }
   body.snipping #rail, body.snipping #panel { pointer-events: none; opacity: .5; }
   .snip-hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; max-width: calc(100% - 24px); padding: 6px 12px; border-radius: 999px; background: var(--color-surface); color: var(--color-text-muted); box-shadow: var(--shadow-md); font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* in the editor it takes the context strip's place (the strip keeps its height, so the map stays put) */
+  .ed-ctx-dock > .snip-hint { position: static; transform: none; flex: 1; min-width: 0; max-width: none; padding: 0 14px; border-radius: 0; background: transparent; box-shadow: none; }
   .snip-bar { position: absolute; z-index: 6; display: grid; gap: 6px; max-width: calc(100% - 24px); padding: 8px 10px; border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-lg); cursor: default; }
   .snip-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .snip-row .spacer { flex: 1; }
@@ -581,10 +634,26 @@ export const EDITOR_CSS = `
 
   .ed-phonebar { display: none; }
 
-  /* 1024–1279: Claude floats over the canvas */
+  /* below 1440 the top bar drops the Library crumb (the brand goes there too) and shows "Saved" and Snip as their
+     icons (with tooltips), so the place's and storey's names keep their room */
+  @media (max-width: 1439px) {
+    .ed-crumb-lib, .ed-top .save-state > span, #snip-btn .lbl { display: none; }
+    #snip-btn { padding: 0 9px; }
+  }
+  /* 1024–1279: Claude floats over the canvas; the top bar gets more compact (the players' screen as its icon,
+     GM / Players short) so its groups still fit side by side */
   @media (max-width: 1279px) {
     .ed-claude { position: absolute; top: 12px; bottom: 12px; right: calc(var(--panel-w) + 12px); border-radius: 12px; box-shadow: var(--shadow-lg); overflow: hidden; }
     body:not(.editing) .ed-claude { right: 12px; }
+    #screen-link .lbl { display: none; }
+    #screen-link { padding: 0 9px; }
+    .ed-top > .ed-group-view .ed-view .lbl { display: none; }
+    .ed-top > .ed-group-view .ed-view .lbl-short { display: inline; }
+    .ed-storey-name { max-width: 150px; }
+  }
+  /* the floating chat starts under the context strip, so the tool's options stay in sight */
+  @media (min-width: 768px) and (max-width: 1279px) {
+    body.editing .ed-claude { top: 56px; }
   }
   /* 768–1023: the inspector is a drawer; Export, 3D and the players' screen move into ⋯ */
   @media (max-width: 1023px) {
@@ -600,8 +669,8 @@ export const EDITOR_CSS = `
   /* below 768: the phone layout */
   @media (max-width: 767px) {
     body.ed { font-size: var(--text-lg); }
-    .ed-top { height: 52px; grid-template-columns: minmax(0, 1fr) auto; padding: 0 4px; gap: 0; }
-    .ed-top > .ed-view, .ed-desk, .topbar-brand, .ed-avatar { display: none !important; }
+    .ed-top { height: 52px; padding: 0 4px; gap: 0; }
+    .ed-top > .ed-group-view, .ed-desk, .topbar-brand, .ed-avatar { display: none !important; }
     .ed-back { display: grid; width: 44px; height: 44px; color: var(--color-text); }
     .ed-top-start { gap: 0; }
     .ed-title { padding-left: 2px; }
@@ -609,19 +678,28 @@ export const EDITOR_CSS = `
     .ed-subline { display: flex; align-items: center; gap: 6px; }
     .ed-subline .status { font-size: var(--text-sm); }
     .ed-history .btn-icon, .ed-top-end .btn-icon { width: 44px; height: 44px; }
+    /* the storey: its number only, so the place's name keeps the room (the button's label and its menu name the
+       storeys); the menu drops down across the screen */
+    .ed-storey { margin-left: 4px; }
+    .ed-top-start > .ed-storey { flex-shrink: 0; }
+    .ed-storey-btn { height: 44px; padding: 0 4px; gap: 4px; }
+    .ed-storey-name { display: none; }
+    .ed-storey-menu { position: fixed; left: 8px; right: 8px; top: 56px; width: auto; }
     .ed-chat-btn { display: none; }
     .ed-view-phone { display: inline-flex; position: absolute; top: 12px; right: 12px; z-index: 8; background: var(--color-surface); box-shadow: var(--shadow-md); }
     .ed-view-phone .seg-opt { min-height: 40px; padding: 0 12px; }
     .ed-view-phone .lbl { display: none; } .ed-view-phone .lbl-short { display: inline; }
-    .ed-rail, .ed-zoom, .ed-storeys { display: none !important; }
+    .ed-rail, .ed-zoom { display: none !important; }
     .ed-phonebar { display: flex; align-items: center; flex: none; padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); background: var(--color-surface); box-shadow: inset 0 1px 0 var(--color-border); position: relative; z-index: 20; }
     .ed-phonebar .vsep { height: 32px; }
     .ed-phonetools { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; padding: 0 6px 0 8px; scrollbar-width: none; }
     .ed-phonetool { flex: none; width: 54px; height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; border-radius: 10px; cursor: pointer; font: inherit; font-size: 10.5px; background: transparent; color: var(--color-text-muted); }
     #chat-phone { width: 58px; margin: 0 6px; }
     .ed-phonetool[aria-pressed="true"] { background: var(--tint-accent-bg); color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent); }
-    .ed-ctx { top: auto; bottom: 12px; left: 8px; right: 8px; transform: none; max-width: none; }
-    .ed-float-bottom { bottom: 64px; max-width: calc(100% - 24px); }
+    /* the context strip docks under the canvas, above the tools, where the thumb is */
+    .ed-ctx-dock { order: 1; height: 48px; box-shadow: inset 0 1px 0 var(--color-border); }
+    .ed-ctx { padding: 0 8px 0 12px; }
+    .ed-float-bottom { bottom: 16px; max-width: calc(100% - 24px); }
     .ed-flyout { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 58%; border-radius: 18px 18px 0 0; box-shadow: var(--shadow-lg); }
     .ed-phone-only { display: block; }
     .ed-sheet { position: absolute; left: 0; right: 0; bottom: 0; width: auto; border-radius: 18px 18px 0 0; box-shadow: var(--shadow-lg); transform: translateY(105%); visibility: hidden; transition: transform var(--dur) var(--ease), visibility var(--dur); z-index: 19; }

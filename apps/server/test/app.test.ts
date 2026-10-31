@@ -100,6 +100,41 @@ describe('preview page', () => {
     await withToken.close();
   });
 
+  it('lays the editor out in groups, with the context strip docked above the canvas', async () => {
+    const open = buildApp({ version: 'v1', started: 'now' }, { openEdit: true, token: 't' });
+    const { id } = (await open.inject({ method: 'POST', url: '/api/v1/maps', headers: { authorization: 'Bearer t' }, payload: { template: 'test-dungeon' } })).json();
+    const page = (await open.inject({ url: `/maps/${id}` })).body;
+    expect(page).toContain('"loggedIn":true');
+    // the top bar: editing (undo, redo, saved), view (GM / Players, 3D, players' screen), export (Snip, Export), then status and panels
+    const groups = [...page.matchAll(/<div class="ed-group[^"]*"(?: role="group" aria-label="([^"]+)")?/g)].map((m) => m[1] ?? 'status and panels');
+    expect(groups).toEqual(['Editing', 'View', 'Export', 'status and panels']);
+    expect(page).toMatch(/aria-label="Editing"><div class="ed-history">.*id="undo".*id="redo".*<\/div><span class="save-state ed-desk" id="save-state"/);
+    const view = /aria-label="View">([\s\S]*?)<div class="ed-top-end">/.exec(page)![1]!;
+    for (const s of ['name="view" value="gm"', 'id="view-3d"', 'id="screen-link"']) expect(view).toContain(s);
+    expect(/aria-label="Export">([\s\S]*?)<div class="ed-menu-wrap ed-narrow">/.exec(page)![1]).toMatch(/id="snip-btn"[\s\S]*id="export-btn"/);
+    expect(page).toMatch(/<div class="ed-group ed-status">\s*<span class="status status-connecting ed-desk" id="conn"/);
+    // the 3D button has no shortcut (there never was a Shift 3)
+    expect(page).toContain('id="view-3d" href="/maps/' + id + '/3d" title="All storeys stacked in 3D"');
+    expect(page).not.toContain('Shift 3');
+    // the context strip is a row of the canvas column, outside the stage, so it never covers the map; no floor navigator
+    expect(page).toMatch(/<div class="ed-main">\s*<div class="ed-ctx-dock" id="ctx-dock"><div class="ctxbar ed-ctx" id="ctxbar" role="toolbar" aria-label="Tool options"><\/div><\/div>\s*<main id="stage"/);
+    const stage = /<main id="stage"[\s\S]*?<\/main>/.exec(page)![0];
+    expect(stage).not.toContain('id="ctxbar"');
+    expect(stage).toContain('id="flyout"');
+    expect(page).not.toContain('id="storeys"');
+    // the inspector's tabs control its panel
+    expect(page).toContain('aria-controls="props">Map settings</button>');
+    expect(page).toContain('<div class="ed-scroll" id="props" role="tabpanel" aria-labelledby="tab-inspector"></div>');
+    // a viewer who isn't logged in gets no strip
+    const anon = buildApp({ version: 'v1', started: 'now' }, { token: 't' });
+    const other = (await anon.inject({ method: 'POST', url: '/api/v1/maps', headers: { authorization: 'Bearer t' }, payload: { template: 'test-dungeon' } })).json();
+    const viewer = (await anon.inject({ url: `/maps/${other.id}` })).body;
+    expect(viewer).toMatch(/<div class="ed-main">\s*<main id="stage"/);
+    expect(viewer).not.toContain('id="ctx-dock"');
+    await open.close();
+    await anon.close();
+  });
+
   it('serves the room-number font', async () => {
     const res = await app.inject({ url: '/fonts/marcellus-sc.ttf' });
     expect(res.statusCode).toBe(200);

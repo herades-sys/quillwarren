@@ -61,9 +61,10 @@ window.addEventListener(
   'pointerdown',
   (e) => {
     if (openMenu && !openMenu.contains(e.target as Node)) closeMenu();
-    // The pickers and the context bar float over the map, inside the stage, whose
-    // tool handler listens in the capture phase: without this, pressing "New prop…",
-    // a tile's ⋯ or a category chip also placed a prop under the pointer.
+    // The pickers float over the map, inside the stage, whose tool handler listens
+    // in the capture phase: without this, pressing "New prop…", a tile's ⋯ or a
+    // category chip also placed a prop under the pointer. (The context strip is
+    // outside the stage now; stopping its clicks here does no harm.)
     if (e.target instanceof Element && e.target.closest('#flyout, #ctxbar')) e.stopPropagation();
   },
   true,

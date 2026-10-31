@@ -112,17 +112,22 @@ describe('floor numbers', () => {
     ws.terminate();
   });
 
-  it('shows the floors in the storeys control on the map page, not in the first picture', async () => {
+  it('shows the floor number and name on the top bar’s storey button, not in the first picture', async () => {
     const id = await newMapId('test-dungeon');
     const cellar = await addLevel(id, 'Cellar', 'below');
     const page = (await app.inject({ url: `/maps/${cellar}` })).body;
-    // the control is drawn by the page script from the storeys in the initial data
-    expect(page).toContain('id="storeys"');
+    // the button names the storey ("−1 · Cellar"); the page script keeps it current from the storeys in the initial data
     expect(page).toMatch(/"levels":\[.*"Ground floor".*"Cellar".*"order":-1/s);
-    expect(page).toMatch(/<button class="btn btn-icon ed-storey-btn" type="button" id="storey-btn" aria-label="Change storey" aria-haspopup="menu" aria-expanded="false">/);
+    expect(page).toMatch(/<button class="btn btn-plain ed-storey-btn" type="button" id="storey-btn" aria-label="Storey −1 · Cellar: change storey" title="Storey: −1 · Cellar — change \(PgUp \/ PgDn\)" aria-haspopup="menu" aria-expanded="false">/);
+    expect(page).toContain('<span class="ed-storey-num">−1</span><span class="ed-storey-name">Cellar</span>');
+    // no floor navigator over the canvas any more
+    expect(page).not.toContain('id="storeys"');
     expect(page).not.toContain('data-layer="floor-number"');
+    // a map that isn't one of several storeys shows no storey control
     const alone = (await app.inject({ url: `/maps/${await newMapId()}` })).body;
+    expect(alone).toContain('<div class="ed-menu-wrap ed-storey" hidden>');
     expect(alone).toMatch(/id="storey-btn"[^>]* hidden>/);
+    expect(alone).not.toContain('id="storeys"');
     // GM renders carry the number in the corner; the players' view doesn't
     expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=gm` })).body).toContain('data-layer="floor-number"');
     expect((await app.inject({ url: `/api/v1/maps/${id}/render.svg?view=players` })).body).not.toContain('data-layer="floor-number"');
