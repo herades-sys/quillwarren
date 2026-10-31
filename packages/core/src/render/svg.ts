@@ -26,8 +26,13 @@ const n = (v: number): string => {
   return String(r === 0 ? 0 : r);
 };
 
-const esc = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+/**
+ * Escapes an attribute value or text. Every non-number value written below
+ * goes through it, colours too: style overrides of maps saved before they were
+ * checked can hold anything, and a valid value comes out unchanged.
+ */
+const esc = (s: unknown): string =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 function polygonsD(polys: readonly Polygon[]): string {
   let d = '';
@@ -74,7 +79,7 @@ function assetSvg(it: AssetItem, palette: Palette, colours: ReadonlyMap<string, 
     // not loaded yet (or unknown): a dashed footprint so it can still be seen and picked
     return (
       `<g transform="${place}" data-missing="${esc(it.asset)}"><rect x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" ` +
-      `fill="none" stroke="${palette.ink}" stroke-width="0.04" stroke-dasharray="0.15 0.1"/></g>`
+      `fill="none" stroke="${esc(palette.ink)}" stroke-width="0.04" stroke-dasharray="0.15 0.1"/></g>`
     );
   }
   // colour props keep their palette, as the style shows it; the rest swap their three inks
@@ -107,23 +112,23 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
   switch (layer.kind) {
     case 'rect': {
       const b = layer.bounds;
-      return g(`<rect x="${n(b.x0)}" y="${n(b.y0)}" width="${n(b.x1 - b.x0)}" height="${n(b.y1 - b.y0)}" fill="${layer.color}"/>`);
+      return g(`<rect x="${n(b.x0)}" y="${n(b.y0)}" width="${n(b.x1 - b.x0)}" height="${n(b.y1 - b.y0)}" fill="${esc(layer.color)}"/>`);
     }
     case 'fill': {
       const d = polygonsD(layer.polygons);
       if (!d) return '';
       const stroke = layer.stroke
-        ? ` stroke="${layer.stroke.color}" stroke-width="${n(layer.stroke.width)}" stroke-linejoin="miter"`
+        ? ` stroke="${esc(layer.stroke.color)}" stroke-width="${n(layer.stroke.width)}" stroke-linejoin="miter"`
         : '';
-      return g(`<path d="${d}" fill="${layer.color}" fill-rule="evenodd"${stroke}${alphaAttr('fill', layer.alpha)}${layer.stroke ? alphaAttr('stroke', layer.alpha) : ''}/>`);
+      return g(`<path d="${d}" fill="${esc(layer.color)}" fill-rule="evenodd"${stroke}${alphaAttr('fill', layer.alpha)}${layer.stroke ? alphaAttr('stroke', layer.alpha) : ''}/>`);
     }
     case 'stroke': {
       const d = linesD(layer.lines);
       if (!d) return '';
       const dash = layer.dash ? ` stroke-dasharray="${layer.dash.map(n).join(' ')}"` : '';
       return g(
-        `<path d="${d}" fill="none" stroke="${layer.color}" stroke-width="${n(layer.width)}" ` +
-          `stroke-linecap="${layer.cap}" stroke-linejoin="${layer.join}" stroke-miterlimit="4"${dash}${alphaAttr('stroke', layer.alpha)}/>`,
+        `<path d="${d}" fill="none" stroke="${esc(layer.color)}" stroke-width="${n(layer.width)}" ` +
+          `stroke-linecap="${esc(layer.cap)}" stroke-linejoin="${esc(layer.join)}" stroke-miterlimit="4"${dash}${alphaAttr('stroke', layer.alpha)}/>`,
       );
     }
     case 'dots': {
@@ -132,7 +137,7 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
       const d = layer.points
         .map(([x, y]) => `M${n(x - r)} ${n(y)}a${n(r)} ${n(r)} 0 1 0 ${n(2 * r)} 0a${n(r)} ${n(r)} 0 1 0 ${n(-2 * r)} 0Z`)
         .join('');
-      return g(`<path d="${d}" fill="${layer.color}"${alphaAttr('fill', layer.alpha)}/>`);
+      return g(`<path d="${d}" fill="${esc(layer.color)}"${alphaAttr('fill', layer.alpha)}/>`);
     }
     case 'text': {
       // Baseline shifted by 0.35 em so digits and capitals sit centred on the point.
@@ -142,7 +147,7 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
             `<text x="${n(t.at[0])}" y="${n(t.at[1] + t.size * 0.35)}" font-size="${n(t.size)}" text-anchor="middle">${esc(t.text)}</text>`,
         )
         .join('');
-      return g(`<g font-family="${esc(layer.font)}, serif" fill="${layer.color}">${items}</g>`);
+      return g(`<g font-family="${esc(layer.font)}, serif" fill="${esc(layer.color)}">${items}</g>`);
     }
     case 'assets':
       return layer.items.length ? g(layer.items.map((it) => assetSvg(it, layer.palette, layer.colours)).join('')) : '';
@@ -153,17 +158,17 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
       if (!d) return '';
       // see-through: the tint by fill-opacity, the tile by its own see-through copy (resvg draws a pattern
       // with fill-opacity too dark along its anti-aliased edge, which outlined every step of a fade)
-      const tile = layer.body ? `<path d="${d}" fill="url(#${patternKey(tiles, layer)})" fill-rule="evenodd"/>` : '';
+      const tile = layer.body ? `<path d="${d}" fill="url(#${esc(patternKey(tiles, layer))})" fill-rule="evenodd"/>` : '';
       // a colour texture covers its tile edge to edge: no tint under it
       if (layer.tint === undefined) return tile ? g(tile) : '';
-      return g(`<path d="${d}" fill="${layer.tint}" fill-rule="evenodd"${alphaAttr('fill', layer.alpha)}/>${tile}`);
+      return g(`<path d="${d}" fill="${esc(layer.tint)}" fill-rule="evenodd"${alphaAttr('fill', layer.alpha)}/>${tile}`);
     }
     case 'markers':
       return g(
         layer.items
           .map(
             (m) =>
-              `<g class="marker" data-marker="${esc(m.id)}" data-kind="${m.kind}"${m.done ? ' data-done=""' : ''} transform="translate(${n(m.at[0])} ${n(m.at[1])}) scale(${n(m.r)})">${markerGlyph(m.kind, m.done)}</g>`,
+              `<g class="marker" data-marker="${esc(m.id)}" data-kind="${esc(m.kind)}"${m.done ? ' data-done=""' : ''} transform="translate(${n(m.at[0])} ${n(m.at[1])}) scale(${n(m.r)})">${markerGlyph(m.kind, m.done)}</g>`,
           )
           .join(''),
       );
@@ -175,8 +180,8 @@ function layerSvg(layer: Layer, prefix: string, tiles = prefix): string {
         .map((t) => {
           const w = Math.max(s, fs * 0.68 * [...t.text].length + s * 0.4);
           return (
-            `<rect x="${n(t.at[0] - w / 2)}" y="${n(t.at[1] - s / 2)}" width="${n(w)}" height="${n(s)}" rx="${n(s * 0.25)}" fill="${layer.fill}" fill-opacity="0.9"/>` +
-            `<text x="${n(t.at[0])}" y="${n(t.at[1] + fs * 0.35)}" font-size="${n(fs)}" text-anchor="middle" fill="${layer.color}">${esc(t.text)}</text>`
+            `<rect x="${n(t.at[0] - w / 2)}" y="${n(t.at[1] - s / 2)}" width="${n(w)}" height="${n(s)}" rx="${n(s * 0.25)}" fill="${esc(layer.fill)}" fill-opacity="0.9"/>` +
+            `<text x="${n(t.at[0])}" y="${n(t.at[1] + fs * 0.35)}" font-size="${n(fs)}" text-anchor="middle" fill="${esc(layer.color)}">${esc(t.text)}</text>`
           );
         })
         .join('');

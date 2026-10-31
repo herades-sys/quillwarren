@@ -4,7 +4,7 @@ import { floorArea, toDungeonScrawl, validateMap, type DelveMap } from '@delve/c
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.ts';
-import { unzipEntry, zipOne, ZipError } from '../src/zip.ts';
+import { MAX_ENTRY_BYTES, unzipEntry, zipFiles, zipOne, ZipError } from '../src/zip.ts';
 
 const TOKEN = 'test-token';
 const auth = { authorization: `Bearer ${TOKEN}` };
@@ -40,7 +40,27 @@ describe('zip', () => {
     expect(() => unzipEntry(Buffer.from('not a zip at all, sorry'), 'map')).toThrow(ZipError);
     expect(() => unzipEntry(zipOne('other', Buffer.from('x')), 'map')).toThrow(/no "map" entry/);
   });
+
+  it('refuses a zip bomb: an entry stated or inflating past the limit', () => {
+    // 2 MB of zeros deflate to about 2 KB
+    const bomb = zipFiles([{ name: 'map', data: Buffer.alloc(2 * 1024 * 1024) }]);
+    expect(bomb.length).toBeLessThan(10_000);
+    expect(unzipEntry(bomb, 'map').length).toBe(2 * 1024 * 1024);
+    expect(() => unzipEntry(bomb, 'map', 1024 * 1024)).toThrow(/the ZIP entry "map" is too big \(at most 1 MB unpacked\)/);
+    // the same entry claiming to be small: inflating stops at the limit anyway
+    expect(() => unzipEntry(lyingSize(bomb, 100), 'map', 1024 * 1024)).toThrow(/too big/);
+    expect(MAX_ENTRY_BYTES).toBe(64 * 1024 * 1024);
+  });
 });
+
+/** A one-entry ZIP that states another unpacked size than it has, in the local header and the directory. */
+function lyingSize(zip: Buffer, size: number): Buffer {
+  const out = Buffer.from(zip);
+  out.writeUInt32LE(size, 22);
+  const cd = out.readUInt32LE(out.length - 22 + 16);
+  out.writeUInt32LE(size, cd + 24);
+  return out;
+}
 
 describe('Dungeon Scrawl over the API', () => {
   let app: FastifyInstance;
@@ -89,6 +109,15 @@ describe('Dungeon Scrawl over the API', () => {
     expect((await importDs(zipOne('map', Buffer.from('{not json')))).json().error).toContain('not valid JSON');
     expect((await importDs(zipOne('map', Buffer.from('{"a":1}')))).json().error).toContain('not a Dungeon Scrawl map');
     expect((await importDs(dsFile, {})).statusCode).toBe(401);
+  });
+
+  it('answers a .ds zip bomb with 400, without unpacking past 64 MB', async () => {
+    // 65 MB of zeros, stated as 100 bytes: about 64 KB to send
+    const bomb = lyingSize(zipFiles([{ name: 'map', data: Buffer.alloc(65 * 1024 * 1024) }]), 100);
+    expect(bomb.length).toBeLessThan(200_000);
+    const res = await importDs(bomb);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('the ZIP entry "map" is too big (at most 64 MB unpacked)');
   });
 });
 

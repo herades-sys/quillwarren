@@ -10,6 +10,8 @@ import type { WebSocket } from 'ws';
 import { buildApp } from '../src/app.ts';
 import { Sessions } from '../src/auth.ts';
 import { sceneFor } from '../src/render.ts';
+import { CHAT_PER_WINDOW } from '../src/table/live.ts';
+import { CHAT_KEEP, TableStore } from '../src/table/store.ts';
 
 const TOKEN = 'table-test-token';
 const bearer = { authorization: `Bearer ${TOKEN}` };
@@ -148,7 +150,7 @@ describe('games and access', () => {
     const list = await app.inject({ url: '/api/v1/games', headers: { cookie: session } });
     expect(list.json().games).toEqual([{ id, name: 'Curse of the Crypt', created: expect.any(String), players: 0 }]);
     // a cookie write from another site doesn't count
-    const cross = await app.inject({ method: 'POST', url: '/api/v1/games', headers: { cookie: session, host: 'delve.test', origin: 'http://evil.example' }, payload: { name: 'x' } });
+    const cross = await app.inject({ method: 'POST', url: '/api/v1/games', headers: { cookie: session, host: 'delve.lan', origin: 'http://evil.example' }, payload: { name: 'x' } });
     expect(cross.statusCode).toBe(401);
   });
 
@@ -201,7 +203,7 @@ describe('invites and players', () => {
     expect(form.body).toContain('name="name"');
     expect(form.body).toContain('Thursday group');
 
-    expect((await joinForm(tok, 'Alice', { host: 'delve.test', origin: 'http://evil.example' })).statusCode).toBe(403);
+    expect((await joinForm(tok, 'Alice', { host: 'delve.lan', origin: 'http://evil.example' })).statusCode).toBe(403);
     expect((await joinForm(tok, '   ')).statusCode).toBe(400);
     const joined = await joinForm(tok, 'Alice');
     expect(joined.statusCode).toBe(303);
@@ -361,6 +363,35 @@ describe('the live channel', () => {
     expect(JSON.stringify((await bobAgain.next()).chat)).not.toContain('mimic');
     const gmAgain = await gmSocket(id);
     expect((await gmAgain.next()).chat.map((m: Msg) => m.text)).toContain('the door is a mimic');
+  });
+
+  it('takes 10 chat lines in 10 seconds per player connection, and keeps the GM unlimited', async () => {
+    const id = await createGame();
+    const gm = await gmSocket(id);
+    await gm.next();
+    const alice = await connect(id, { cookie: await join(id, 'Alice') });
+    await alice.next();
+    for (let i = 0; i < CHAT_PER_WINDOW; i++) expect((await alice.intent({ type: 'chat.send', text: `line ${i}` })).type).toBe('ack');
+    const refused = await alice.intent({ type: 'chat.send', text: 'one too many' });
+    expect(refused).toMatchObject({ type: 'error', error: 'Slow down: at most 10 messages in 10 seconds.' });
+    // other intents still go through, and so does everything the GM says
+    expect((await alice.intent({ type: 'token.move', id: 'nope', x: 1, y: 1 })).error).not.toContain('Slow down');
+    for (let i = 0; i < CHAT_PER_WINDOW + 2; i++) expect((await gm.intent({ type: 'chat.send', text: `gm ${i}` })).type).toBe('ack');
+  });
+
+  it('keeps a game’s newest chat lines, not every line ever', () => {
+    const tables = new TableStore(joinPath(dir, 'chat-cap.db'));
+    try {
+      const n = CHAT_KEEP + 250;
+      for (let seq = 1; seq <= n; seq++) tables.appendChat('g1', { id: `c${seq}`, seq, at: seq, from: 'p1', speaker: 'Alice', kind: 'chat', text: `line ${seq}` });
+      const all = tables.lastChat('g1', 10 * n);
+      expect(all.length).toBeLessThanOrEqual(CHAT_KEEP + 100);
+      expect(all.length).toBeGreaterThanOrEqual(CHAT_KEEP);
+      expect(all.at(-1)!.text).toBe(`line ${n}`);
+      expect(tables.nextSeq('g1')).toBe(n + 1);
+    } finally {
+      tables.close();
+    }
   });
 
   it('gives the players a fresh hello when the GM moves them to another page', async () => {

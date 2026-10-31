@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.ts';
-import { clientIp, publicHostOf, viaTunnel } from '../src/public.ts';
+import { addressBucket, clientIp, publicHostOf, viaTunnel } from '../src/public.ts';
 
 const TOKEN = 'public-test-token';
 const bearer = { authorization: `Bearer ${TOKEN}` };
@@ -35,6 +35,18 @@ describe('requests through the tunnel', () => {
     expect(viaTunnel(fakeReq('127.0.0.1', { host: 'delve.example' }), 'delve.example')).toBe(true);
     expect(viaTunnel(fakeReq('127.0.0.1', { host: '127.0.0.1:8790', 'cf-ray': 'x' }), 'delve.example')).toBe(true);
     expect(viaTunnel(fakeReq('192.168.1.20', { host: '192.168.1.9:8790' }), 'delve.example')).toBe(false);
+  });
+
+  it('count an IPv6 client by its /64 and an IPv4 client by its address', () => {
+    expect(addressBucket('203.0.113.9')).toBe('203.0.113.9');
+    expect(addressBucket('::ffff:203.0.113.9')).toBe('203.0.113.9');
+    expect(addressBucket('2001:db8:1:2::1')).toBe('2001:db8:1:2::/64');
+    expect(addressBucket('2001:0DB8:0001:0002:abcd:ef01:2345:6789')).toBe('2001:db8:1:2::/64');
+    expect(addressBucket('2001:db8::5')).toBe('2001:db8:0:0::/64');
+    expect(addressBucket('::1')).toBe('0:0:0:0::/64');
+    expect(addressBucket('fe80::1%eth0')).toBe('fe80:0:0:0::/64');
+    expect(addressBucket('64:ff9b::192.0.2.1')).toBe('64:ff9b:0:0::/64');
+    expect(addressBucket('not:an:address::x')).toBe('not:an:address::x');
   });
 
   it("trust Cloudflare's client address only when cloudflared (loopback) passed it on", () => {
@@ -103,7 +115,7 @@ describe('behind cloudflared', () => {
   it('builds links and cookies for https, as the tunnel says', async () => {
     const { id: gameId } = (await app.inject({ method: 'POST', url: '/api/v1/games', headers: bearer, payload: { name: 'Crypt' } })).json() as { id: string };
     // inject connects from 127.0.0.1 like cloudflared, so X-Forwarded-Proto counts (another host name, so the token is allowed)
-    const res = await app.inject({ method: 'POST', url: `/api/v1/games/${gameId}/invites`, headers: { ...bearer, host: 'table.home', 'x-forwarded-proto': 'https' }, payload: {} });
-    expect(res.json().url).toMatch(/^https:\/\/table\.home\/play\/join\//);
+    const res = await app.inject({ method: 'POST', url: `/api/v1/games/${gameId}/invites`, headers: { ...bearer, host: 'table.home.arpa', 'x-forwarded-proto': 'https' }, payload: {} });
+    expect(res.json().url).toMatch(/^https:\/\/table\.home\.arpa\/play\/join\//);
   });
 });

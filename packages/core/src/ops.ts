@@ -176,7 +176,7 @@ export function applyOps(map: DelveMap, ops: readonly Op[]): ApplyResult {
   });
 
   try {
-    validateMap(doc);
+    validateMap(doc, map);
   } catch (e) {
     if (e instanceof ValidationError) {
       throw new OpError(`the result would be invalid: ${e.problems.join('; ')}`);

@@ -160,10 +160,14 @@ export function colourMap(style: Pick<Style, 'props' | 'colours'>): ColourMap {
   return m;
 }
 
+/** A style colour as it goes into the art, escaped: the props' ink of a map saved before style overrides were checked may hold anything (a hex colour comes out unchanged). */
+const inkValue = (s: unknown): string =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
 /** A colour prop's body in a style's colours. Anything not in the palette (there shouldn't be any after parseAssetSvg) is left alone. */
 export function recolour(body: string, map: ColourMap): string {
   if (!map) return body;
-  return body.replace(/#[0-9A-F]{6}\b/g, (c) => map.get(c) ?? c);
+  return body.replace(/#[0-9A-F]{6}\b/g, (c) => inkValue(map.get(c) ?? c));
 }
 
 /** The palette colour nearest to any colour (for stray values in a colour prop). */

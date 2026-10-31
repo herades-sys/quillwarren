@@ -457,7 +457,7 @@ export class AccountStore {
     return codes;
   }
 
-  checkPassword(userId: number, password: string): boolean {
+  checkPassword(userId: number, password: string): Promise<boolean> {
     return verifyPassword(password, (this.row(userId)?.password_hash as string | null) ?? undefined);
   }
 
@@ -498,14 +498,17 @@ export class AccountStore {
 
   /**
    * Name + password + code (password-only accounts ignore the code). The
-   * password is always hashed, so a missing account takes as long as a wrong password.
+   * password is always hashed, so a missing account takes as long as a wrong
+   * password. The hashing runs off the event loop; the account is read again
+   * after it, so one removed or reset meanwhile doesn't log in.
    */
-  verifyLogin(name: unknown, password: unknown, code: unknown, now = Date.now()): LoginResult | null {
+  async verifyLogin(name: unknown, password: unknown, code: unknown, now = Date.now()): Promise<LoginResult | null> {
     if (typeof password !== 'string' || password.length > MAX_PASSWORD) return null;
-    const r = typeof name === 'string' ? (this.db.prepare('SELECT * FROM users WHERE name_key = ?').get(nameKey(name)) as Row | undefined) : undefined;
-    const stored = r?.password_hash as string | null | undefined;
-    const passwordOk = verifyPassword(password, stored ?? (this.dummyHash ??= hashPassword(newToken())));
-    if (!r || !stored || !passwordOk || r.totp_confirmed !== 1) return null;
+    const found = typeof name === 'string' ? (this.db.prepare('SELECT * FROM users WHERE name_key = ?').get(nameKey(name)) as Row | undefined) : undefined;
+    const stored = found?.password_hash as string | null | undefined;
+    const passwordOk = await verifyPassword(password, stored ?? (this.dummyHash ??= hashPassword(newToken())));
+    const r = found ? this.row(Number(found.id)) : undefined;
+    if (!r || !stored || r.password_hash !== stored || !passwordOk || r.totp_confirmed !== 1) return null;
     const factor = r.two_factor === 0 ? 'password' : typeof code === 'string' ? this.useSecondFactor(Number(r.id), code, now) : null;
     if (!factor) return null;
     this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now, Number(r.id));
@@ -603,19 +606,25 @@ export class AccountStore {
     });
   }
 
-  /** Counts a failure for each key; the fifth within 15 minutes locks that key for 15 minutes. */
-  fail(keys: string[], now = Date.now()): void {
+  /** Counts a failure for each key; by default the fifth within 15 minutes locks that key for 15 minutes. */
+  fail(keys: string[], now = Date.now(), limit: LockLimit = FAST_LIMIT): void {
     for (const k of keys) {
       const r = this.db.prepare('SELECT fails, since, locked_until FROM attempts WHERE key = ?').get(k) as Row | undefined;
-      const fresh = !r || now - Number(r.since) > LOCK_MS;
+      const fresh = !r || now - Number(r.since) > limit.ms;
       const fails = (fresh ? 0 : Number(r.fails)) + 1;
       const since = fresh ? now : Number(r.since);
-      const lockedUntil = fails >= LOCK_FAILS ? now + LOCK_MS : Number(r?.locked_until ?? 0);
+      const lockedUntil = fails >= limit.fails ? now + limit.ms : Number(r?.locked_until ?? 0);
       this.db
         .prepare('INSERT OR REPLACE INTO attempts (key, fails, since, locked_until) VALUES (?, ?, ?, ?)')
-        .run(k, fails >= LOCK_FAILS ? 0 : fails, since, lockedUntil);
+        .run(k, fails >= limit.fails ? 0 : fails, since, lockedUntil);
     }
     this.db.prepare('DELETE FROM attempts WHERE since < ? AND locked_until < ?').run(now - 24 * HOUR, now);
+  }
+
+  /** A failed login or code check: its address keys count by FAST_LIMIT, its name by the slower NAME_LIMIT. */
+  failLogin(keys: LoginKeys, now = Date.now()): void {
+    this.fail(keys.fast, now);
+    this.fail([keys.slow], now, NAME_LIMIT);
   }
 
   clearFails(keys: string[]): void {
@@ -623,5 +632,34 @@ export class AccountStore {
   }
 }
 
+/** How many failures within how long lock a key, for that long again. */
+export interface LockLimit {
+  fails: number;
+  ms: number;
+}
+/** An address (an IPv6 client's /64), and one account name from one address: 5 failures within 15 minutes. */
+export const FAST_LIMIT: LockLimit = { fails: LOCK_FAILS, ms: LOCK_MS };
+/**
+ * One account name from anywhere: 30 failures within an hour. It slows down
+ * guessing from many addresses, and never stops a login with the right
+ * password and a valid code (only password-only accounts and the shared
+ * password wait it out), so nobody can lock the admin out by failing on purpose.
+ */
+export const NAME_LIMIT: LockLimit = { fails: 30, ms: HOUR };
+
 /** The lockout key for an account name (whether or not it exists, so a lockout gives nothing away). */
 export const nameLockKey = (name: unknown): string => `name:${typeof name === 'string' ? nameKey(name).slice(0, 64) : ''}`;
+
+/** The lockout keys of one login try. */
+export interface LoginKeys {
+  /** The address, and the name from that address (FAST_LIMIT): locked, they refuse even the right login. */
+  fast: string[];
+  /** The name from anywhere (NAME_LIMIT). */
+  slow: string;
+}
+
+/** `where`: the client's address as requestIp gives it (an IPv6 client's /64). */
+export const loginKeys = (name: unknown, where: string): LoginKeys => {
+  const who = nameLockKey(name);
+  return { fast: [`ip:${where}`, `${who}|ip:${where}`], slow: who };
+};

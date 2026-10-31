@@ -14,7 +14,7 @@
 // script (apps/web/src/viewer.ts) then fills the rail, the context strip and the
 // panels, and follows changes over the WebSocket.
 import { floorText, sceneToSvg, type DelveMap, type Level } from '@delve/core';
-import { esc, htmlDocument, icon, type IconName } from '@delve/ui';
+import { esc, htmlDocument, icon, jsonForScript, type IconName } from '@delve/ui';
 import type { AppInfo } from './app.ts';
 import { sceneFor } from './render.ts';
 
@@ -83,7 +83,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   const chat = edit && (o.chatModel || choice) ? { enabled: true, model: o.chatModel ?? '', ...(choice ? { backend: choice.backend, backends: choice.offered, name: choice.name } : {}) } : undefined;
   const chatSettings = Boolean(choice && choice.offered.length > 1);
   const screen = o.multiplayer !== false;
-  const initial = JSON.stringify({
+  const initial = jsonForScript({
     id,
     rev,
     map,
@@ -93,7 +93,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
     ...(chat ? { chat } : {}),
     ...(o.snip ? { snip: true } : {}),
     ...(screen ? {} : { multiplayer: false }),
-  }).replace(/</g, '\\u003c');
+  });
   const q = `view=${view}${style ? `&style=${encodeURIComponent(style)}` : ''}`;
   const loginHref = `/login?next=${encodeURIComponent(`/maps/${id}`)}`;
   const feedbackHref = `/feedback?from=${encodeURIComponent(`/maps/${id}`)}`;

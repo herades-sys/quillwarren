@@ -1,7 +1,7 @@
 // validateMap: schema check plus cross-object rules, with messages that name
 // the object id and field, e.g. `r7 (objects[3]) shape.rect[2]: must be greater than 0`.
 import type { z } from 'zod';
-import { isHexColour } from './colour-math.ts';
+import { styleOverrideProblems } from './render/style.ts';
 import { MapDoc, OBJECT_TYPES, type DelveMap } from './schema.ts';
 
 export class ValidationError extends Error {
@@ -66,11 +66,15 @@ function pick(input: unknown, path: PropertyKey[]): Record<string, unknown> | un
   return cur !== null && typeof cur === 'object' ? (cur as Record<string, unknown>) : undefined;
 }
 
-/** The map's own background colour (style.overrides.background) must be a colour the renderers can draw. */
-function checkStyle(map: DelveMap): string[] {
+/**
+ * Style overrides: only known settings, with values the renderers can draw
+ * (styleOverrideProblems). Those an edit left as they were are not checked
+ * again, so a map saved before the check stays editable.
+ */
+function checkStyle(map: DelveMap, was?: Pick<DelveMap, 'style'>): string[] {
   const o = map.style?.overrides;
-  if (!o || !('background' in o) || isHexColour(o.background)) return [];
-  return [`style.overrides.background: must be a colour like "#2F4A33", not ${JSON.stringify(o.background)}`];
+  if (!o) return [];
+  return styleOverrideProblems(o, was?.style?.overrides);
 }
 
 /** Cross-object rules the schema can't express. */
@@ -103,14 +107,17 @@ function checkReferences(map: DelveMap): string[] {
   return problems;
 }
 
-/** Returns the map unchanged if valid, otherwise throws ValidationError listing every problem. */
-export function validateMap(input: unknown): DelveMap {
+/**
+ * Returns the map unchanged if valid, otherwise throws ValidationError listing every problem.
+ * `was`: the map before an edit (applyOps), whose style settings the edit left alone aren't checked again.
+ */
+export function validateMap(input: unknown, was?: Pick<DelveMap, 'style'>): DelveMap {
   const parsed = MapDoc.safeParse(input);
   if (!parsed.success) {
     const problems = parsed.error.issues.flatMap(flatten).map((iss) => describeIssue(iss, input));
     throw new ValidationError([...new Set(problems)]);
   }
-  const problems = [...checkStyle(parsed.data), ...checkReferences(parsed.data)];
+  const problems = [...checkStyle(parsed.data, was), ...checkReferences(parsed.data)];
   if (problems.length) throw new ValidationError(problems);
   // Return the caller's object, not zod's copy, so identity and key order are kept.
   return input as DelveMap;

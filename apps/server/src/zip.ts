@@ -60,8 +60,17 @@ export function zipOne(name: string, data: Buffer, when = new Date()): Buffer {
   return Buffer.concat([local, nameBuf, data, central, nameBuf, end]);
 }
 
-/** Read one entry by name, via the central directory. Stored and deflated entries are supported. */
-export function unzipEntry(buf: Buffer, name: string): Buffer {
+/** The most an entry may unpack to (a .ds map is a few MB), so a small deflated "zip bomb" can't fill the memory. */
+export const MAX_ENTRY_BYTES = 64 * 1024 * 1024;
+
+const mb = (bytes: number): string => `${Math.round(bytes / 1024 / 1024)} MB`;
+
+/**
+ * Read one entry by name, via the central directory. Stored and deflated
+ * entries are supported, up to `maxBytes` unpacked: an entry that says it is
+ * bigger, or turns out bigger while it inflates, is refused (ZipError).
+ */
+export function unzipEntry(buf: Buffer, name: string, maxBytes = MAX_ENTRY_BYTES): Buffer {
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65_557); i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) {
@@ -76,6 +85,7 @@ export function unzipEntry(buf: Buffer, name: string): Buffer {
     if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) throw new ZipError('damaged ZIP directory');
     const method = buf.readUInt16LE(p + 10);
     const csize = buf.readUInt32LE(p + 20);
+    const size = buf.readUInt32LE(p + 24);
     const nlen = buf.readUInt16LE(p + 28);
     const elen = buf.readUInt16LE(p + 30);
     const clen = buf.readUInt16LE(p + 32);
@@ -85,8 +95,18 @@ export function unzipEntry(buf: Buffer, name: string): Buffer {
       if (buf.readUInt32LE(offset) !== 0x04034b50) throw new ZipError('damaged ZIP entry');
       const start = offset + 30 + buf.readUInt16LE(offset + 26) + buf.readUInt16LE(offset + 28);
       const raw = buf.subarray(start, start + csize);
+      const tooBig = `the ZIP entry "${name}" is too big (at most ${mb(maxBytes)} unpacked)`;
+      if (size > maxBytes || (method === 0 && raw.length > maxBytes)) throw new ZipError(tooBig);
       if (method === 0) return Buffer.from(raw);
-      if (method === 8) return inflateRawSync(raw);
+      if (method === 8) {
+        try {
+          // the stated size can lie: inflating stops at the limit whatever it says
+          return inflateRawSync(raw, { maxOutputLength: maxBytes });
+        } catch (e) {
+          if ((e as { code?: unknown }).code === 'ERR_BUFFER_TOO_LARGE') throw new ZipError(tooBig);
+          throw new ZipError(`damaged ZIP entry "${name}" (${(e as Error).message})`);
+        }
+      }
       throw new ZipError(`unsupported ZIP compression method ${method}`);
     }
     p += 46 + nlen + elen + clen;

@@ -1,7 +1,7 @@
 // Style presets. Sizes are in grid squares, so a map looks the same at any
 // export resolution (at Roll20's 70 px per square, 0.1 sq = 7 px).
 import type { ColourMode } from '../assets/colour.ts';
-import { contrastRatio, isDark, mixColours, normalizeHex } from '../colour-math.ts';
+import { contrastRatio, isDark, isHexColour, mixColours, normalizeHex } from '../colour-math.ts';
 import type { DelveMap } from '../schema.ts';
 
 export interface HatchStyle {
@@ -227,4 +227,104 @@ function onOwnBackground(preset: Style, expanded: Plain, s: Style): Style {
   const hatchSet = 'hatching' in expanded && !(isPlain(expanded.hatching) && !('color' in expanded.hatching));
   if (out.hatching && !hatchSet && contrastRatio(out.hatching.color, bg) < MIN_HATCH_CONTRAST) out.hatching = { ...out.hatching, color: hatchingInkOn(bg) };
   return out;
+}
+
+// ---------- checking overrides when a map is written ----------
+
+/** What one style setting may hold: a colour ("#RRGGBB" or "#RGB"), a font name, true or false, the grid's look, an [x, y] offset, or a number from min to max. */
+type Rule = 'colour' | 'font' | 'flag' | 'grid' | 'offset' | readonly [min: number, max: number];
+
+/**
+ * The parts of a style a map's style.overrides may change, and what each
+ * field takes (the Style fields above, without the preset's name and colour
+ * mode). `off`: null switches that part off ("hatching": null). The number
+ * ranges are wide but keep the drawing cheap (a hatching spacing of 0.0001
+ * would be millions of strokes).
+ */
+const OVERRIDABLE: Record<string, { off?: true; fields: Record<string, Rule> }> = {
+  backgroundGrid: { off: true, fields: { color: 'colour', width: [0, 1] } },
+  floor: { fields: { color: 'colour', opacity: [0, 1] } },
+  walls: { fields: { color: 'colour', width: [0, 1], roughness: [0, 10], sketch: [0, 5] } },
+  shading: { off: true, fields: { color: 'colour', width: [0, 3] } },
+  hatching: {
+    off: true,
+    fields: { color: 'colour', width: [0, 3], spacing: [0.1, 3], strokesPerCluster: [1, 10], length: [0, 3], gap: [0, 1], strokeWidth: [0, 0.5] },
+  },
+  shadow: { off: true, fields: { color: 'colour', offset: 'offset', opacity: [0, 1] } },
+  grid: { fields: { style: 'grid', color: 'colour', width: [0, 1], opacity: [0, 1] } },
+  doors: { fields: { fill: 'colour', stroke: 'colour', strokeWidth: [0, 0.5] } },
+  stairs: { fields: { color: 'colour', width: [0, 0.5] } },
+  labels: { fields: { font: 'font', numberFont: 'font', size: [0.1, 10], color: 'colour' } },
+  props: { fields: { ink: 'colour', paper: 'colour', shade: 'colour' } },
+  terrain: { fields: { mix: [0, 1], gray: 'flag', tone: 'colour' } },
+  fog: { fields: { color: 'colour', dim: [0, 1] } },
+};
+
+/** A value for an error message, cut short. */
+const shown = (v: unknown): string => {
+  const s = JSON.stringify(v) ?? String(v);
+  return s.length > 80 ? `${s.slice(0, 77)}...` : s;
+};
+
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** What's wrong with one setting's value, or null. */
+function ruleProblem(rule: Rule, v: unknown): string | null {
+  if (rule === 'colour') return isHexColour(v) ? null : `must be a colour like "#2F4A33", not ${shown(v)}`;
+  if (rule === 'font') return typeof v === 'string' && /^[A-Za-z0-9 ,_-]{1,60}$/.test(v) ? null : `must be a font name (letters, digits, spaces, commas and hyphens), not ${shown(v)}`;
+  if (rule === 'flag') return typeof v === 'boolean' ? null : `must be true or false, not ${shown(v)}`;
+  if (rule === 'grid') return v === 'lines' || v === 'dots' || v === 'none' ? null : `must be "lines", "dots" or "none", not ${shown(v)}`;
+  if (rule === 'offset') {
+    const ok = Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= 2);
+    return ok ? null : `must be [x, y] in squares, each from -2 to 2, not ${shown(v)}`;
+  }
+  const [min, max] = rule;
+  return typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? null : `must be a number from ${min} to ${max}, not ${shown(v)}`;
+}
+
+/**
+ * What's wrong with a map's style overrides: only the settings in OVERRIDABLE
+ * (plus "background"), dotted ("walls.color") or nested, each with a value it
+ * can take; colours must be hex. `before`: the overrides the map had before an
+ * edit. Settings it already had unchanged are not checked again, so a map
+ * saved before this check stays editable (the renderer escapes whatever it holds).
+ */
+export function styleOverrideProblems(overrides: Record<string, unknown>, before?: Record<string, unknown>): string[] {
+  const problems: string[] = [];
+  const now = expandDotted(overrides);
+  const was = before ? expandDotted(before) : {};
+  const at = (path: string, msg: string) => problems.push(`style.overrides.${path}: ${msg}`);
+  for (const [key, value] of Object.entries(now)) {
+    if (key in was && sameJson(value, was[key])) continue;
+    if (key === 'background') {
+      const p = ruleProblem('colour', value);
+      if (p) at(key, p);
+      continue;
+    }
+    const part = Object.hasOwn(OVERRIDABLE, key) ? OVERRIDABLE[key]! : undefined;
+    if (!part) {
+      at(key, `unknown style setting (known: background, ${Object.keys(OVERRIDABLE).join(', ')})`);
+      continue;
+    }
+    const names = Object.keys(part.fields);
+    if (value === null) {
+      if (!part.off) at(key, `can't be null (only ${Object.keys(OVERRIDABLE).filter((k) => OVERRIDABLE[k]!.off).join(', ')} can be switched off)`);
+      continue;
+    }
+    if (!isPlain(value)) {
+      at(key, `must be its fields (${names.join(', ')}) or dotted keys like "${key}.${names[0]}", not ${shown(value)}`);
+      continue;
+    }
+    const old = isPlain(was[key]) ? (was[key] as Plain) : {};
+    for (const [field, v] of Object.entries(value)) {
+      if (field in old && sameJson(v, old[field])) continue;
+      const rule = Object.hasOwn(part.fields, field) ? part.fields[field]! : undefined;
+      if (!rule) at(`${key}.${field}`, `unknown field (${key} has ${names.join(', ')})`);
+      else {
+        const p = ruleProblem(rule, v);
+        if (p) at(`${key}.${field}`, p);
+      }
+    }
+  }
+  return problems;
 }

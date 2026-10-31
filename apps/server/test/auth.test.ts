@@ -9,13 +9,13 @@ const PASSWORD = 'correct horse battery';
 const HASH = hashPassword(PASSWORD);
 
 describe('passwords and sessions', () => {
-  it('verifies scrypt hashes and nothing else', () => {
+  it('verifies scrypt hashes and nothing else', async () => {
     expect(HASH).toMatch(/^scrypt:16384:8:1:[\w-]+:[\w-]+$/);
     expect(HASH).not.toContain('$'); // safe in a systemd EnvironmentFile
-    expect(verifyPassword(PASSWORD, HASH)).toBe(true);
-    expect(verifyPassword('wrong', HASH)).toBe(false);
-    expect(verifyPassword(PASSWORD, undefined)).toBe(false);
-    expect(verifyPassword(PASSWORD, 'plain-text')).toBe(false);
+    expect(await verifyPassword(PASSWORD, HASH)).toBe(true);
+    expect(await verifyPassword('wrong', HASH)).toBe(false);
+    expect(await verifyPassword(PASSWORD, undefined)).toBe(false);
+    expect(await verifyPassword(PASSWORD, 'plain-text')).toBe(false);
   });
 
   it('signs sessions that expire and resist tampering', () => {
@@ -74,7 +74,7 @@ describe('editor login', () => {
 
   it('lets a logged-in editor change maps, but only from the same origin', async () => {
     const cookie = cookieOf(await login(PASSWORD));
-    const host = 'delve.test:8790';
+    const host = 'delve.lan:8790';
     const create = (origin?: string) =>
       app.inject({ method: 'POST', url: '/api/v1/maps', headers: { cookie, host, ...(origin ? { origin } : {}) }, payload: { name: 'Mine' } });
     expect((await create(`http://${host}`)).statusCode).toBe(201);

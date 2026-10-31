@@ -210,14 +210,14 @@ describe('account store', () => {
     expect(s.useSecondFactor(id, fresh[0]!, later)).toBe('recovery');
   });
 
-  it('checks the password even for names that do not exist', () => {
+  it('checks the password even for names that do not exist', async () => {
     const s = open();
     const { secret } = activate(s, 'Ana', 'admin', T0);
     const later = T0 + 60_000;
     const code = totp(base32Decode(secret), later);
-    expect(s.verifyLogin('nobody', 'a long enough password', code, later)).toBeNull();
-    expect(s.verifyLogin('ana', 'wrong password here', code, later)).toBeNull();
-    expect(s.verifyLogin('ANA', 'a long enough password', code, later)?.factor).toBe('code');
+    expect(await s.verifyLogin('nobody', 'a long enough password', code, later)).toBeNull();
+    expect(await s.verifyLogin('ana', 'wrong password here', code, later)).toBeNull();
+    expect((await s.verifyLogin('ANA', 'a long enough password', code, later))?.factor).toBe('code');
   });
 
   it('locks a key after 5 failures for 15 minutes', () => {
@@ -270,7 +270,7 @@ describe('account store', () => {
     expect(s.users().map((u) => u.name)).toEqual(['Ana']);
   });
 
-  it('a reset locks the account and ends its sessions', () => {
+  it('a reset locks the account and ends its sessions', async () => {
     const s = open();
     activate(s, 'Ana', 'admin', T0);
     const gm = activate(s, 'Gm', 'gm', T0);
@@ -278,7 +278,7 @@ describe('account store', () => {
     const token = s.resetLogin(gm.id, T0);
     expect(s.sessionValid(session, T0)).toBe(false);
     expect(s.user(gm.id)!.active).toBe(false);
-    expect(s.verifyLogin('Gm', 'a long enough password', totp(base32Decode(gm.secret), T0 + 60_000), T0 + 60_000)).toBeNull();
+    expect(await s.verifyLogin('Gm', 'a long enough password', totp(base32Decode(gm.secret), T0 + 60_000), T0 + 60_000)).toBeNull();
     expect(s.link(token, T0)?.purpose).toBe('reset');
   });
 
@@ -296,7 +296,7 @@ describe('account store', () => {
   describe('password-only GM accounts', () => {
     const PW = 'hive password, long enough';
 
-    it('are GMs only, set up by the password alone, and log in without a code', () => {
+    it('are GMs only, set up by the password alone, and log in without a code', async () => {
       const s = open();
       expect(() => s.createUser('Boss', 'admin', T0, { passwordOnly: true })).toThrow(/always use an authenticator/);
       const hive = s.createUser('Hive', 'gm', T0, { passwordOnly: true });
@@ -313,28 +313,28 @@ describe('account store', () => {
       expect(user.recoveryLeft).toBe(0);
       expect(s.link(token, T0)).toBeNull();
 
-      expect(s.verifyLogin('hive', PW, '', T0)?.factor).toBe('password');
-      expect(s.verifyLogin('hive', PW, undefined, T0)?.factor).toBe('password');
-      expect(s.verifyLogin('hive', PW, '123456', T0)?.factor).toBe('password'); // a code is ignored
-      expect(s.verifyLogin('hive', 'not the password', '', T0)).toBeNull();
+      expect((await s.verifyLogin('hive', PW, '', T0))?.factor).toBe('password');
+      expect((await s.verifyLogin('hive', PW, undefined, T0))?.factor).toBe('password');
+      expect((await s.verifyLogin('hive', PW, '123456', T0))?.factor).toBe('password'); // a code is ignored
+      expect(await s.verifyLogin('hive', 'not the password', '', T0)).toBeNull();
       expect(s.useSecondFactor(hive.id, totp(base32Decode(secret), T0), T0)).toBeNull();
     });
 
-    it('never become admins, and other accounts still need their code', () => {
+    it('never become admins, and other accounts still need their code', async () => {
       const s = open();
       activate(s, 'Ana', 'admin', T0);
       const hive = s.createUser('Hive', 'gm', T0, { passwordOnly: true });
       s.completePasswordLink(s.createLink(hive.id, 'new', T0), PW, T0);
       expect(() => s.setRole(hive.id, 'admin')).toThrow(/can't be an admin/);
       expect(s.user(hive.id)!.role).toBe('gm');
-      expect(s.verifyLogin('Ana', 'a long enough password', '', T0)).toBeNull();
+      expect(await s.verifyLogin('Ana', 'a long enough password', '', T0)).toBeNull();
       // a two-factor account's link can't be finished by the password alone
       const gm = s.createUser('Gm', 'gm', T0);
       expect(() => s.completePasswordLink(s.createLink(gm.id, 'new', T0), PW, T0)).toThrow(/needs an authenticator/);
       expect(s.user(gm.id)!.active).toBe(false);
     });
 
-    it('keep their mode on a reset, and turning the authenticator on brings recovery codes', () => {
+    it('keep their mode on a reset, and turning the authenticator on brings recovery codes', async () => {
       const s = open();
       const hive = s.createUser('Hive', 'gm', T0, { passwordOnly: true });
       s.completePasswordLink(s.createLink(hive.id, 'new', T0), PW, T0);
@@ -342,10 +342,10 @@ describe('account store', () => {
 
       const reset = s.resetLogin(hive.id, T0);
       expect(s.sessionUser(session, T0)).toBeNull();
-      expect(s.verifyLogin('Hive', PW, '', T0)).toBeNull();
+      expect(await s.verifyLogin('Hive', PW, '', T0)).toBeNull();
       expect(s.link(reset, T0)!.passwordOnly).toBe(true);
       s.completePasswordLink(reset, 'a new hive password here', T0);
-      expect(s.verifyLogin('Hive', 'a new hive password here', '', T0)).not.toBeNull();
+      expect(await s.verifyLogin('Hive', 'a new hive password here', '', T0)).not.toBeNull();
 
       const on = s.createLink(hive.id, 'authenticator', T0);
       const secret = s.link(on, T0)!.secret;
@@ -353,11 +353,11 @@ describe('account store', () => {
       expect(done.recoveryCodes).toHaveLength(10);
       expect(done.user.passwordOnly).toBe(false);
       const later = T0 + 30_000;
-      expect(s.verifyLogin('Hive', 'a new hive password here', '', later)).toBeNull();
-      expect(s.verifyLogin('Hive', 'a new hive password here', totp(base32Decode(secret), later), later)?.factor).toBe('code');
+      expect(await s.verifyLogin('Hive', 'a new hive password here', '', later)).toBeNull();
+      expect((await s.verifyLogin('Hive', 'a new hive password here', totp(base32Decode(secret), later), later))?.factor).toBe('code');
     });
 
-    it('can be switched from the authenticator to password only, keeping the password and sessions', () => {
+    it('can be switched from the authenticator to password only, keeping the password and sessions', async () => {
       const s = open();
       const gm = activate(s, 'Gm', 'gm', T0);
       const session = s.createSession(gm.id, {}, T0);
@@ -367,7 +367,7 @@ describe('account store', () => {
       expect(s.sessionUser(session, T0)).not.toBeNull();
       expect(s.link(turnOn, T0)).toBeNull(); // an open "new authenticator" link goes too
       const later = T0 + 30_000;
-      expect(s.verifyLogin('Gm', 'a long enough password', '', later)?.factor).toBe('password');
+      expect((await s.verifyLogin('Gm', 'a long enough password', '', later))?.factor).toBe('password');
       expect(s.useSecondFactor(gm.id, totp(base32Decode(gm.secret), later), later)).toBeNull();
       expect(s.useSecondFactor(gm.id, gm.codes[0]!, later)).toBeNull();
       expect(() => s.makePasswordOnly(gm.id)).toThrow(/already/);

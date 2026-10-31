@@ -4,7 +4,7 @@
 // page and receives the finished map through POST /api/v1/maps.
 import type { FastifyInstance } from 'fastify';
 import { PRESETS, SQUARE_SIZES } from '@delve/core';
-import { htmlDocument, themeSwitch, topBar } from '@delve/ui';
+import { htmlDocument, jsonForScript, themeSwitch, topBar } from '@delve/ui';
 import type { AppInfo } from './app.ts';
 import { isLoggedIn, type EditorAuth } from './login.ts';
 
@@ -82,11 +82,11 @@ const PAGE_CSS = `
 `;
 
 function page(info: AppInfo, loggedIn: boolean): string {
-  const initial = JSON.stringify({
+  const initial = jsonForScript({
     version: info.version,
     loggedIn,
     presets: Object.entries(PRESETS).map(([id, s]) => ({ id, name: s.name })),
-  }).replace(/</g, '\\u003c');
+  });
   const colourCounts = [4, 5, 6, 7, 8, 10, 12, 14, 16].map((k) => `<option value="${k}"${k === 8 ? ' selected' : ''}>${k}</option>`).join('');
   const squareOptions = SQUARE_SIZES.map((u) => `<option value="${esc(u)}"${u === '5 ft' ? ' selected' : ''}>${esc(u)}</option>`).join('');
   const body = `${topBar({ crumbs: [{ href: '/', text: 'Library' }], title: 'Trace a picture', end: themeSwitch() })}

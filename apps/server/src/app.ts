@@ -20,6 +20,7 @@ import { registerPreview } from './preview.ts';
 import { registerSegments } from './segments.ts';
 import { registerTracePage } from './trace-page.ts';
 import { registerHandoutPage } from './handout-page.ts';
+import { registerHostCheck } from './hosts.ts';
 import { ImageLibrary, registerImages } from './images.ts';
 import { registerStack } from './stack.ts';
 import type { DiscordConfig } from './table/discord.ts';
@@ -52,8 +53,10 @@ export interface AppOptions {
   discord?: DiscordConfig;
   /** DELVE_PUBLIC_URL: the address the Cloudflare tunnel publishes, e.g. https://delve.example.com. */
   publicUrl?: string;
+  /** DELVE_ALLOWED_HOSTS: host names the server answers to besides IP addresses, home-network names and the public one (hosts.ts). */
+  allowedHosts?: string[];
   // ----- the desktop app only (desktop/main.ts); the web server (main.ts) sets none of these -----
-  /** One local user: whoever gets past the desktop gate (`extend`) is logged in, with no login page. */
+  /** One local user: whoever gets past the desktop gate (`extend`) is logged in, with no login page. Its gate checks the Host itself, so the web server's host check is off. */
   singleUser?: boolean;
   /**
    * false: one person's editor with no players (the desktop app). Delve Table
@@ -85,8 +88,20 @@ export interface AppContext {
   props: PropLibrary;
 }
 
-/** Never let the WebSocket token or a Discord login's code and state reach the log. */
-const redact = (url: string): string => url.replace(/([?&](?:token|code|state)=)[^&]*/g, '$1***');
+/**
+ * Never let a secret in a URL reach the log: the API or player token on a
+ * WebSocket and a setup link's token (?token=), a Discord login's code and
+ * state, and an invite's token in /play/join/<token>, also where it rides
+ * along in ?next= (as it is or URL-encoded).
+ */
+export const redactUrl = (url: string): string =>
+  url
+    .replace(/([?&](?:token|code|state)=)[^&]*/g, '$1***')
+    .replace(/(\/play\/join\/)[^?&]*/gi, '$1***')
+    .replace(/(%2Fplay%2Fjoin%2F)[^&]*/gi, '$1***');
+
+/** The biggest WebSocket message: a map socket's ops may carry as much as a REST write (bodyLimit); the table socket allows 64 KB of its own. */
+export const WS_MAX_PAYLOAD = 5 * 1024 * 1024;
 
 export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance {
   const app = Fastify({
@@ -97,11 +112,16 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     logger: opts.logger
       ? {
           serializers: {
-            req: (req) => ({ method: req.method, url: redact(req.url), remoteAddress: req.ip }),
+            req: (req) => ({ method: req.method, url: redactUrl(req.url), remoteAddress: req.ip }),
           },
         }
       : false,
   });
+  // Only our own host names, before anything else (DNS rebinding); the desktop app's gate checks the Host itself.
+  if (!opts.singleUser) {
+    const publicHosts = [publicHostOf(opts.publicUrl), publicHostOf(opts.discord?.publicUrl)].filter((h): h is string => Boolean(h));
+    registerHostCheck(app, { allowed: [...publicHosts, ...(opts.allowedHosts ?? [])] });
+  }
   const store = opts.store ?? new MapStore(':memory:');
   if (!opts.store) app.addHook('onClose', async () => store.close());
   const service = new MapService(store, new LiveHub());
@@ -142,7 +162,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     format: `${FORMAT} v${FORMAT_VERSION}`,
   }));
 
-  void app.register(websocket);
+  void app.register(websocket, { options: { maxPayload: WS_MAX_PAYLOAD } });
   const chatTokens = new ChatTokens();
   // Delve Table, the players' screen and Discord: everywhere but the desktop app
   const multiplayer = opts.multiplayer !== false;

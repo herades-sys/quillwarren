@@ -1,6 +1,6 @@
 // HTML for the login and account pages, built on the shared look (@delve/ui:
 // tokens, components, theme). Every value that came from a person is escaped.
-import { esc, htmlDocument, icon, themeSwitch } from '@delve/ui';
+import { esc, htmlDocument, icon, jsonForScript, themeSwitch } from '@delve/ui';
 import { LINK_MS, MIN_PASSWORD, type Session, type User } from './store.ts';
 
 export { esc };
@@ -340,7 +340,7 @@ export function adminPage(o: { me: User; session: Session; users: User[]; sessio
 <p>Send this link to ${esc(o.newLink.name)}, for example in a private message. It works once, until ${esc(when(o.newLink.expires))}. With it they choose their own password${o.newLink.passwordOnly ? '' : ' and set up their authenticator app'}.${o.newLink.reset ? ' Their old login no longer works.' : ''}</p>
 <input class="input input-lg link-input" type="text" readonly value="${esc(o.newLink.url)}" onfocus="this.select()" aria-label="Setup link">
 <p class="row"><button type="button" class="btn btn-primary" id="copy-link">${icon('copy', { size: 15 })}Copy link</button><span class="text-muted">Delve shows this link only now. If it gets lost, make a new one.</span></p>
-<script>document.getElementById('copy-link').addEventListener('click', async (e) => { const b = e.currentTarget; try { await navigator.clipboard.writeText(${JSON.stringify(o.newLink.url).replace(/</g, '\\u003c')}); b.textContent = 'Copied'; } catch { b.textContent = 'Select the link and copy it'; } });</script></section>`
+<script>document.getElementById('copy-link').addEventListener('click', async (e) => { const b = e.currentTarget; try { await navigator.clipboard.writeText(${jsonForScript(o.newLink.url)}); b.textContent = 'Copied'; } catch { b.textContent = 'Select the link and copy it'; } });</script></section>`
     : '';
   return shell(
     'Admin',

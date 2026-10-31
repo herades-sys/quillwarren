@@ -35,6 +35,10 @@ import { unzipEntry, zipOne, ZipError } from './zip.ts';
 
 const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'map';
 
+const READ_ONLY = 'this connection is read-only: log in to edit (or connect with ?token=<token>)';
+/** The most a read-only map socket may send in one message (it only pings). Writers may send up to WS_MAX_PAYLOAD (app.ts). */
+const READ_ONLY_MAX = 1024;
+
 export interface ApiDeps {
   service: MapService;
   token: string | undefined;
@@ -294,7 +298,8 @@ export function registerApi(app: FastifyInstance, { service, token, sessions, sc
     }
   });
 
-  app.post('/api/v1/maps/import.ds', { preHandler: writer }, async (req, reply) => {
+  // imports check the login before the body (up to 20 MB) is read
+  app.post('/api/v1/maps/import.ds', { onRequest: writer }, async (req, reply) => {
     const q = req.query as { name?: string; by?: string };
     try {
       if (!Buffer.isBuffer(req.body) || !req.body.length) {
@@ -316,7 +321,7 @@ export function registerApi(app: FastifyInstance, { service, token, sessions, sc
   });
 
   // A city from Watabou's Medieval Fantasy City Generator (its JSON export) as a new map.
-  app.post('/api/v1/maps/import.city', { preHandler: writer, bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
+  app.post('/api/v1/maps/import.city', { onRequest: writer, bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
     const q = req.query as { name?: string; feet?: string; unit?: string; style?: string; by?: string };
     try {
       // the square size: unit ("10 ft", "3 m"), or feet as before
@@ -396,6 +401,9 @@ export function registerApi(app: FastifyInstance, { service, token, sessions, sc
     LiveHub.send(socket, { type: 'hello', rev: cur.rev, map: cur.map });
 
     socket.on('message', (raw) => {
+      // the rights first: a read-only connection may only ping, so nothing bigger from it is even parsed
+      const writer = canWrite();
+      if (!writer && (Buffer.isBuffer(raw) ? raw.length : String(raw).length) > READ_ONLY_MAX) return LiveHub.send(socket, { type: 'error', error: READ_ONLY });
       let msg: { type?: unknown; ops?: unknown; baseRev?: unknown; by?: unknown; ref?: unknown };
       try {
         msg = JSON.parse(String(raw));
@@ -404,9 +412,7 @@ export function registerApi(app: FastifyInstance, { service, token, sessions, sc
       }
       if (msg.type === 'ping') return LiveHub.send(socket, { type: 'pong' });
       if (msg.type !== 'ops') return LiveHub.send(socket, { type: 'error', error: `unknown message type ${JSON.stringify(msg.type)}`, ref: msg.ref });
-      if (!canWrite()) {
-        return LiveHub.send(socket, { type: 'error', error: 'this connection is read-only: log in to edit (or connect with ?token=<token>)', ref: msg.ref });
-      }
+      if (!writer) return LiveHub.send(socket, { type: 'error', error: READ_ONLY, ref: msg.ref });
       try {
         const baseRev = Number.isInteger(msg.baseRev) ? (msg.baseRev as number) : undefined;
         service.apply(id, parseOps(msg.ops), {

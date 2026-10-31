@@ -200,7 +200,7 @@ describe('room notes never reach players', () => {
 
   it('are the GM’s to write with map ops, and refused without the editor login', async () => {
     const { mapId } = await table();
-    const res = await app.inject({ method: 'POST', url: `/api/v1/maps/${mapId}/ops`, headers: { cookie: session, origin: 'http://table.test:8799', host: 'table.test:8799' }, payload: { ops: [noteOps[0]], by: 'table' } });
+    const res = await app.inject({ method: 'POST', url: `/api/v1/maps/${mapId}/ops`, headers: { cookie: session, origin: 'http://table.lan:8799', host: 'table.lan:8799' }, payload: { ops: [noteOps[0]], by: 'table' } });
     expect(res.statusCode).toBe(200);
     const map = (await app.inject({ url: `/api/v1/maps/${mapId}` })).json().map as DelveMap;
     expect(map.objects.find((o) => o.id === 'r1')).toMatchObject({ notes: 'ogre-under-the-floor' });

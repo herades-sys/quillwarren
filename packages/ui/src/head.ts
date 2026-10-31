@@ -7,6 +7,15 @@ import { THEME_BOOT } from './theme.ts';
 export const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
+/**
+ * A value as JSON for inside a <script> element (a type="application/json"
+ * block or code). <, > and & become \u escapes, so a name holding "</script>"
+ * or "<!--" can't end the script, and so do U+2028 and U+2029 (line ends to
+ * older JavaScript). JSON.parse reads it back unchanged.
+ */
+export const jsonForScript = (value: unknown): string =>
+  JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
 export interface HeadOptions {
   /** The page's own title; " · Delve" is added unless it already ends so. */
   title: string;

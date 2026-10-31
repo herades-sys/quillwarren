@@ -7,7 +7,13 @@ Base URL on the LAN: `http://192.168.1.9:8790/api/v1`. Everything is JSON unless
 - **Reading needs no token** (LAN only). This covers maps, renders, the text summary, history and subscribing to live changes.
 - **Every change needs the API token:** `Authorization: Bearer <token>`. On the WebSocket, use `?token=<token>`, because browsers can't set headers there.
 - The live token is `DELVE_API_TOKEN` in `/etc/delve/delve.env` (root only). A server started without a token refuses all changes with `503`.
-- Tokens in URLs are masked in the server log.
+- Secrets in URLs are masked in the server log: `?token=` (the API token, player tokens, setup links), a Discord login's `?code=` and `?state=`, and the invite token in `/play/join/<token>`, also where it rides along in `?next=`.
+- **Only Delve's own host names** (`apps/server/src/hosts.ts`). A web page elsewhere could point a name of its own at the home network's address (DNS rebinding) and read the open map API as that site, so a request whose `Host` is a DNS name that isn't Delve's gets `403` (plain text), on every path, WebSockets included. Allowed:
+  - IP addresses, any port (`http://192.168.1.9:8790`, `http://[fd00::9]:8790`, `127.0.0.1`: the chat bridge and the release's `/health` check use it), and `localhost` (also `*.localhost`);
+  - names without a dot (`http://delve:8790`) and names under `.local`, `.lan`, `.home.arpa`, `.internal` and `.fritz.box`;
+  - the host of `DELVE_PUBLIC_URL`, and requests through the tunnel (cloudflared on loopback with `CF-Connecting-IP`);
+  - anything listed in `DELVE_ALLOWED_HOSTS`, comma-separated (`delve.example.org, *.example.net`; `*.` also takes the names under it).
+  - A request without a `Host` header (no browser sends one) is answered. The Windows app has its own, stricter check (docs/DESKTOP.md).
 
 ### Browser editor login: admin and GM accounts
 
@@ -50,14 +56,16 @@ The browser editor has two kinds of account, **admin** and **GM**. Both can edit
 - The cookie is `delve_session=a1.<token>` (HttpOnly, SameSite=Strict, and Secure over https or behind a proxy that sends `X-Forwarded-Proto: https`). The server keeps only a SHA-256 hash of the token.
 - A session ends after 12 idle hours, and 30 days after login in any case.
 - "Keep me logged in on this device" makes the cookie outlast the browser, and stretches the idle limit to 7 days.
-- `/logout` ends the session on the server, so a copied cookie stops working too.
-- Cookie writes must come from Delve's own origin (the same rule as before).
+- `/logout` (a POST) ends the session on the server, so a copied cookie stops working too.
+- Cookie writes, logging out included, must come from Delve's own origin (the same rule as before).
 
-**Brute force.**
-- After 5 failed logins within 15 minutes, the address and the account name are each locked for 15 minutes. Account names are locked whether or not they exist.
-- Error messages don't say which part was wrong.
+**Brute force** (`apps/server/src/login.ts`, lockouts in `accounts/store.ts`).
+- After 5 failed logins within 15 minutes from one address, that address is locked for 15 minutes, and so is the account name from that address. An IPv6 client counts by its /64 for every login limit.
+- Failures from anywhere also count against the account name: after 30 within an hour it is locked for an hour. That lock never stops a login with the right password and a valid code from the app (or a recovery code), so nobody can lock the admin out by failing on purpose. Password-only accounts, which have nothing else, wait it out like any other try. Account names are counted whether or not they exist.
+- At most 20 password checks a second across all clients; beyond that the login answers `429` "Too many logins at once". Passwords are hashed off the event loop (async scrypt).
+- Error messages don't say which part was wrong, and a locked try gets the same `429` whether its answer was right or wrong.
 - Behind the Cloudflare tunnel the address is taken from `CF-Connecting-IP`.
-- The same lockout covers the shared password during bootstrap, and password or code checks on `/account`.
+- The same lockouts cover the shared password during bootstrap (one password for everyone: always the 30-an-hour limit), and password or code checks on `/account`.
 
 **Secrets at rest.**
 - Passwords are scrypt hashes.
@@ -447,6 +455,7 @@ Writes need the token or an editor login; reads are public like maps. `segment` 
 
 - **`by`** says who made a change (`claude`, `editor`, a script's name). It's shown in history and live messages. The default is `api`.
 - **Ops:** `add`, `update` (`set`/`unset`), `move` (`ids`, `dx`, `dy`), `delete`, `batch`, plus **`update_map`** (`set`/`unset` of `name`, `grid`, `style`, `seed`, `level`).
+- **Style overrides** (`style.overrides`, dotted like `"walls.width"` or nested) take only the style's own settings, each with a value it can draw (core `styleOverrideProblems`): `background`, `backgroundGrid`, `floor`, `walls`, `shading`, `hatching`, `shadow`, `grid`, `doors`, `stairs`, `labels`, `props`, `terrain` and `fog` with their fields; colours are `"#RRGGBB"` (or `"#RGB"`), numbers stay in a sane range (e.g. `hatching.spacing` 0.1–3), `grid.style` is `lines`, `dots` or `none`, and `null` switches off `hatching`, `shading`, `shadow` or `backgroundGrid`. Anything else is a `400` naming the setting, e.g. `style.overrides.walls.color: must be a colour like "#2F4A33", not "red"`. Settings an edit leaves as they were aren't checked again, so maps saved before this check stay editable; the renderer escapes every value it writes into an SVG whatever a map holds.
 - **`baseRev`:** send it when you've computed changes from a copy you read earlier. On a mismatch you get `409` with the current `rev`: fetch again and retry.
 
 ## Output
@@ -549,7 +558,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 ### Dungeon Scrawl `.ds`
 
 - **Export** writes the floor (rooms, corridors and cutouts merged into one outline), normal/locked/barred doors, room numbers and labels. Secret doors become an "S" in the GM view and plain wall for players; archways stay open. Stairs and Delve's styles don't carry over (Dungeon Scrawl uses its own).
-- **Import:** `POST /maps/import.ds?name=` with the raw file as `application/octet-stream` (token or editor login). Returns `201 { id, rev, map, notes }`. Dungeon Scrawl keeps only the merged outline, so the floor comes in as one polygon room per area (holes become cutouts), door stamps become doors and text becomes labels. `notes` says what came across and what was left out. Bad files get a `400` that says why. The start page has an "Import .ds" button.
+- **Import:** `POST /maps/import.ds?name=` with the raw file as `application/octet-stream` (token or editor login). Returns `201 { id, rev, map, notes }`. Dungeon Scrawl keeps only the merged outline, so the floor comes in as one polygon room per area (holes become cutouts), door stamps become doors and text becomes labels. `notes` says what came across and what was left out. Bad files get a `400` that says why, and so does an entry that unpacks to more than 64 MB (a "zip bomb"; `zip.ts` stops inflating there whatever size the file claims). The login is checked before the body (up to 20 MB) is read, as for the city import. The start page has an "Import .ds" button.
 
 ### Cities from Watabou's Medieval Fantasy City Generator
 
@@ -613,6 +622,7 @@ The players' view hides room numbers and draws secret doors as solid wall. Style
 2. After that, every change arrives as `{ "type": "ops", "rev", "by", "kind", "ops" }`. `ops` turn `rev - 1` into `rev`; for an undo they're the inverse that was applied. Apply them with `applyOps` from `@delve/core`, or re-fetch.
 3. Other messages: `{ type: "focus", ids, by }`, `{ type: "deleted" }` and `{ type: "pong" }` (the reply to `{ type: "ping" }`).
 4. With `?token=` the socket can also write: send `{ type: "ops", ops, baseRev?, by?, ref? }`. You get `{ type: "ack", rev, ref }` or `{ type: "error", error, problems?, rev?, ref? }`, and everyone, you included, gets the usual `ops` message.
+5. **Limits:** a message may be 5 MB, as much as a REST write; a bigger one closes the socket (code 1009). A read-only socket only pings: its messages over 1 KB are refused unread (`error` without `ref`). The Delve Table socket takes 64 KB per message, and a player's connection 10 chat lines in 10 seconds ("Slow down…"; the GM isn't limited). A game keeps its newest 1000 chat lines.
 
 ## MCP: `/mcp` (for Claude Code)
 

@@ -186,9 +186,13 @@ export function parseAssetSvg(text: string, opts: ParseOptions = {}): ParsedAsse
   return { w, h, body, problems: [...new Set(problems)] };
 }
 
+/** A style colour as it goes into the art, escaped: a map saved before style overrides were checked may hold anything (a hex colour comes out unchanged). */
+const inkValue = (s: unknown): string =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
 /** Swap the three inks for a style's colours. */
 export function recolor(body: string, p: Palette): string {
-  return body.replace(/#000000|#FFFFFF|#999999/g, (c) => (c === INKS.ink ? p.ink : c === INKS.paper ? p.paper : p.shade));
+  return body.replace(/#000000|#FFFFFF|#999999/g, (c) => inkValue(c === INKS.ink ? p.ink : c === INKS.paper ? p.paper : p.shade));
 }
 
 /** A standalone SVG for a parsed asset, in its original inks (thumbnails, downloads). */

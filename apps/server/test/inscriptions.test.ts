@@ -149,7 +149,7 @@ describe('the handout page', () => {
       expect(gm).toContain("id=\"print\"");
       // the tool saves through the normal ops, with the editor login, from the same origin
       const note = { id: 'w1', type: 'inscription', text: 'Here be dragons', at: [3, 4] };
-      const host = 'delve.test';
+      const host = 'delve.lan';
       const ok = await open.inject({ method: 'POST', url: `/api/v1/maps/${mapId}/ops`, headers: { host, origin: `http://${host}` }, payload: { ops: [{ op: 'add', object: note }], by: 'handout' } });
       expect(ok.statusCode).toBe(200);
       const foreign = await open.inject({ method: 'POST', url: `/api/v1/maps/${mapId}/ops`, headers: { host, origin: 'http://evil.example' }, payload: { ops: [{ op: 'delete', ids: ['w1'] }] } });

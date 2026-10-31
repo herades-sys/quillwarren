@@ -318,7 +318,7 @@ describe('chat endpoint', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/v1/maps/${id}/chat`,
-      headers: { ...auth, host: 'delve.test:8790' },
+      headers: { ...auth, host: 'delve.lan:8790' },
       payload: { message: 'add a shrine', selection: ['r2'], model: 'opus', session: SESSION },
     });
     expect(res.statusCode).toBe(200);
@@ -333,7 +333,7 @@ describe('chat endpoint', () => {
     expect(lastRun!.mcp.url).toBe('http://127.0.0.1:8790/mcp');
     expect(lastRun!.mcp.token).not.toBe(TOKEN);
     expect(mcpDuringRun!.status).toBe(200);
-    expect(mcpDuringRun!.text).toContain(`http://delve.test:8790/api/v1/maps/${id}/render.png`);
+    expect(mcpDuringRun!.text).toContain(`http://delve.lan:8790/api/v1/maps/${id}/render.png`);
     // once the answer is done, the token is dead
     const after = await app.inject({
       method: 'POST',

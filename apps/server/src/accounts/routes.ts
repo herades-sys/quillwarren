@@ -7,10 +7,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { readCookie, sameOrigin, SESSION_COOKIE } from '../auth.ts';
 import type { EditorAuth } from '../login.ts';
-import { accountCookie, currentAccount, isHttps, requestIp, sendPage } from './http.ts';
+import { accountCookie, BUSY, currentAccount, isHttps, requestIp, sendPage, type RateWindow } from './http.ts';
 import { accountPage, adminPage, bootstrapPage, messagePage, recoveryCodesPage, setupCodePage, setupPasswordPage, type NewLink } from './pages.ts';
 import { qrSvg } from './qr.ts';
-import { AccountError, cleanName, MAX_PASSWORD, MIN_PASSWORD, nameLockKey, type AccountStore, type Session, type User } from './store.ts';
+import { AccountError, cleanName, loginKeys, MAX_PASSWORD, MIN_PASSWORD, type AccountStore, type Session, type User } from './store.ts';
 import { groupSecret, otpauthUri } from './totp.ts';
 
 type Body = Record<string, unknown>;
@@ -24,7 +24,7 @@ const NOTICES = new Map<string, string>([
   ['role', 'The role is changed.'],
   ['removed', 'The account is removed.'],
 ]);
-const LOCKED = 'Too many failed tries. Wait 15 minutes, then try again.';
+const LOCKED = 'Too many failed tries. Wait a while (up to an hour), then try again.';
 
 function passwordProblem(p: unknown, again: unknown): string | null {
   if (typeof p !== 'string' || p.length < MIN_PASSWORD) return `Use a password with at least ${MIN_PASSWORD} characters.`;
@@ -38,7 +38,12 @@ const notice = (q: unknown): string | undefined => {
   return typeof done === 'string' ? NOTICES.get(done) : undefined;
 };
 
-export function registerAccounts(app: FastifyInstance, auth: EditorAuth, accounts: AccountStore, o: { adminSection?: () => string } = {}): void {
+export function registerAccounts(
+  app: FastifyInstance,
+  auth: EditorAuth,
+  accounts: AccountStore,
+  o: { adminSection?: () => string; tries?: RateWindow } = {},
+): void {
   const loggedIn = (req: FastifyRequest): boolean => auth.sessions.valid(readCookie(req.headers.cookie, SESSION_COOKIE));
   const userAgent = (req: FastifyRequest): string => String(req.headers['user-agent'] ?? '');
   const bootstrapping = (req: FastifyRequest): boolean => !auth.sessions.legacyOff && loggedIn(req);
@@ -144,42 +149,53 @@ export function registerAccounts(app: FastifyInstance, auth: EditorAuth, account
     const body = (req.body ?? {}) as Body;
     const show = (o: { error?: string; notice?: string }, code = 200) =>
       sendPage(reply, code, accountPage({ user: accounts.user(user.id)!, session, sessions: accounts.sessions(user.id), ...o }));
-    // someone holding a stolen cookie mustn't get to guess the password or codes freely
-    const keys = [`ip:${requestIp(req)}`, nameLockKey(user.name)];
-    const verify = (needPassword: boolean): FastifyReply | null => {
-      if (accounts.locked(keys)) return show({ error: LOCKED }, 429);
+    // someone holding a stolen cookie mustn't get to guess the password or codes freely (the same lockouts as /login)
+    const keys = loginKeys(user.name, requestIp(req));
+    /**
+     * Checks the current password and/or a code. False once it has sent the
+     * refusal page (a boolean, not the reply: an awaited reply resolves to
+     * nothing, which would read as "not refused").
+     */
+    const verified = async (needPassword: boolean): Promise<boolean> => {
+      const refuse = (error: string, code: number): false => {
+        void show({ error }, code);
+        return false;
+      };
+      if (accounts.locked(keys.fast)) return refuse(LOCKED, 429);
+      if (needPassword && o.tries && !o.tries.take()) return refuse(BUSY, 429);
       const current = body.current;
-      const passwordOk = !needPassword || (typeof current === 'string' && current.length <= MAX_PASSWORD && accounts.checkPassword(user.id, current));
+      const passwordOk = !needPassword || (typeof current === 'string' && current.length <= MAX_PASSWORD && (await accounts.checkPassword(user.id, current)));
       // a password-only account has nothing but the password to check
       const secondOk = user.passwordOnly ? needPassword : accounts.useSecondFactor(user.id, typeof body.code === 'string' ? body.code : '') !== null;
-      if (passwordOk && secondOk) {
-        accounts.clearFails(keys);
-        return null;
+      const ok = passwordOk && secondOk;
+      // the name's slow lock only holds up answers without a code from the app
+      const locked = accounts.locked(keys.fast) || (!(ok && !user.passwordOnly) && accounts.locked([keys.slow]));
+      if (!ok) accounts.failLogin(keys);
+      if (locked) return refuse(LOCKED, 429);
+      if (ok) {
+        accounts.clearFails(keys.fast);
+        return true;
       }
-      accounts.fail(keys);
-      if (user.passwordOnly) return show({ error: 'The current password is not right.' }, 401);
-      return show({ error: needPassword ? 'The current password or the code is not right.' : 'That code is not right.' }, 401);
+      if (user.passwordOnly) return refuse('The current password is not right.', 401);
+      return refuse(needPassword ? 'The current password or the code is not right.' : 'That code is not right.', 401);
     };
 
     switch (body.action) {
       case 'password': {
         const problem = passwordProblem(body.password, body.password2);
         if (problem) return show({ error: problem }, 400);
-        const refused = verify(true);
-        if (refused) return refused;
+        if (!(await verified(true))) return reply;
         accounts.setPassword(user.id, body.password as string);
         accounts.endUserSessions(user.id, session.id);
         return reply.redirect('/account?done=password', 303);
       }
       case 'recovery': {
         if (user.passwordOnly) return show({ error: 'Your account has no recovery codes. Set up an authenticator first.' }, 400);
-        const refused = verify(false);
-        if (refused) return refused;
+        if (!(await verified(false))) return reply;
         return sendPage(reply, 200, recoveryCodesPage({ codes: accounts.newRecoveryCodes(user.id), next: '/account', first: false }));
       }
       case 'authenticator': {
-        const refused = verify(true);
-        if (refused) return refused;
+        if (!(await verified(true))) return reply;
         const token = accounts.createLink(user.id, 'authenticator');
         return reply.redirect(`/account/setup?token=${encodeURIComponent(token)}`, 303);
       }

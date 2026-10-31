@@ -16,7 +16,7 @@ import { senderLabel } from '../src/feedback/routes.ts';
 
 const TOKEN = 'feedback-test-token';
 const bearer = { authorization: `Bearer ${TOKEN}` };
-const HOST = 'delve.test';
+const HOST = 'delve.lan';
 const tunnel = { host: 'delve.example', 'cf-connecting-ip': '203.0.113.7', 'x-forwarded-proto': 'https' };
 const HEADER = /^==== #(\d+) · \d{4}-\d\d-\d\d \d\d:\d\d · /;
 

@@ -14,7 +14,7 @@ import type { DiscordConfig } from '../src/table/discord.ts';
 
 const TOKEN = 'discord-test-token';
 const bearer = { authorization: `Bearer ${TOKEN}` };
-const HOST = 'table.test';
+const HOST = 'table.lan';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const AVATAR_A = '0123456789abcdef0123456789abcdef';
 const AVATAR_B = 'fedcba9876543210fedcba9876543210';

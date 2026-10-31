@@ -4,7 +4,7 @@
 //   with server-side sessions. Until the first admin account exists, the shared password the
 //   user sets with `delve-passwd` (stored only as a scrypt hash) gets a signed session cookie.
 //   Cookie writes must come from the page's own origin.
-import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 
 const digest = (s: string): Buffer => createHash('sha256').update(s).digest();
 
@@ -34,12 +34,17 @@ export function hashPassword(password: string): string {
   return `scrypt:${SCRYPT.N}:${SCRYPT.r}:${SCRYPT.p}:${salt.toString('base64url')}:${hash.toString('base64url')}`;
 }
 
-export function verifyPassword(password: string, stored: string | undefined): boolean {
+/** crypto.scrypt as a promise: it runs on libuv's thread pool, so checking a password never holds up the event loop. */
+const scryptAsync = (password: string, salt: Buffer, keylen: number, o: ScryptOptions): Promise<Buffer> =>
+  new Promise((resolve, reject) => scrypt(password, salt, keylen, o, (err, key) => (err ? reject(err) : resolve(key))));
+
+/** A password against its stored hash, compared in constant time; the hashing runs off the event loop (about 25 ms each). */
+export async function verifyPassword(password: string, stored: string | undefined): Promise<boolean> {
   const m = /^scrypt:(\d+):(\d+):(\d+):([A-Za-z0-9_-]+):([A-Za-z0-9_-]+)$/.exec(stored ?? '');
   if (!m) return false;
   const [, N, r, p, salt, hash] = m;
   const expected = Buffer.from(hash!, 'base64url');
-  const got = scryptSync(password, Buffer.from(salt!, 'base64url'), expected.length, {
+  const got = await scryptAsync(password, Buffer.from(salt!, 'base64url'), expected.length, {
     N: Number(N),
     r: Number(r),
     p: Number(p),

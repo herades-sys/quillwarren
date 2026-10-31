@@ -7,7 +7,7 @@
 // a candle-lit wooden table (handout-table.ts), for the page only.
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
-import { htmlDocument, icon, themeSwitch, topBar } from '@delve/ui';
+import { htmlDocument, icon, jsonForScript, themeSwitch, topBar } from '@delve/ui';
 import { NotFoundError, type MapStore } from './store.ts';
 import { isLoggedIn, type EditorAuth } from './login.ts';
 import { findScript } from './viewer.ts';
@@ -72,7 +72,7 @@ export interface HandoutPageViewer {
 }
 
 function page(id: string, name: string, fogOn: boolean, viewer: HandoutPageViewer = { editor: false, version: '' }): string {
-  const initial = JSON.stringify({ id, name, fogOn }).replace(/</g, '\\u003c');
+  const initial = jsonForScript({ id, name, fogOn });
   // handwritten notes: the panel is filled by /assets/handout.js (apps/web/src/handout.ts)
   const notesTool = viewer.editor
     ? `<section id="notes-tool">

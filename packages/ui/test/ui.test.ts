@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DARK_TOKENS, ICONS, ICON_GROUPS, LIGHT_TOKENS, ROOT_TOKENS, THEME_BOOT, UI_CSS, UI_CSS_VERSION, hash, head, htmlDocument, icon, themeSwitch } from '../src/index.ts';
+import { DARK_TOKENS, ICONS, ICON_GROUPS, LIGHT_TOKENS, ROOT_TOKENS, THEME_BOOT, UI_CSS, UI_CSS_VERSION, hash, head, htmlDocument, icon, jsonForScript, themeSwitch } from '../src/index.ts';
 
 const design = (file: string): string => readFileSync(new URL(`../../../docs/design/ui-v1/${file}`, import.meta.url), 'utf8');
 
@@ -116,5 +116,22 @@ describe('head and theme', () => {
     const sw = themeSwitch('t1');
     expect(sw.match(/data-theme-set/g)).toHaveLength(3);
     expect(sw).toContain('name="t1" value="system" data-theme-set checked');
+  });
+});
+
+describe('JSON for a <script> element', () => {
+  it('keeps "</script>", "<!--" and line separators from ending or breaking the script, and reads back the same', () => {
+    const lineEnds = String.fromCharCode(0x2028, 0x2029);
+    const value = { name: '</script><img src=x onerror=alert(1)>', note: '<!-- a & b -->', lineEnds };
+    const out = jsonForScript(value);
+    expect(out).not.toMatch(/[<>&]/);
+    expect(out).not.toContain(lineEnds[0]);
+    expect(out).not.toContain(lineEnds[1]);
+    const slash = String.fromCharCode(92);
+    expect(out).toContain(`${slash}u003c/script${slash}u003e`);
+    expect(out).toContain(`${slash}u2028${slash}u2029`);
+    expect(JSON.parse(out)).toEqual(value);
+    // nothing else changes
+    expect(jsonForScript({ id: 'map_1', n: 3, ok: true })).toBe(JSON.stringify({ id: 'map_1', n: 3, ok: true }));
   });
 });

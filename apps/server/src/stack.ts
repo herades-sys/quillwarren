@@ -4,7 +4,7 @@
 // from the storeys' maps and their floor PNGs.
 import type { FastifyInstance } from 'fastify';
 import { levelSiblings } from '@delve/core';
-import { htmlDocument, icon, themeSwitch, topBar } from '@delve/ui';
+import { htmlDocument, icon, jsonForScript, themeSwitch, topBar } from '@delve/ui';
 import type { AppInfo } from './app.ts';
 import { NotFoundError, type MapStore } from './store.ts';
 
@@ -38,7 +38,7 @@ const PAGE_CSS = `
 `;
 
 function page(info: AppInfo, id: string, name: string, storeys: unknown[], view: 'gm' | 'players'): string {
-  const initial = JSON.stringify({ id, name, storeys }).replace(/</g, '\\u003c');
+  const initial = jsonForScript({ id, name, storeys });
   const enc = encodeURIComponent(id);
   const end = `<div class="seg seg-ground" role="group" aria-label="View">
     <button class="seg-opt" type="button" data-view="gm" aria-pressed="${view === 'gm'}">${icon('eye', { size: 16 })}GM view</button><button class="seg-opt" type="button" data-view="players" aria-pressed="${view === 'players'}">${icon('eye-off', { size: 16 })}Players</button>

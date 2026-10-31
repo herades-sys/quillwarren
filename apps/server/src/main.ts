@@ -4,9 +4,11 @@
 // DELVE_CHAT_URL (the chat bridge, e.g. http://127.0.0.1:8792) and DELVE_CHAT_MODEL.
 // Discord login for Delve Table: DELVE_DISCORD_CLIENT_ID + DELVE_DISCORD_CLIENT_SECRET,
 // optional DELVE_PUBLIC_URL, DELVE_GM_DISCORD_IDS, DELVE_DISCORD_API and DELVE_DISCORD_CDN.
+// DELVE_ALLOWED_HOSTS: host names to answer to besides IP addresses, home-network names and DELVE_PUBLIC_URL's (hosts.ts).
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildApp } from './app.ts';
+import { parseAllowedHosts } from './hosts.ts';
 import { parsePort } from './config.ts';
 import { MapStore } from './store.ts';
 import { parseDiscordIds, parsePublicUrl, type DiscordConfig } from './table/discord.ts';
@@ -46,7 +48,18 @@ const discord: DiscordConfig | undefined =
 
 const app = buildApp(
   { version: readVersion(), started: new Date().toISOString() },
-  { logger: true, store, token, passwordHash, openEdit, chat, dataDir, discord, publicUrl: parsePublicUrl(process.env.DELVE_PUBLIC_URL) },
+  {
+    logger: true,
+    store,
+    token,
+    passwordHash,
+    openEdit,
+    chat,
+    dataDir,
+    discord,
+    publicUrl: parsePublicUrl(process.env.DELVE_PUBLIC_URL),
+    allowedHosts: parseAllowedHosts(process.env.DELVE_ALLOWED_HOSTS),
+  },
 );
 if (discord) app.log.info({ coGms: discord.gmIds?.length ?? 0, publicUrl: discord.publicUrl ?? null }, 'Discord login for Delve Table is on');
 else if (discordId || discordSecret) app.log.warn('Discord login needs both DELVE_DISCORD_CLIENT_ID and DELVE_DISCORD_CLIENT_SECRET: it stays off');

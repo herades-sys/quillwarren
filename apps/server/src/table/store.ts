@@ -14,6 +14,9 @@ import type { ChatMessage, Explored, GameState, NotebookEntry } from '@delve/tab
 
 type Row = Record<string, unknown>;
 
+/** Chat lines kept per game (older ones are dropped every 100 lines). */
+export const CHAT_KEEP = 1000;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS games (
   id      TEXT PRIMARY KEY,
@@ -314,9 +317,11 @@ export class TableStore {
     return cur + 1;
   }
 
+  /** Stores a chat line; a game keeps its newest CHAT_KEEP lines (the table shows the last 200), so chat can't grow the file without end. */
   appendChat(gameId: string, msg: ChatMessage): void {
     this.db.prepare('INSERT OR REPLACE INTO chat (game_id, seq, at, json) VALUES (?, ?, ?, ?)').run(gameId, msg.seq, msg.at, JSON.stringify(msg));
     if ((this.seqs.get(gameId) ?? 0) < msg.seq) this.seqs.set(gameId, msg.seq);
+    if (msg.seq % 100 === 0) this.db.prepare('DELETE FROM chat WHERE game_id = ? AND seq <= ?').run(gameId, msg.seq - CHAT_KEEP);
   }
 
   /** The last `n` messages, oldest first. */

@@ -5,12 +5,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { levelSiblings, PRESETS, revealedBounds, sceneToSvg, type DelveMap } from '@delve/core';
+import { isHexColour, levelSiblings, PRESETS, revealedBounds, sceneToSvg, type DelveMap } from '@delve/core';
 import { currentAccount } from './accounts/http.ts';
 import type { AppInfo } from './app.ts';
 import type { ChatBackends, ChatConfig } from './chat/route.ts';
 import { editorPage } from './editor-page.ts';
-import { htmlDocument, icon } from '@delve/ui';
+import { htmlDocument, icon, jsonForScript } from '@delve/ui';
 import { canLogIn, isLoggedIn, type EditorAuth } from './login.ts';
 import { asView, sceneFor } from './render.ts';
 import { NotFoundError, type MapStore } from './store.ts';
@@ -53,11 +53,12 @@ export function screenPayload(map: DelveMap, rev: number) {
 
 function screenPage(info: AppInfo, id: string, rev: number, map: DelveMap): string {
   const { svg, ...rest } = screenPayload(map, rev);
-  const initial = JSON.stringify({ id, ...rest }).replace(/</g, '\u003c');
-  // The players' screen is for a TV or a screen share: only the map, on its own paper colour.
+  const initial = jsonForScript({ id, ...rest });
+  // The players' screen is for a TV or a screen share: only the map, on its own paper colour
+  // (only ever a real colour in the CSS, whatever a map saved before overrides were checked holds).
   const css = `<style>
   html, body { height: 100%; margin: 0; overflow: hidden; }
-  body { background: ${rest.background}; }
+  body { background: ${isHexColour(rest.background) ? rest.background : '#EFEAE2'}; }
   #stage, #canvas { position: absolute; inset: 0; }
   #canvas svg { width: 100%; height: 100%; display: block; }
   #full { position: absolute; right: 14px; bottom: 14px; background: var(--color-surface); box-shadow: var(--shadow-md); opacity: 0; transition: opacity .3s; }

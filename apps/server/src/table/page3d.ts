@@ -2,7 +2,7 @@
 // client in apps/web/src/table/app3d.ts (built to /assets/table3d.js, with
 // three.js). The script builds the scene, fills the panel and keeps it live
 // over the same WebSocket as the 2D table; this only lays the page out.
-import { htmlDocument, icon } from '@delve/ui';
+import { htmlDocument, icon, jsonForScript } from '@delve/ui';
 import { NOTES_CSS } from './notes-css.ts';
 import { TABLE_3D_CSS, TABLE_BASE_CSS } from './table-css.ts';
 
@@ -17,7 +17,7 @@ const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;',
 
 export function table3dPage(o: Table3dPageOptions): string {
   const gm = o.me.role === 'gm';
-  const initial = JSON.stringify({ gameId: o.gameId, gameName: o.gameName, me: o.me, version: o.version }).replace(/</g, '\u003c');
+  const initial = jsonForScript({ gameId: o.gameId, gameName: o.gameName, me: o.me, version: o.version });
   const game = encodeURIComponent(o.gameId);
   const crumb = gm ? `<a class="crumb tbl-desk" href="/play" title="All games">Delve Table</a>` : `<span class="crumb tbl-desk">Delve Table</span>`;
   const body = `<header class="topbar tbl-top">

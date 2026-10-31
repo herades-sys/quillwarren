@@ -168,15 +168,63 @@ describe('logging in', () => {
     expect(msg(wrongCode)).toBe('The name, password or code is not right.');
   });
 
-  it('locks out an address and an account for 15 minutes after 5 failures', async () => {
+  it('locks out an address, and an account from that address, for 15 minutes after 5 failures', async () => {
     const { secret } = await bootstrap();
     for (let i = 0; i < 5; i++) expect((await login('Ana', 'not the right password', '123456', { ip: '10.0.0.1' })).statusCode).toBe(401);
     tick();
     expect((await login('Ana', ADMIN_PW, code(secret), { ip: '10.0.0.1' })).statusCode).toBe(429);
-    expect((await login('Ana', ADMIN_PW, code(secret), { ip: '10.0.0.2' })).statusCode).toBe(429); // the account
     expect((await login('Bo', ADMIN_PW, code(secret), { ip: '10.0.0.1' })).statusCode).toBe(429); // the address
-    tick(15 * 60_000);
+    // somewhere else, the right login still works: failing on purpose can't lock the owner out
+    tick();
     expect((await login('Ana', ADMIN_PW, code(secret), { ip: '10.0.0.2' })).statusCode).toBe(303);
+    tick(15 * 60_000);
+    expect((await login('Ana', ADMIN_PW, code(secret), { ip: '10.0.0.1' })).statusCode).toBe(303);
+  });
+
+  it('failures from other addresses never lock out the right login with a code', async () => {
+    const { secret } = await bootstrap();
+    // 5 addresses fail 5 times each: each of them is locked, the name isn't yet (25 of 30)
+    for (let a = 1; a <= 5; a++) {
+      for (let i = 0; i < 5; i++) expect((await login('Ana', 'not the right password', '123456', { ip: `10.0.1.${a}` })).statusCode).toBe(401);
+      tick(1000);
+    }
+    tick(); // a fresh code: the one that confirmed the setup was used
+    expect((await login('Ana', ADMIN_PW, code(secret), { ip: '10.0.1.3' })).statusCode).toBe(429);
+    expect((await login('Ana', ADMIN_PW, code(secret), { ip: '10.0.1.6' })).statusCode).toBe(303);
+    // past 30 failures the name is locked for an hour: tries without the right password and code all get 429 now
+    for (let a = 7; a <= 8; a++) {
+      for (let i = 0; i < 5; i++) await login('Ana', 'not the right password', '123456', { ip: `10.0.1.${a}` });
+      tick(1000);
+    }
+    tick();
+    const wrong = await login('Ana', 'not the right password', '123456', { ip: '10.0.1.9' });
+    expect(wrong.statusCode).toBe(429);
+    expect(wrong.body).toContain('Too many failed tries. Wait a while (up to an hour), then try again.');
+    expect((await login('Ana', ADMIN_PW, '000000', { ip: '10.0.1.9' })).statusCode).toBe(429); // the password alone gets no further
+    tick();
+    expect((await login('Ana', ADMIN_PW, code(secret), { ip: '10.0.1.10' })).statusCode).toBe(303);
+  });
+
+  it('keys IPv6 clients by their /64', async () => {
+    const { secret } = await bootstrap();
+    for (let i = 1; i <= 5; i++) expect((await login('Nobody', 'x'.repeat(12), '123456', { ip: `2001:db8:1:2::${i}` })).statusCode).toBe(401);
+    tick();
+    expect((await login('Ana', ADMIN_PW, code(secret), { ip: '2001:db8:1:2:abcd:ef01:2345:6789' })).statusCode).toBe(429);
+    // through the tunnel too
+    expect((await login('Ana', ADMIN_PW, code(secret), { headers: { 'cf-connecting-ip': '2001:0db8:0001:0002::77' } })).statusCode).toBe(429);
+    expect((await login('Ana', ADMIN_PW, code(secret), { ip: '2001:db8:1:3::1' })).statusCode).toBe(303);
+  });
+
+  it('allows 20 password checks a second across all clients', async () => {
+    await bootstrap();
+    // the clock stands still here: every try lands in the same second
+    const tries = await Promise.all(Array.from({ length: 24 }, (_, i) => login(`Name${i}`, 'x'.repeat(12), '123456', { ip: `10.0.2.${i + 1}` })));
+    const busy = tries.filter((r) => r.statusCode === 429);
+    expect(busy).toHaveLength(4);
+    for (const r of busy) expect(r.body).toContain('Too many logins at once. Try again in a few seconds.');
+    expect(tries.filter((r) => r.statusCode === 401)).toHaveLength(20);
+    tick(1000);
+    expect((await login('Name0', 'x'.repeat(12), '123456', { ip: '10.0.2.99' })).statusCode).toBe(401);
   });
 
   it('tells clients behind the Cloudflare tunnel apart', async () => {
@@ -222,7 +270,7 @@ describe('logging in', () => {
 
   it('lets an account edit maps, but only from the same origin', async () => {
     const { cookie } = await bootstrap();
-    const host = 'delve.test';
+    const host = 'delve.lan';
     const create = (origin?: string) =>
       app.inject({ method: 'POST', url: '/api/v1/maps', headers: { cookie, host, ...(origin ? { origin } : {}) }, payload: { name: 'Mine' } });
     expect((await create(`https://${host}`)).statusCode).toBe(201);
@@ -451,6 +499,22 @@ describe('password-only GM accounts', () => {
     expect((await post('/account', { action: 'password', current: HIVE_PW, password: NEW, password2: NEW }, hive.cookie)).headers.location).toBe('/account?done=password');
     expect((await login('Hive', NEW, '')).statusCode).toBe(303);
     expect((await post('/account', { action: 'recovery' }, hive.cookie)).statusCode).toBe(400);
+  });
+
+  it('still wait out the slower lock on their name: 30 failures from anywhere within an hour', async () => {
+    const admin = await bootstrap();
+    await addHive(admin.cookie);
+    for (let a = 1; a <= 6; a++) {
+      for (let i = 0; i < 5; i++) expect((await login('Hive', 'not the hive password', '', { ip: `10.0.3.${a}` })).statusCode).toBe(401);
+      tick(1000);
+    }
+    // a password is all such an account has, so the right one waits too, from any address
+    expect((await login('Hive', HIVE_PW, '', { ip: '10.0.3.7' })).statusCode).toBe(429);
+    // the admin's name is a different name
+    tick();
+    expect((await login('Ana', ADMIN_PW, code(admin.secret), { ip: '10.0.3.7' })).statusCode).toBe(303);
+    tick(60 * 60_000);
+    expect((await login('Hive', HIVE_PW, '', { ip: '10.0.3.7' })).statusCode).toBe(303);
   });
 
   it('can turn the authenticator on themselves, which then gives recovery codes and needs the code', async () => {

@@ -380,7 +380,8 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdent
 
     // ---------- images ----------
 
-    t.post('/api/v1/games/:id/assets', { preHandler: gmOnly(true), bodyLimit: MAX_ASSET_BYTES }, async (req, reply) => {
+    // the GM is checked before the body is read, so nobody else can make the server swallow 10 MB for nothing
+    t.post('/api/v1/games/:id/assets', { onRequest: gmOnly(true), bodyLimit: MAX_ASSET_BYTES }, async (req, reply) => {
       const state = gameOf(req, reply);
       if (!state) return reply;
       if (!Buffer.isBuffer(req.body)) {

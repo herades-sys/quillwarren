@@ -1,7 +1,7 @@
 // The table page (/play/:gameId): the HTML shell and CSS around the client in
 // apps/web/src/table (built to /assets/table.js), on the shared look (@delve/ui, table-css.ts). The script draws the board,
 // fills the panels and keeps everything live; this only lays the page out.
-import { htmlDocument, icon, type IconName } from '@delve/ui';
+import { htmlDocument, icon, jsonForScript, type IconName } from '@delve/ui';
 import { NOTES_CSS } from './notes-css.ts';
 import { TABLE_2D_CSS, TABLE_BASE_CSS } from './table-css.ts';
 
@@ -22,7 +22,7 @@ const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;',
 
 export function tablePage(o: TablePageOptions): string {
   const gm = o.me.role === 'gm';
-  const initial = JSON.stringify({ gameId: o.gameId, gameName: o.gameName, me: o.me, version: o.version }).replace(/</g, '\u003c');
+  const initial = jsonForScript({ gameId: o.gameId, gameName: o.gameName, me: o.me, version: o.version });
   // a POST form, so no other site can log anyone out
   const account = o.account
     ? `<span class="account"><span class="who">Logged in as ${esc(o.account.name)} ·</span><form method="post" action="/auth/logout"><input type="hidden" name="next" value="/play"><button type="submit" title="Log out of Discord on this device">Log out</button></form></span>`

@@ -38,6 +38,9 @@ import { TableVision, type PageSight } from './vision.ts';
 export const MAX_MESSAGE_BYTES = 64 * 1024;
 export const HELLO_CHAT = 200;
 const PINGS_PER_SECOND = 20;
+/** A player's chat lines (and rolls) per connection: this many within CHAT_WINDOW_MS, the rest refused. */
+export const CHAT_PER_WINDOW = 10;
+export const CHAT_WINDOW_MS = 10_000;
 
 /** WebSocket close codes: not a member, removed from the game, game deleted. */
 export const CLOSE_NOT_MEMBER = 4401;
@@ -54,6 +57,8 @@ interface Conn {
   /** The explored version it has, and what the last vision message showed. */
   exploredSent?: number;
   visionSig?: string;
+  /** When its last chat lines came (players only), for CHAT_PER_WINDOW. */
+  chatTimes?: number[];
 }
 
 export interface ChangeResult {
@@ -357,6 +362,16 @@ export class TableHub {
     }
   }
 
+  /** Counts a chat line on a player's connection: false beyond CHAT_PER_WINDOW in CHAT_WINDOW_MS. The GM isn't counted. */
+  private chatFits(conn: Conn, now = Date.now()): boolean {
+    if (this.store.get(conn.gameId)?.members.find((m) => m.id === conn.memberId)?.role === 'gm') return true;
+    const times = (conn.chatTimes ??= []);
+    while (times.length && times[0]! <= now - CHAT_WINDOW_MS) times.shift();
+    if (times.length >= CHAT_PER_WINDOW) return false;
+    times.push(now);
+    return true;
+  }
+
   /** One message from a client. Bad input gets an error back; nothing here may throw. */
   receive(conn: Conn, raw: unknown): void {
     const bytes = bytesOf(raw);
@@ -376,6 +391,9 @@ export class TableHub {
     if (ref === undefined) return send(conn.socket, { type: 'error', error: 'an intent needs a numeric ref' });
     if (typeof intent !== 'object' || intent === null || typeof intent.type !== 'string') {
       return send(conn.socket, { type: 'error', ref, error: 'intent must be an object with a type' });
+    }
+    if (intent.type === 'chat.send' && !this.chatFits(conn)) {
+      return send(conn.socket, { type: 'error', ref, error: `Slow down: at most ${CHAT_PER_WINDOW} messages in ${CHAT_WINDOW_MS / 1000} seconds.` });
     }
     try {
       const { state } = this.change(conn.gameId, conn.memberId, intent as Intent);
