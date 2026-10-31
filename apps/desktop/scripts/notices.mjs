@@ -66,7 +66,7 @@ const lines = [
   'Delve for Windows: third-party software',
   '========================================',
   '',
-  'Delve itself: no licence has been chosen yet; until one is, all rights are reserved by its authors.',
+  'Delve itself: Copyright 2026 herades-sys, licensed under the Apache License, Version 2.0; its text is at the end of this file.',
   'Delve sends nothing about you anywhere: no telemetry, no crash reports, no update checks (until updates are switched on).',
   '',
   'Delve ships these programs and libraries, each under its own licence:',
@@ -83,6 +83,8 @@ for (const e of entries) {
   lines.push('', '='.repeat(72), `${e.name} ${e.version} — ${e.license}`, '='.repeat(72), e.texts.length ? e.texts.join('\n\n') : `(no licence file in the package; its package.json says ${e.license})`);
 }
 if (nodeLicense && existsSync(nodeLicense)) lines.push('', '='.repeat(72), 'Node.js', '='.repeat(72), readFileSync(nodeLicense, 'utf8').trim());
+const own = join(root, 'LICENSE');
+if (existsSync(own)) lines.push('', '='.repeat(72), 'Delve — Apache-2.0', '='.repeat(72), readFileSync(own, 'utf8').trim());
 if (llama) {
   lines.push('', '='.repeat(72), `llama.cpp ${llama.build} and ggml — MIT`, '='.repeat(72), readFileSync(join(llama.dir, 'LICENSE-llama.cpp'), 'utf8').trim());
   const omp = join(llama.dir, 'LICENSE-LLVM-OpenMP');

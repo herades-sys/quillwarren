@@ -458,6 +458,7 @@ describe('the Delve.mcpb bundle', () => {
       display_name: 'Delve',
       version: '0.1.0',
       author: { name: 'herades-sys' },
+      license: 'Apache-2.0',
       icon: 'icon.png',
       icons: [{ src: 'icon.png', size: '512x512' }],
       server: { type: 'node', entry_point: 'server/index.js', mcp_config: { command: 'node', args: ['${__dirname}/server/index.js'], env: {} } },

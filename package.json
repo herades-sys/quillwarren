@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "description": "Self-hosted dungeon map editor controlled through an API",
+  "license": "Apache-2.0",
   "scripts": {
     "build": "sh scripts/build-release.sh",
     "build:web": "sh scripts/build-web.sh",

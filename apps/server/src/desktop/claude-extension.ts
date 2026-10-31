@@ -87,6 +87,7 @@ export function extensionManifest(o: { version: string; tools: readonly ToolInfo
     ].join('\n'),
     // the user, 2026-10-31: "herades-sys" for now; no link while the repository is private
     author: { name: 'herades-sys' },
+    license: 'Apache-2.0',
     icon: 'icon.png',
     icons: [{ src: 'icon.png', size: '512x512' }],
     server: {
