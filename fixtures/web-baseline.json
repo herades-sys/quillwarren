@@ -95,7 +95,7 @@
     ],
     "answers": {
       "GET /health": "200 application/json {\"ok\":true,\"app\":\"delve\",\"version\":\"baseline\",\"started\":\"2026-10-07T00:00:00.000Z\",\"format\":\"delve.map v1\"}",
-      "GET /": "200 text/html b8ef8c40e24a16fe",
+      "GET /": "200 text/html 6eed90771a1c24f3",
       "GET /login": "200 text/html bc3973663c1f03ca",
       "GET /admin": "303  -> /login?next=%2Fadmin e3b0c44298fc1c14",
       "GET /account": "303  -> /login?next=%2Faccount e3b0c44298fc1c14",
@@ -122,7 +122,7 @@
       "GET /maps/map_test4p {\"cf-connecting-ip\":\"203.0.113.9\",\"accept\":\"text/html\"}": "303  -> /login?next=%2Fmaps%2Fmap_test4p e3b0c44298fc1c14",
       "GET /api/v1/maps {\"cf-connecting-ip\":\"203.0.113.9\"}": "401 application/json {\"error\":\"log in first\"}",
       "POST /mcp {\"cf-connecting-ip\":\"203.0.113.9\"}": "404 application/json {\"error\":\"not found\"}",
-      "GET / {\"x-delve-desktop\":\"anything\"}": "200 text/html b8ef8c40e24a16fe",
+      "GET / {\"x-delve-desktop\":\"anything\"}": "200 text/html 6eed90771a1c24f3",
       "POST /api/v1/maps {\"x-delve-desktop\":\"anything\",\"cookie\":\"delve_desktop=anything\"}": "401 application/json {\"error\":\"changes need the API token (\\\"Authorization: Bearer <token>\\\") or an editor login\"}"
     }
   },
@@ -219,7 +219,7 @@
     ],
     "answers": {
       "GET /health": "200 application/json {\"ok\":true,\"app\":\"delve\",\"version\":\"baseline\",\"started\":\"2026-10-07T00:00:00.000Z\",\"format\":\"delve.map v1\"}",
-      "GET /": "200 text/html b8ef8c40e24a16fe",
+      "GET /": "200 text/html 6eed90771a1c24f3",
       "GET /login": "200 text/html bc3973663c1f03ca",
       "GET /admin": "303  -> /login?next=%2Fadmin e3b0c44298fc1c14",
       "GET /account": "303  -> /login?next=%2Faccount e3b0c44298fc1c14",
@@ -246,7 +246,7 @@
       "GET /maps/map_test4p {\"cf-connecting-ip\":\"203.0.113.9\",\"accept\":\"text/html\"}": "303  -> /login?next=%2Fmaps%2Fmap_test4p e3b0c44298fc1c14",
       "GET /api/v1/maps {\"cf-connecting-ip\":\"203.0.113.9\"}": "401 application/json {\"error\":\"log in first\"}",
       "POST /mcp {\"cf-connecting-ip\":\"203.0.113.9\"}": "404 application/json {\"error\":\"not found\"}",
-      "GET / {\"x-delve-desktop\":\"anything\"}": "200 text/html b8ef8c40e24a16fe",
+      "GET / {\"x-delve-desktop\":\"anything\"}": "200 text/html 6eed90771a1c24f3",
       "POST /api/v1/maps {\"x-delve-desktop\":\"anything\",\"cookie\":\"delve_desktop=anything\"}": "503 application/json {\"error\":\"this server has no API token configured, so changes are disabled\"}"
     }
   },
@@ -343,7 +343,7 @@
     ],
     "answers": {
       "GET /health": "200 application/json {\"ok\":true,\"app\":\"delve\",\"version\":\"baseline\",\"started\":\"2026-10-07T00:00:00.000Z\",\"format\":\"delve.map v1\"}",
-      "GET /": "200 text/html 0e012a53a2a6b181",
+      "GET /": "200 text/html 453154a29561f5cc",
       "GET /login": "200 text/html bc3973663c1f03ca",
       "GET /admin": "303  -> /account/setup e3b0c44298fc1c14",
       "GET /account": "303  -> /account/setup e3b0c44298fc1c14",
@@ -366,11 +366,11 @@
       "POST /api/v1/maps": "201 application/json {\"id\":\"map_*\",\"rev\":1,\"map\":{\"format\":\"delve.map\",\"version\":1,\"id\":\"map_*\",\"name\":\"x\",\"grid\":{\"type\":\"square\",\"unit\":\"5 ft\"},\"style\":{\"preset\":\"classic-hatching\"},\"seed\":0,\"objects\":[]}}",
       "POST /mcp": "503 application/json {\"error\":\"this server has no API token configured, so changes are disabled\"}",
       "GET /mcp": "405 application/json {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Method not allowed: this MCP server is stateless, use POST\"},\"id\":null}",
-      "GET / {\"cf-connecting-ip\":\"203.0.113.9\",\"accept\":\"text/html\"}": "200 text/html ef526ee96032651f",
+      "GET / {\"cf-connecting-ip\":\"203.0.113.9\",\"accept\":\"text/html\"}": "200 text/html 371ed0653a82dfa6",
       "GET /maps/map_test4p {\"cf-connecting-ip\":\"203.0.113.9\",\"accept\":\"text/html\"}": "200 text/html 1215133e66bcfcc4",
       "GET /api/v1/maps {\"cf-connecting-ip\":\"203.0.113.9\"}": "200 application/json {\"maps\":[{\"id\":\"map_*\",\"name\":\"x\",\"rev\":1,\"objects\":0,\"created\":\"*\",\"updated\":\"*\"},{\"id\":\"map_test4p\",\"name\":\"Test dungeon (4 players)\",\"rev\":1,\"objects\":21,\"created\":\"*\",\"updated\":\"*\"}]}",
       "POST /mcp {\"cf-connecting-ip\":\"203.0.113.9\"}": "404 application/json {\"error\":\"not found\"}",
-      "GET / {\"x-delve-desktop\":\"anything\"}": "200 text/html ef526ee96032651f",
+      "GET / {\"x-delve-desktop\":\"anything\"}": "200 text/html 371ed0653a82dfa6",
       "POST /api/v1/maps {\"x-delve-desktop\":\"anything\",\"cookie\":\"delve_desktop=anything\"}": "201 application/json {\"id\":\"map_*\",\"rev\":1,\"map\":{\"format\":\"delve.map\",\"version\":1,\"id\":\"map_*\",\"name\":\"x\",\"grid\":{\"type\":\"square\",\"unit\":\"5 ft\"},\"style\":{\"preset\":\"classic-hatching\"},\"seed\":0,\"objects\":[]}}"
     }
   }

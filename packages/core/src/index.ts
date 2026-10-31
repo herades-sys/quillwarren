@@ -74,7 +74,7 @@ export {
   type DoorLine,
   type DoorSlot,
 } from './geometry/doors.ts';
-export { buildScene, terrainTint, terrainToneColour, type Scene, type Layer, type RenderOptions, type View, type AssetItem, type ImageItem } from './render/scene.ts';
+export { buildScene, hatchReach, terrainTint, terrainToneColour, type Scene, type Layer, type RenderOptions, type View, type AssetItem, type ImageItem } from './render/scene.ts';
 export {
   terrainEdges,
   terrainEdgeSettings,
@@ -148,7 +148,7 @@ export { inkBody, flattenPath } from './assets/ink.ts';
 export { objectBounds, insidePolygons, clipPolylines } from './geometry/objects.ts';
 export { openingsOf, openWallRings, cutSegments, floorTest } from './geometry/openings.ts';
 export { outerArchways, archwayEnds, openAreas, type OuterArchway } from './render/open-ends.ts';
-export { tightBounds, selectionBounds, unionOf, wholeSquares, cropFrame, frameQuery, cropScene, clipLinesToBox, MAX_CROP, MAX_RENDER_SIDE, MAX_RENDER_PIXELS, renderSizeProblem, type CropRequest } from './crop.ts';
+export { tightBounds, selectionBounds, unionOf, contentFrame, FIT_PADDING, wholeSquares, cropFrame, frameQuery, cropScene, clipLinesToBox, MAX_CROP, MAX_RENDER_SIDE, MAX_RENDER_PIXELS, renderSizeProblem, type CropRequest } from './crop.ts';
 export { roughFloor, drawnFloor, hasRoughness, amplitudeOf, ROUGHNESS_AMPLITUDE } from './geometry/rough.ts';
 export { scatterAlong, type ScatterOptions, type Placement } from './scatter.ts';
 export { isObstacle, propsOverlap, blockingProps, freeSpot, keepClear, overlapReport, OVERLAP_TOLERANCE, type Placed } from './placement.ts';

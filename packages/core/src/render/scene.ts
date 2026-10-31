@@ -290,10 +290,13 @@ function stairLines(s: Stairs): Polyline[] {
   return lines;
 }
 
+/** How far a style draws outside the walls (hatching, shading), in squares. */
+export const hatchReach = (style: Style): number => Math.max(style.hatching?.width ?? 0, style.shading?.width ?? 0) + (style.hatching ? style.hatching.length : 0);
+
 export function buildScene(map: DelveMap, opts: RenderOptions = {}, style: Style = resolveStyle(map)): Scene {
   const view = opts.view ?? 'gm';
   const seed = map.seed ?? hashString(map.id);
-  const reach = Math.max(style.hatching?.width ?? 0, style.shading?.width ?? 0) + (style.hatching ? style.hatching.length : 0);
+  const reach = hatchReach(style);
 
   // Fog of war in the players' view: the picture is built only from what they
   // have seen. Walls are the real walls cut to that area, and nothing else of

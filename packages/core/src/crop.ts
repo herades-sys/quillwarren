@@ -2,11 +2,13 @@
 // VTT's grid lines up with the picture. Shared by the MCP export tool and the
 // editor's "Crop to selection".
 import { FillRule, intersectD, type PathD, type PathsD } from 'clipper2-ts';
+import { propHidden } from './assets/catalog.ts';
 import { polygonsOf } from './geometry/floor.ts';
 import { objectBounds } from './geometry/objects.ts';
+import { amplitudeOf } from './geometry/rough.ts';
 import { PRECISION, toPath, type Bounds, type Polygon } from './geometry/shapes.ts';
 import { doorSegment, type Polyline } from './geometry/walls.ts';
-import type { Layer, Scene } from './render/scene.ts';
+import type { Layer, Scene, View } from './render/scene.ts';
 import type { DelveMap, MapObject, Point } from './schema.ts';
 import { ValidationError } from './validate.ts';
 
@@ -29,6 +31,40 @@ export function unionOf(list: readonly (Bounds | null)[]): Bounds | null {
 export function selectionBounds(map: DelveMap, ids: readonly string[]): Bounds | null {
   const want = new Set(ids);
   return unionOf(map.objects.filter((o) => want.has(o.id)).map((o) => tightBounds(o, map)));
+}
+
+/** Squares a frame fitted to the content keeps round it, so lines along its edge (walls, outlines) aren't cut. */
+export const FIT_PADDING = 0.25;
+
+/**
+ * The part of the map that holds something drawn, for a picture fitted to its
+ * content (the library's map cards): every object the view draws, labels,
+ * markers, stairs, height areas, terrain and notes on the map included
+ * (handout-only notes never; GM-only props, pictures and markers not in the
+ * players' view), with `reach` squares round rooms and corridors for the
+ * hatching and shading outside the walls (more by rough walls' wobble) and
+ * half a square round terrain for ragged edges. The page size (grid.bounds)
+ * doesn't count. Out to quarter squares; null when nothing is drawn.
+ */
+export function contentFrame(map: DelveMap, o: { view?: View; reach?: number } = {}): Bounds | null {
+  const view = o.view ?? 'gm';
+  const reach = Math.max(0, o.reach ?? 0);
+  const grow = (b: Bounds, r: number): Bounds => ({ x0: b.x0 - r, y0: b.y0 - r, x1: b.x1 + r, y1: b.y1 + r });
+  const parts: Bounds[] = [];
+  for (const obj of map.objects) {
+    if (obj.type === 'inscription' && !obj.onMap) continue;
+    if (view === 'players' && (obj.type === 'marker' || (obj.type === 'prop' && propHidden(obj)) || (obj.type === 'image' && obj.gmOnly))) continue;
+    const b = tightBounds(obj, map);
+    if (!b) continue;
+    if (obj.type === 'room' || obj.type === 'corridor') parts.push(grow(b, reach + amplitudeOf(obj.roughness ?? map.roughness)));
+    else if (obj.type === 'terrain') parts.push(grow(b, 0.5));
+    else parts.push(b);
+  }
+  const all = unionOf(parts);
+  if (!all) return null;
+  const down = (v: number) => Math.floor(v * 4 + 1e-9) / 4;
+  const up = (v: number) => Math.ceil(v * 4 - 1e-9) / 4;
+  return { x0: down(all.x0 - FIT_PADDING), y0: down(all.y0 - FIT_PADDING), x1: up(all.x1 + FIT_PADDING), y1: up(all.y1 + FIT_PADDING) };
 }
 
 /** Out to whole squares (a hair's breadth of floating point doesn't add a square). */

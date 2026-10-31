@@ -1,5 +1,5 @@
 // Shared by the preview page and the map API: query -> scene -> SVG or PNG.
-import { buildScene, cropScene, handoutSvg, MAX_CROP, renderSizeProblem, resolveStyle, sceneToSvg, wholeSquares, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
+import { buildScene, contentFrame, cropScene, handoutSvg, hatchReach, MAX_CROP, renderSizeProblem, resolveStyle, sceneToSvg, wholeSquares, type DelveMap, type HandoutOptions, type Scene, type Style, type View } from '@delve/core';
 import { assets } from './assets.ts';
 import { svgToPng } from './png.ts';
 
@@ -18,6 +18,12 @@ export interface RenderQuery {
   bounds?: string;
   /** "x0,y0,x1,y1" in squares: draw exactly this part (Delve Table pages, so the GM and players pictures line up). */
   frame?: string;
+  /**
+   * "content": fit the picture to what is drawn (core contentFrame), not to the
+   * page, at quarter squares (the library's map cards). Ignored with frame, and
+   * blind to fog; a map with nothing drawn keeps the usual picture.
+   */
+  fit?: string;
 }
 
 export class RenderQueryError extends Error {}
@@ -59,7 +65,8 @@ export function sceneFor(map: DelveMap, q: RenderQuery): Scene {
   }
   const view = asView(q.view);
   const fog = q.fog === '1' ? (view === 'players' ? 'hide' : 'dim') : undefined;
-  const frame = parseFrame(q.frame);
+  if (q.fit !== undefined && q.fit !== 'content') throw new RenderQueryError('fit must be content');
+  const frame = parseFrame(q.frame) ?? (q.fit === 'content' ? (contentFrame(m, { view, reach: hatchReach(style) }) ?? undefined) : undefined);
   const scene = buildScene(m, { view, grid: q.grid !== '0', background: q.background !== '0', assets: assets.body, ...(fog ? { fog } : {}), ...(q.bounds === 'full' ? { fullBounds: true } : {}), ...(frame ? { frame } : {}) }, style);
   // a cropped picture holds only what it shows: resvg panics on clipped geometry running far past the
   // picture (stairs cut by the frame did it), and that kills the whole server (see cropScene)

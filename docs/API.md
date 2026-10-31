@@ -453,7 +453,7 @@ Writes need the token or an editor login; reads are public like maps. `segment` 
 
 | Path | Query | Returns |
 |---|---|---|
-| `/maps/:id/render.png` | `ppg` (10–300, default **70**, Roll20's grid), `view` (`gm` or `players`), `style` (preset override), `grid=0`, `background=0`, `fog=1`, `bounds=full` (with fog, keep the unfogged picture size), `frame=x0,y0,x1,y1` (crop: just this part, in squares, widened to whole squares, at most 1000 each way) | PNG. The filename includes the size in squares, e.g. `crypt_classic-hatching_players_26x38.png` |
+| `/maps/:id/render.png` | `ppg` (10–300, default **70**, Roll20's grid), `view` (`gm` or `players`), `style` (preset override), `grid=0`, `background=0`, `fog=1`, `bounds=full` (with fog, keep the unfogged picture size), `frame=x0,y0,x1,y1` (crop: just this part, in squares, widened to whole squares, at most 1000 each way), `fit=content` (fitted to what is drawn instead of the page: every object the view draws, labels, markers and notes on the map included, with the style's hatching round the rooms, at quarter squares; ignored with `frame`, blind to fog, an empty map keeps the usual picture; the library's map cards use it) | PNG. The filename includes the size in squares, e.g. `crypt_classic-hatching_players_26x38.png` |
 | `/maps/:id/render.svg` | same | SVG, scalable, for print |
 | `/maps/:id/describe` | | Plain text: rooms, sizes, connections, doors |
 | `/maps/:id/export.ds` | `view` (`gm` or `players`) | A Dungeon Scrawl save file, e.g. `crypt.ds` or `crypt_players.ds`. Open it in Dungeon Scrawl with File → Open save file |

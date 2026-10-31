@@ -153,7 +153,11 @@ export function ago(iso: string, now = Date.now()): string {
 
 /** Big maps (a Watabou city) take seconds in the hatched styles: their card picture uses the plain one. */
 const BIG = 300;
-const thumbUrl = (m: MapSummary): string => `/api/v1/maps/${encodeURIComponent(m.id)}/render.svg?view=gm${m.objects > BIG ? '&style=clean' : ''}&rev=${m.rev}`;
+/** The card picture: fitted to what is drawn (not the page), so the map fills the card whatever its size or shape. */
+const thumbUrl = (m: MapSummary): string => `/api/v1/maps/${encodeURIComponent(m.id)}/render.svg?view=gm&fit=content${m.objects > BIG ? '&style=clean' : ''}&rev=${m.rev}`;
+
+/** The card picture, or for a map with nothing on it yet a note instead of a blank grid. */
+const thumb = (m: MapSummary): string => (m.objects ? `<img src="${thumbUrl(m)}" alt="" loading="lazy">` : '<span class="map-card-empty">Empty map</span>');
 
 const ICON = {
   play: '<svg class="icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
@@ -206,7 +210,7 @@ function placeCard(p: Place, loggedIn: boolean): string {
   const body = `place-${esc(p.key)}`;
   const meta = `${group ? '' : `${objects} object${objects === 1 ? '' : 's'} · `}edited ${esc(ago(p.updated))}`;
   return `<article class="card map-card elev-sm place ${group ? 'group' : 'single'}"${group ? ` data-place="${esc(p.key)}"` : ''}>
-  <div class="map-card-thumb"><a class="map-card-thumb-link" href="${open}" tabindex="-1" aria-hidden="true"><img src="${thumbUrl(ground)}" alt="" loading="lazy"></a>
+  <div class="map-card-thumb"><a class="map-card-thumb-link" href="${open}" tabindex="-1" aria-hidden="true">${thumb(ground)}</a>
   <div class="map-card-actions"><a class="btn btn-primary btn-sm" href="${open}">${ICON.play}Open</a>${group ? `<a class="btn btn-secondary btn-sm" href="/maps/${encodeURIComponent(top.id)}/3d" title="All storeys stacked in 3D">3D</a>` : ''}</div></div>
   <div class="map-card-body">
     <div class="lib-title-row"><a class="map-card-title" href="${open}">${esc(p.name)}</a>${group ? '' : menu(ground, loggedIn, `Downloads for ${p.name}`)}</div>
@@ -349,7 +353,10 @@ export const LIBRARY_CSS = `
   .map-card.place .map-card-thumb { border-radius: var(--radius-md) var(--radius-md) 0 0; }
   .map-card:has(details[open]) { z-index: 20; }
   .map-card.open { box-shadow: var(--shadow-md), 0 0 0 1px var(--color-accent); }
-  .map-card-thumb img { object-fit: contain; padding: 6px; }
+  /* the picture is fitted to the map's content (render.svg fit=content): the same padding round every map, centred, never cropped */
+  .map-card-thumb img { object-fit: contain; object-position: center; padding: 10px; }
+  .map-card-thumb-link:has(.map-card-empty) { display: flex; align-items: center; justify-content: center; }
+  .map-card-empty { padding: 4px 12px; border: 1px dashed var(--color-control-border); border-radius: var(--radius-md); color: var(--color-text-muted); font-size: var(--text-sm); }
   /* the picture links to the map; Open and 3D sit on the picture (as in the design), so an opened storey list never covers them */
   .map-card-thumb-link { display: block; width: 100%; height: 100%; }
   .lib-title-row { display: flex; align-items: flex-start; gap: 6px; }
