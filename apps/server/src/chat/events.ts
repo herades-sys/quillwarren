@@ -31,7 +31,8 @@ export type ChatEvent =
   | { type: 'plan'; steps: PlanStep[]; note?: string; mode?: 'activity' }
   /** Subscription usage, 0..1 of each window. */
   | { type: 'usage'; fiveHour?: number; sevenDay?: number; status?: string; resetsAt?: number }
-  | { type: 'done'; session: string; ok: boolean; turns: number; ms: number; error?: string }
+  /** tokens: the reply's token use, sent only by the desktop app's API-key backends (chat/api-agent.ts). */
+  | { type: 'done'; session: string; ok: boolean; turns: number; ms: number; error?: string; tokens?: { input: number; output: number; cacheRead: number; cacheWrite: number } }
   /** code "no_session": the conversation to resume is gone; start a new one. */
   | { type: 'error'; error: string; code?: 'no_session' | 'busy' | 'timeout' | 'bridge' };
 

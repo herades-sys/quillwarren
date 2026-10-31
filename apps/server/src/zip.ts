@@ -1,6 +1,6 @@
 // Just enough ZIP for .ds files: write one stored (uncompressed) entry, and read
 // an entry back whether it's stored or deflated.
-import { crc32, inflateRawSync } from 'node:zlib';
+import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
 
 export class ZipError extends Error {
   constructor(message: string) {
@@ -92,4 +92,63 @@ export function unzipEntry(buf: Buffer, name: string): Buffer {
     p += 46 + nlen + elen + clen;
   }
   throw new ZipError(`the ZIP has no "${name}" entry`);
+}
+
+/**
+ * A ZIP of several files, each deflated (or stored when that is no smaller),
+ * with UTF-8 names and forward slashes: the desktop app's Claude Desktop
+ * extension (desktop/claude-extension.ts). Not used by the web server.
+ */
+export function zipFiles(files: readonly { name: string; data: Buffer }[], when = new Date()): Buffer {
+  const { time, date } = dosDateTime(when);
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const f of files) {
+    if (!f.name || f.name.startsWith('/') || f.name.includes('\\') || f.name.split('/').includes('..')) throw new ZipError(`bad entry name "${f.name}"`);
+    const nameBuf = Buffer.from(f.name, 'utf8');
+    const crc = crc32(f.data);
+    const deflated = deflateRawSync(f.data, { level: 9 });
+    const method = deflated.length < f.data.length ? 8 : 0;
+    const body = method === 8 ? deflated : f.data;
+    const head = (sig: number, size: number) => {
+      const b = Buffer.alloc(size);
+      b.writeUInt32LE(sig, 0);
+      return b;
+    };
+    const local = head(0x04034b50, 30);
+    local.writeUInt16LE(20, 4); // version needed: 2.0 (deflate)
+    local.writeUInt16LE(0x0800, 6); // UTF-8 names
+    local.writeUInt16LE(method, 8);
+    local.writeUInt16LE(time, 10);
+    local.writeUInt16LE(date, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(body.length, 18);
+    local.writeUInt32LE(f.data.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);
+    const central = head(0x02014b50, 46);
+    central.writeUInt16LE(20, 4); // made by
+    central.writeUInt16LE(20, 6); // needed
+    central.writeUInt16LE(0x0800, 8);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt16LE(time, 12);
+    central.writeUInt16LE(date, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(body.length, 20);
+    central.writeUInt32LE(f.data.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, nameBuf, body);
+    centrals.push(central, nameBuf);
+    offset += local.length + nameBuf.length + body.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(cd.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, end]);
 }

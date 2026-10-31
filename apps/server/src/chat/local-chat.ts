@@ -39,6 +39,7 @@ import {
 } from './local-agent.ts';
 import { buildSetup } from './local-setup.ts';
 import type { ChatBackendName, ChatBackends, LocalChatRun } from './route.ts';
+import { apiChat, checkModelId, DEFAULT_API_SETTINGS, isKeyProvider, KEY_PROVIDERS, type ApiChatOptions, type ApiModelSettings, type KeyProvider } from './api-chat.ts';
 
 // ---------- settings ----------
 
@@ -53,11 +54,15 @@ export interface LocalModelSettings {
 export interface ChatSettings {
   backend: ChatBackendName;
   local: LocalModelSettings;
+  /** The API-key backends' models (chat/api-chat.ts); their keys are kept apart, in api-keys.ts. */
+  anthropic?: ApiModelSettings;
+  openai?: ApiModelSettings;
 }
 
 export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   backend: 'none',
   local: { source: 'server', url: 'http://127.0.0.1:11434/v1', model: 'qwen3:8b' },
+  ...structuredClone(DEFAULT_API_SETTINGS),
 };
 
 /** The addresses the settings suggest (the default ports of each server). */
@@ -109,8 +114,21 @@ export function parseChatSettings(body: unknown, offered: readonly ChatBackendNa
     if (u) problems.push(`local.url: ${u}`);
     if (m) problems.push(`local.model: ${m}`);
   }
+  // the API-key backends' model choice (their keys are handled before this, by api-chat.ts)
+  const out: ChatSettings = { backend, local };
+  for (const p of KEY_PROVIDERS) {
+    let s: ApiModelSettings | undefined = before[p] ? { ...before[p] } : undefined;
+    const part = b[p] as Record<string, unknown> | undefined;
+    if (part && typeof part === 'object' && part.model !== undefined) {
+      const problem = checkModelId(part.model);
+      if (problem) problems.push(`${p}.model: ${problem}`);
+      else s = { ...s, model: String(part.model).trim() };
+    }
+    if (backend === p && !s?.model) problems.push(`${p}.model: ${checkModelId('')}`);
+    if (s) out[p] = s;
+  }
   if (problems.length) throw new ValidationError(problems);
-  return { backend, local };
+  return out;
 }
 
 /** The settings in <DELVE_DATA>/chat-settings.json (in memory without a file). */
@@ -127,6 +145,10 @@ export class ChatSettingsStore {
       if (saved && typeof saved === 'object') {
         if (typeof saved.backend === 'string') this.value.backend = saved.backend as ChatBackendName;
         if (saved.local && typeof saved.local === 'object') this.value.local = { ...this.value.local, ...saved.local };
+        for (const p of KEY_PROVIDERS) {
+          const s = saved[p];
+          if (s && typeof s === 'object' && typeof s.model === 'string') this.value[p] = { model: s.model, ...(Array.isArray(s.models) ? { models: s.models.filter((m) => m && typeof m.id === 'string' && typeof m.name === 'string').slice(0, 200) } : {}) };
+        }
       }
     } catch {
       // none yet, or unreadable: the defaults
@@ -309,6 +331,8 @@ export interface LocalChatOptions {
   /** Ollama's context size (its OpenAI endpoint can't set one); default 16384, as the bench's lean runs. */
   numCtx?: number;
   log?: (msg: string) => void;
+  /** Also offer Claude and OpenAI on the user's own API keys (chat/api-chat.ts): the desktop app. */
+  api?: Omit<ApiChatOptions, 'log'>;
 }
 
 /** A model client that gives up as soon as the chat is stopped. */
@@ -355,14 +379,16 @@ async function inProcessTools(ctx: AppContext, base: string): Promise<{ client: 
   };
 }
 
-/** The chat backends of the desktop app: none, and a local model. */
+/** The chat backends of the desktop app: none, a local model, and with `api` Claude and OpenAI on the user's own API keys. */
 export function localChatBackends(ctx: AppContext, o: LocalChatOptions = {}): ChatBackends {
-  const offered = o.offered ?? (['none', 'local'] as const);
+  const offered = o.offered ?? (o.api ? (['none', 'local', 'anthropic', 'openai'] as const) : (['none', 'local'] as const));
   const settings = new ChatSettingsStore(o.settingsFile, o.defaults);
   const conversations = new Conversations();
   const log = o.log ?? (() => {});
   const timeLimitMs = o.timeLimitMs ?? 15 * 60_000;
   const maxErrors = 8;
+  const api = o.api ? apiChat(ctx, { ...o.api, log }) : undefined;
+  const apiSettings = (p: KeyProvider): ApiModelSettings => settings.get()[p] ?? structuredClone(DEFAULT_API_SETTINGS[p]);
 
   async function client(local: LocalModelSettings): Promise<{ client: ModelClient; model: string }> {
     const timeoutMs = o.requestTimeoutMs ?? 600_000;
@@ -386,6 +412,7 @@ export function localChatBackends(ctx: AppContext, o: LocalChatOptions = {}): Ch
       suggestions: SERVER_SUGGESTIONS,
       ...(o.links ? { links: o.links } : {}),
       ...(b ? { builtin: b } : {}),
+      ...(api ? api.view(apiSettings) : {}),
     };
   };
 
@@ -395,13 +422,27 @@ export function localChatBackends(ctx: AppContext, o: LocalChatOptions = {}): Ch
     current: () => view().backend,
     settings: view,
     async saveSettings(body) {
-      const next = parseChatSettings(body, offered, settings.get());
+      const b = (body ?? {}) as Record<string, unknown>;
+      // everything is checked before anything is kept: the settings, then the keys (a bad one refuses the whole save)
+      let next = parseChatSettings(b, offered, settings.get());
+      if (api) await api.applyKeys(b);
+      if (api && isKeyProvider(next.backend) && !api.keys.has(next.backend)) {
+        if (b.backend === next.backend) throw new ValidationError([`${next.backend}.key: add your API key first`]);
+        next = { ...next, backend: 'none' }; // its key was removed: the chat is off
+      }
       settings.set(next);
-      log(`chat settings: backend ${next.backend}, ${next.local.source === 'builtin' ? 'built-in runtime' : `${next.local.model} at ${next.local.url}`}`);
+      log(`chat settings: backend ${next.backend}, ${isKeyProvider(next.backend) ? next[next.backend]?.model : next.local.source === 'builtin' ? 'built-in runtime' : `${next.local.model} at ${next.local.url}`}`);
       return view();
     },
     async test(body) {
       const b = (body ?? {}) as Record<string, unknown>;
+      if (isKeyProvider(b.backend)) {
+        if (!api || !offered.includes(b.backend)) throw new ValidationError([`backend: one of ${offered.join(', ')}`]);
+        const got = await api.test(b.backend, b);
+        // the key's models become the choice in the settings
+        if (got.ok && got.models) settings.set({ ...settings.get(), [b.backend]: { ...apiSettings(b.backend), models: got.models } });
+        return got;
+      }
       const problem = checkServerUrl(b.url);
       if (problem) throw new ValidationError([`url: ${problem}`]);
       const model = typeof b.model === 'string' ? b.model.trim() : '';
@@ -413,6 +454,8 @@ export function localChatBackends(ctx: AppContext, o: LocalChatOptions = {}): Ch
       }
     },
     async localStatus() {
+      const backend = view().backend;
+      if (api && isKeyProvider(backend)) return api.status(backend, apiSettings(backend));
       const s = settings.get().local;
       if (s.source === 'builtin') {
         const b = o.builtin?.status() ?? { available: false, note: 'the built-in model runtime is not part of this build' };
@@ -427,6 +470,8 @@ export function localChatBackends(ctx: AppContext, o: LocalChatOptions = {}): Ch
       }
     },
     async runLocal(run: LocalChatRun) {
+      const backend = view().backend;
+      if (api && isKeyProvider(backend)) return api.run(backend, apiSettings(backend), run);
       const { mapId, request, base, send, signal } = run;
       const s = settings.get();
       const history = conversations.get(request.session);

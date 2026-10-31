@@ -22,6 +22,8 @@ export interface DesktopConfig {
   ollamaModels: string;
   /** The app's version (DELVE_VERSION). */
   version: string;
+  /** The Claude Desktop key while the user has connected Claude Desktop (DELVE_CLAUDE_DESKTOP_KEY); unset: not connected. */
+  claudeKey?: string;
 }
 
 /** The desktop configuration from the environment, or an error saying what is missing. */
@@ -42,5 +44,6 @@ export function desktopConfig(env: NodeJS.ProcessEnv, home = homedir()): Desktop
     ...(env.DELVE_LLAMA_SERVER && isAbsolute(env.DELVE_LLAMA_SERVER) ? { llamaServer: env.DELVE_LLAMA_SERVER } : {}),
     ollamaModels: abs(env.OLLAMA_MODELS, join(home, '.ollama', 'models')),
     version: env.DELVE_VERSION?.trim() || 'desktop',
+    ...(env.DELVE_CLAUDE_DESKTOP_KEY && SECRET_PATTERN.test(env.DELVE_CLAUDE_DESKTOP_KEY) ? { claudeKey: env.DELVE_CLAUDE_DESKTOP_KEY } : {}),
   };
 }

@@ -2,15 +2,18 @@
 // remembered place, the log files and "Copy logs", and the server child process
 // (started here with this Node and the real desktop server entry, as the app
 // starts it with the bundled node.exe).
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ClaudeDesktopLink, KEY_PATTERN } from '../src/claude-desktop.ts';
 import { collectLogs, LogFile, redact, tail } from '../src/logs.ts';
 import { menuTemplate, type MenuActions } from '../src/menu.ts';
 import { desktopPaths, resourcePaths } from '../src/paths.ts';
 import { ServerProcess, serverEnv } from '../src/server-process.ts';
+import { vaultReply } from '../src/vault.ts';
 import { DEFAULT_SIZE, parseWindowState, placeWindow } from '../src/window-state.ts';
 
 let dir: string;
@@ -29,6 +32,7 @@ describe('folders', () => {
       models: join('/u/AppData/Local', 'Delve', 'models'),
       windowState: join('/u/AppData/Roaming', 'Delve', 'window-state.json'),
       desktopFile: join('/u/AppData/Roaming', 'Delve', 'desktop.json'),
+      claudeDesktopFile: join('/u/AppData/Roaming', 'Delve', 'claude-desktop.json'),
     });
     expect(desktopPaths({ appData: '/a' }).models).toBe(join('/a', 'Delve', 'models'));
   });
@@ -40,6 +44,7 @@ describe('folders', () => {
       llama: join('/app/resources', 'llama', 'llama-server.exe'),
       notices: join('/app/resources', 'THIRD-PARTY-NOTICES.txt'),
       icon: join('/app/resources', 'icon.png'),
+      mcpb: join('/app/resources', 'Delve.mcpb'),
     });
   });
 });
@@ -63,6 +68,80 @@ describe('the menu', () => {
     expect(went).toEqual(['/', '/import/image', '/models']);
     expect(done).toContain('showAbout');
     expect(done).toContain('copyLogs');
+  });
+
+  it('has Connect to Claude Desktop… beside the chat’s models, and Disconnect only while connected', () => {
+    const done: string[] = [];
+    const actions = new Proxy({} as MenuActions, { get: (_t, name) => () => done.push(String(name)) });
+    type Entry = Item & { enabled?: boolean };
+    const help = (connected: boolean) => {
+      const menus = menuTemplate(actions, { claudeDesktop: connected }) as Entry[];
+      return (menus.find((m) => m.label === '&Help')!.submenu as Entry[]).filter((i) => i.label);
+    };
+    const off = help(false);
+    expect(off.slice(0, 3).map((i) => i.label)).toEqual(['Models for the chat…', 'Connect to Claude Desktop…', 'Disconnect Claude Desktop']);
+    expect(off[2]!.enabled).toBe(false);
+    const on = help(true);
+    expect(on[1]!.label).toBe('Connect to Claude Desktop again…');
+    expect(on[2]!.enabled).toBe(true);
+    on[1]!.click?.();
+    on[2]!.click?.();
+    expect(done).toEqual(['connectClaudeDesktop', 'disconnectClaudeDesktop']);
+  });
+});
+
+describe('Claude Desktop’s connection file', () => {
+  it('makes a key on the first connect, keeps it, writes the port, and revokes it on disconnect', () => {
+    const file = join(dir, 'Delve', 'claude-desktop.json');
+    const link = new ClaudeDesktopLink(file);
+    expect(link.connected()).toBe(false);
+    expect(link.key()).toBe(null);
+    link.setPort(51234); // not connected: nothing written
+    expect(existsSync(file)).toBe(false);
+    const key = link.connect(51234);
+    expect(key).toMatch(KEY_PATTERN);
+    expect(key.length).toBeGreaterThanOrEqual(43);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ app: 'Delve', version: 1, port: 51234, key });
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o077).toBe(0);
+    expect(link.connect(51235)).toBe(key); // connecting again keeps the key
+    link.setPort(null); // Delve closes
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ port: null, key });
+    link.setPort(40000); // the next launch
+    expect(JSON.parse(readFileSync(file, 'utf8')).port).toBe(40000);
+    link.disconnect();
+    expect(existsSync(file)).toBe(false);
+    expect(link.connected()).toBe(false);
+    const next = link.connect(null);
+    expect(next).not.toBe(key); // a new key after a disconnect
+    // a file with a bad key counts as not connected
+    writeFileSync(file, JSON.stringify({ app: 'Delve', version: 1, port: 1, key: 'short' }));
+    expect(link.connected()).toBe(false);
+  });
+
+  it('never uses the window’s launch secret, and the server gets the key only while connected', () => {
+    const paths = desktopPaths({ appData: '/r', localAppData: '/l' });
+    const secret = randomBytes(32).toString('base64url');
+    const link = new ClaudeDesktopLink(join(dir, 'c.json'));
+    const key = link.connect(1);
+    expect(key).not.toBe(secret);
+    const on = serverEnv({ PATH: '/bin', DELVE_CLAUDE_DESKTOP_KEY: 'old' }, { secret, paths, port: 1, version: 'x', claudeKey: key });
+    expect(on.DELVE_CLAUDE_DESKTOP_KEY).toBe(key);
+    const off = serverEnv({ PATH: '/bin', DELVE_CLAUDE_DESKTOP_KEY: 'old' }, { secret, paths, port: 1, version: 'x' });
+    expect(off.DELVE_CLAUDE_DESKTOP_KEY).toBeUndefined();
+  });
+});
+
+describe('the key vault (safeStorage for the chat’s API keys)', () => {
+  const safe = { isEncryptionAvailable: () => true, encryptString: (s: string) => Buffer.from([...s].reverse().join('')), decryptString: (b: Buffer) => [...b.toString()].reverse().join('') };
+  it('seals and opens for the server, and answers nothing else', () => {
+    const sealed = vaultReply({ type: 'vault', id: 'a', op: 'seal', data: 'sk-ant-xyz' }, safe)!;
+    expect(sealed).toMatchObject({ type: 'vault-reply', id: 'a', ok: true });
+    expect(sealed.data).not.toContain('sk-ant-xyz');
+    expect(vaultReply({ type: 'vault', id: 'b', op: 'open', data: sealed.data }, safe)).toEqual({ type: 'vault-reply', id: 'b', ok: true, data: 'sk-ant-xyz' });
+    expect(vaultReply({ type: 'vault', id: 'c', op: 'status' }, safe)).toEqual({ type: 'vault-reply', id: 'c', ok: true, available: true });
+    expect(vaultReply({ type: 'ready', port: 1 }, safe)).toBeNull();
+    expect(vaultReply({ type: 'vault', id: 'd', op: 'open', data: 'x' }, { ...safe, decryptString: () => { throw new Error('no'); } })).toMatchObject({ ok: false });
+    expect(vaultReply({ type: 'vault', id: 'e', op: 'seal', data: 'k' }, { ...safe, isEncryptionAvailable: () => false })).toMatchObject({ ok: false, error: expect.stringMatching(/isn’t available/) });
   });
 });
 
@@ -115,6 +194,16 @@ describe('logs', () => {
     expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
     expect(redact('x-delve-desktop: AAAAAAAAAAAAAAAAAAAAAAAA', [])).toBe('x-delve-desktop: [secret]');
   });
+
+  it('blanks the Claude Desktop key and any Anthropic or OpenAI key, wherever it shows up', () => {
+    const key = randomBytes(32).toString('base64url');
+    mkdirSync(join(dir, 'logs'));
+    writeFileSync(join(dir, 'logs', 'server.log'), [`{"key":"${key}"}`, 'x-api-key: sk-ant-api03-FAKEFAKEFAKEFAKEFAKE', 'error sk-proj-FAKEFAKEFAKEFAKEFAKE00 refused', `"key": "${'Z'.repeat(43)}"`].join('\n'));
+    const text = collectLogs(join(dir, 'logs'), { Delve: '0.1.0' }, ['launch-secret-0000000000', key, null]);
+    expect(text).not.toContain(key);
+    expect(text).not.toMatch(/sk-ant-api03|sk-proj-FAKE|ZZZZZZZZZZZZZZZZ/);
+    expect(text).toContain('refused');
+  });
 });
 
 describe('the server process', () => {
@@ -158,6 +247,59 @@ describe('the server process', () => {
     expect(crashed).toBe(false);
     expect(output).toContain('shutting down (the app asked)');
     expect(existsSync(join(paths.data, 'delve.db'))).toBe(true);
+  }, 60_000);
+
+  it('connects Claude Desktop end to end: the key over IPC, the connection file, the bridge reaching /mcp; Disconnect closes it', async () => {
+    const paths = desktopPaths({ appData: join(dir, 'Roaming'), localAppData: join(dir, 'Local') });
+    mkdirSync(paths.userData, { recursive: true });
+    const secret = randomBytes(32).toString('base64url');
+    const link = new ClaudeDesktopLink(paths.claudeDesktopFile);
+    let output = '';
+    const s = new ServerProcess(
+      { node: process.execPath, entry: resolve(import.meta.dirname, '../../server/src/desktop/main.ts'), secret, paths, port: 0, version: '0.1.0-test' },
+      { output: (t) => (output += t), crashed: () => {} },
+    );
+    const port = await s.start();
+    // the bridge, as Claude Desktop starts it, with %APPDATA% pointing here
+    const bridge = spawn(process.execPath, [resolve(import.meta.dirname, '../claude-extension/server/index.js')], { env: { PATH: process.env.PATH ?? '', APPDATA: join(dir, 'Roaming') }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let buf = '';
+    const answers = new Map<number, (m: { result?: { content?: { text?: string }[]; isError?: boolean } }) => void>();
+    bridge.stdout!.setEncoding('utf8');
+    bridge.stdout!.on('data', (d: string) => {
+      buf += d;
+      for (let nl = buf.indexOf('\n'); nl >= 0; nl = buf.indexOf('\n')) {
+        const m = JSON.parse(buf.slice(0, nl)) as { id?: number; result?: { content?: { text?: string }[]; isError?: boolean } };
+        buf = buf.slice(nl + 1);
+        if (typeof m.id === 'number') answers.get(m.id)?.(m);
+      }
+    });
+    let id = 0;
+    const listMaps = () =>
+      new Promise<{ text: string; isError: boolean }>((done) => {
+        const n = ++id;
+        answers.set(n, (m) => done({ text: m.result?.content?.[0]?.text ?? '', isError: m.result?.isError === true }));
+        bridge.stdin!.write(`${JSON.stringify({ jsonrpc: '2.0', id: n, method: 'tools/call', params: { name: 'list_maps', arguments: {} } })}\n`);
+      });
+    try {
+      expect((await listMaps()).text).toMatch(/isn’t connected/); // no connection file yet
+      const key = link.connect(port); // Help → Connect to Claude Desktop…
+      expect(await s.request({ type: 'claude-desktop', key }, 'claude-desktop')).toEqual({ type: 'claude-desktop', on: true });
+      const on = await listMaps();
+      expect(on.isError).toBe(false);
+      expect(on.text).toMatch(/No maps yet|map_/);
+      // Help → Disconnect Claude Desktop
+      link.disconnect();
+      expect(await s.request({ type: 'claude-desktop', key: null }, 'claude-desktop')).toEqual({ type: 'claude-desktop', on: false });
+      expect((await listMaps()).text).toMatch(/isn’t connected/);
+      // even with the old file back, the server no longer takes the old key
+      writeFileSync(paths.claudeDesktopFile, JSON.stringify({ app: 'Delve', version: 1, port, key }));
+      expect((await listMaps()).text).toMatch(/isn’t connected/);
+      expect(output).toContain('Claude Desktop access on');
+      expect(output).not.toContain(key);
+    } finally {
+      bridge.stdin!.end();
+      await s.stop();
+    }
   }, 60_000);
 
   it('says what is missing instead of starting', async () => {

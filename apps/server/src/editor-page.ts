@@ -191,7 +191,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
     <div class="select ed-model"><select id="chat-model" class="input" aria-label="Model"></select>${ic('chevron-down', 13)}</div>
     <span class="spacer"></span>
     <button class="btn btn-icon" type="button" id="chat-plan" aria-pressed="true" aria-label="Show ${ai}’s plan" title="Show ${ai}’s plan: its steps, progress and time left">${PLAN_ICON}</button>${chatSettings ? `
-    <button class="btn btn-icon" type="button" id="chat-settings" aria-pressed="false" aria-label="Chat settings" title="Chat settings: off, or a local model">${ic('settings', 17)}</button>` : ''}
+    <button class="btn btn-icon" type="button" id="chat-settings" aria-pressed="false" aria-label="Chat settings" title="Chat settings: who answers">${ic('settings', 17)}</button>` : ''}
     <button class="btn btn-icon" type="button" id="chat-new" aria-label="New conversation" title="Start a new conversation">${ic('plus', 17)}</button>
     <button class="btn btn-icon" type="button" id="chat-close" aria-label="Collapse ${ai}" title="Collapse · Ctrl .">${icon('chevron-right', { size: 17, className: 'ed-collapse' })}</button></div>
 ${chatSettings ? `  <div class="ed-chat-settings" id="chat-settings-pane" hidden></div>

@@ -2,7 +2,9 @@
 // what each item does. Pure (no Electron at run time), so it is tested on its
 // own (apps/desktop/test/desktop-app.test.ts). The app is one person's editor:
 // it has no Delve Table and no players' screen, so neither has a menu item
-// (docs/DESKTOP.md, "What the Windows app leaves out").
+// (docs/DESKTOP.md, "What the Windows app leaves out"). The Help menu has the
+// assistants: the chat's models and Claude Desktop (docs/DESKTOP.md, "Claude
+// Desktop").
 import type { MenuItemConstructorOptions } from 'electron';
 
 export interface MenuActions {
@@ -21,9 +23,18 @@ export interface MenuActions {
   toggleDevTools(): void;
   openNotices(): void;
   showAbout(): void;
+  /** "Connect to Claude Desktop…": explains, turns access on, opens the extension (main.ts). */
+  connectClaudeDesktop(): void;
+  /** "Disconnect Claude Desktop": revokes the key. */
+  disconnectClaudeDesktop(): void;
 }
 
-export function menuTemplate(a: MenuActions): MenuItemConstructorOptions[] {
+export interface MenuState {
+  /** Claude Desktop is connected (claude-desktop.ts). */
+  claudeDesktop: boolean;
+}
+
+export function menuTemplate(a: MenuActions, state: MenuState = { claudeDesktop: false }): MenuItemConstructorOptions[] {
   // No Edit menu: the editor handles Ctrl Z, Ctrl D, Ctrl 0 itself, and text fields get copy and paste from Windows.
   return [
     {
@@ -54,7 +65,10 @@ export function menuTemplate(a: MenuActions): MenuItemConstructorOptions[] {
     {
       label: '&Help',
       submenu: [
+        // the assistants: a local model for the chat, or Claude in Claude Desktop working on Delve's maps
         { label: 'Models for the chat…', click: () => a.go('/models') },
+        { label: state.claudeDesktop ? 'Connect to Claude Desktop again…' : 'Connect to Claude Desktop…', click: () => a.connectClaudeDesktop() },
+        { label: 'Disconnect Claude Desktop', enabled: state.claudeDesktop, click: () => a.disconnectClaudeDesktop() },
         { type: 'separator' },
         { label: 'Copy logs', click: () => a.copyLogs() },
         { label: 'Open the logs folder', click: () => a.openLogsFolder() },

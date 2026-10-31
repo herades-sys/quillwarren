@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import websocket from '@fastify/websocket';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { FORMAT, FORMAT_VERSION } from '@delve/core';
 import { AccountStore } from './accounts/store.ts';
 import { registerApi } from './api.ts';
@@ -65,6 +65,14 @@ export interface AppOptions {
   chatBackends?: (ctx: AppContext) => ChatBackends;
   /** Hooks and routes added before any other (the desktop gate, the model manager). */
   extend?: (app: FastifyInstance, ctx: AppContext) => void;
+  /**
+   * /mcp without the API token: the requests the desktop gate let in with the
+   * Claude Desktop key (desktop/gate.ts). Unset: the API token and chat tokens
+   * only, as on the web server.
+   */
+  mcpGrant?: (req: FastifyRequest) => boolean;
+  /** A paragraph added to the MCP server's instructions (the desktop app: links open only inside the app). */
+  mcpNote?: string;
 }
 
 /** What `extend` and `chatBackends` get to work with. */
@@ -144,7 +152,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerAssets(scoped);
     registerImages(scoped, { images, store, token: opts.token, sessions: auth.sessions });
     registerPropRoutes(scoped, { props, store, token: opts.token, auth });
-    registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens, images, props });
+    registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens, images, props, ...(opts.mcpGrant ? { grant: opts.mcpGrant } : {}), ...(opts.mcpNote ? { note: opts.mcpNote } : {}) });
     registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat, backends });
     registerLogin(scoped, auth, { adminSection: () => requestsSection(feedback.summary()) });
     registerViewer(scoped, info, store, auth, opts.chat, backends, multiplayer);

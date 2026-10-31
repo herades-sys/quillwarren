@@ -4,16 +4,21 @@
 // per-launch secret the server asks for, and shows the editor in one window.
 // One instance at a time; the window remembers its size and place; quitting
 // stops the server (and with it the model runtime) cleanly. The Help menu has
-// "Copy logs" for sending problems back. See docs/DESKTOP.md.
+// "Copy logs" for sending problems back, and "Connect to Claude Desktop…",
+// which lets Claude in Claude Desktop work on the maps through the Delve
+// extension (claude-desktop.ts). The server's key vault for the chat's API
+// keys is Electron's safeStorage, answered here (vault.ts). See docs/DESKTOP.md.
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, BrowserWindow, clipboard, dialog, Menu, nativeTheme, screen, session, shell, type WebContents } from 'electron';
-import { collectLogs, LogFile } from './logs.ts';
+import { app, BrowserWindow, clipboard, dialog, Menu, nativeTheme, safeStorage, screen, session, shell, type WebContents } from 'electron';
+import { CLAUDE_DOWNLOAD_URL, ClaudeDesktopLink } from './claude-desktop.ts';
+import { collectLogs, LogFile, redact } from './logs.ts';
 import { menuTemplate } from './menu.ts';
 import { desktopPaths, resourcePaths } from './paths.ts';
 import { ServerProcess } from './server-process.ts';
 import { setUpUpdates } from './updater.ts';
+import { vaultReply } from './vault.ts';
 import { parseWindowState, placeWindow, MIN_SIZE, type WindowState } from './window-state.ts';
 
 // ---------- one instance, fixed folders ----------
@@ -34,6 +39,16 @@ const log = new LogFile(join(paths.logs, 'main.log'));
 const serverLog = new LogFile(join(paths.logs, 'server.log'));
 const res = resourcePaths(app.isPackaged ? process.resourcesPath : join(__dirname, '..', 'build', 'resources'));
 const secret = randomBytes(32).toString('base64url');
+/** Claude Desktop's connection file and key (Help → Connect to Claude Desktop…). */
+const claudeDesktop = new ClaudeDesktopLink(paths.claudeDesktopFile);
+/** Claude Desktop keys of this session, revoked ones too. */
+const claudeKeys = new Set<string>();
+/** Every secret a log or "Copy logs" must never show: the launch secret and the Claude Desktop keys. */
+const secrets = () => {
+  const k = claudeDesktop.key();
+  if (k) claudeKeys.add(k);
+  return [secret, ...claudeKeys];
+};
 log.line(`Delve ${app.getVersion()} starting (Electron ${process.versions.electron}, ${process.platform} ${process.arch})`);
 
 let win: BrowserWindow | null = null;
@@ -93,15 +108,23 @@ function rememberWindow(now = false): void {
 // ---------- the server ----------
 
 async function startServer(): Promise<number> {
+  const claudeKey = claudeDesktop.key();
   server = new ServerProcess(
-    { node: res.node, entry: res.server, secret, paths, port: lastPort(), version: app.getVersion(), ...(existsSync(res.llama) ? { llama: res.llama } : {}) },
+    { node: res.node, entry: res.server, secret, paths, port: lastPort(), version: app.getVersion(), ...(existsSync(res.llama) ? { llama: res.llama } : {}), ...(claudeKey ? { claudeKey } : {}) },
     {
-      output: (text) => serverLog.write(text),
+      output: (text) => serverLog.write(redact(text, secrets())),
       crashed: (code, signal) => void onServerCrash(code, signal),
+      // the server's key vault: API keys sealed and opened with safeStorage (DPAPI)
+      message: (m) => {
+        const reply = vaultReply(m, safeStorage);
+        if (reply) server?.send(reply);
+      },
     },
   );
   const port = await server.start();
   writeJson(paths.desktopFile, { port });
+  // while connected, Claude Desktop's bridge finds this launch's port in its connection file
+  claudeDesktop.setPort(port);
   await giveWindowTheSecret(port);
   log.line(`server ready on 127.0.0.1:${port}`);
   return port;
@@ -227,13 +250,14 @@ function about(): Record<string, string> {
     'Node (Electron)': process.versions.node ?? '',
     System: `${process.platform} ${process.arch} ${process.getSystemVersion()}`,
     Server: server?.running ? `running on 127.0.0.1:${server.port}` : 'not running',
+    'Claude Desktop': claudeDesktop.connected() ? 'connected (Help → Disconnect Claude Desktop to stop it)' : 'not connected',
     Data: paths.data,
     Logs: paths.logs,
   };
 }
 
 function copyLogs(quiet = false): void {
-  const text = collectLogs(paths.logs, about(), [secret]);
+  const text = collectLogs(paths.logs, about(), secrets());
   clipboard.writeText(text);
   if (quiet) return;
   void dialog.showMessageBox({ type: 'info', title: 'Delve', message: 'The logs are on the clipboard.', detail: `${Math.round(text.length / 1024)} KB. Paste them into a message. The full files are in ${paths.logs}.`, buttons: ['OK', 'Open the logs folder'] }).then((r) => {
@@ -260,6 +284,8 @@ function buildMenu(): void {
     openLogsFolder: () => void shell.openPath(paths.logs),
     toggleDevTools: () => win?.webContents.toggleDevTools(),
     openNotices: () => void shell.openPath(res.notices),
+    connectClaudeDesktop: () => void connectClaudeDesktop(),
+    disconnectClaudeDesktop: () => void disconnectClaudeDesktop(),
     showAbout: () =>
       void dialog.showMessageBox({
         type: 'info',
@@ -269,8 +295,101 @@ function buildMenu(): void {
           .map(([k, v]) => `${k}: ${v}`)
           .join('\n')}`,
       }),
-  });
+  }, { claudeDesktop: claudeDesktop.connected() });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ---------- Claude Desktop ----------
+
+/** Tells the running server whether Claude Desktop may use /mcp, and with which key. */
+async function tellServer(key: string | null): Promise<void> {
+  if (!server?.running) return; // the next start reads the key from the connection file
+  try {
+    await server.request({ type: 'claude-desktop', key }, 'claude-desktop');
+  } catch (e) {
+    log.line(`couldn't tell the server about Claude Desktop: ${(e as Error).message}`);
+  }
+}
+
+const parent = () => (win && !win.isDestroyed() ? win : undefined);
+
+/**
+ * Help → Connect to Claude Desktop…: says what happens, turns access on, writes
+ * the connection file and opens the extension, so Claude Desktop shows its own
+ * install confirmation. Without Claude Desktop, points to its download.
+ */
+async function connectClaudeDesktop(): Promise<void> {
+  const opts: Electron.MessageBoxOptions = {
+    type: 'question',
+    title: 'Connect to Claude Desktop',
+    message: 'Let Claude in Claude Desktop work on your Delve maps?',
+    detail: [
+      'Claude Desktop gets a Delve extension. When you chat with Claude there, Claude builds and changes your maps with Delve’s own tools, and you watch every change live in this window. Each change is one undo step here.',
+      '',
+      'Claude runs on your own Claude plan. Delve itself sends nothing anywhere: what Claude reads through the tools is part of your conversation with Claude.',
+      '',
+      'It works only while Delve is open, and only on this computer. Help → Disconnect Claude Desktop turns it off again.',
+      '',
+      'Next, Claude Desktop asks you to confirm the installation.',
+    ].join('\n'),
+    buttons: ['Connect and install', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  };
+  const w = parent();
+  const choice = w ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts);
+  if (choice.response !== 0) return;
+  const key = claudeDesktop.connect(server?.running ? server.port : null);
+  claudeKeys.add(key);
+  await tellServer(key);
+  log.line('Claude Desktop connected');
+  buildMenu();
+  const problem = existsSync(res.mcpb) ? await shell.openPath(res.mcpb) : 'the extension file is missing from this build';
+  if (!problem) return; // Claude Desktop shows its own confirmation
+  log.line(`opening the Claude Desktop extension failed: ${problem}`);
+  const fallback: Electron.MessageBoxOptions = {
+    type: 'info',
+    title: 'Connect to Claude Desktop',
+    message: 'Claude Desktop didn’t open the Delve extension.',
+    detail: [
+      `If you don’t have Claude Desktop yet, get it from ${CLAUDE_DOWNLOAD_URL}, then choose Help → Connect to Claude Desktop again.`,
+      '',
+      'Or install the extension by hand: in Claude Desktop open Settings → Desktop app and choose Manage beside Extensions (older versions: Settings → Extensions), then Advanced settings, and under Extension Developer choose “Install Extension…” and pick this file:',
+      res.mcpb,
+      '',
+      'Delve stays connected: once the extension is installed, Claude can use it while Delve is open.',
+    ].join('\n'),
+    buttons: ['Get Claude Desktop', 'Show the extension file', 'OK'],
+    defaultId: 2,
+    cancelId: 2,
+    noLink: true,
+  };
+  const r = w ? await dialog.showMessageBox(w, fallback) : await dialog.showMessageBox(fallback);
+  if (r.response === 0) void shell.openExternal(CLAUDE_DOWNLOAD_URL);
+  else if (r.response === 1 && existsSync(res.mcpb)) shell.showItemInFolder(res.mcpb);
+}
+
+/** Help → Disconnect Claude Desktop: the key is revoked and the connection file deleted. */
+async function disconnectClaudeDesktop(): Promise<void> {
+  if (!claudeDesktop.connected()) return;
+  const opts: Electron.MessageBoxOptions = {
+    type: 'question',
+    title: 'Disconnect Claude Desktop',
+    message: 'Stop Claude Desktop from working on your maps?',
+    detail: 'Claude in Claude Desktop can’t reach Delve any more. The Delve extension stays in Claude Desktop until you remove it there (Settings → Extensions); connecting again later makes a new key.',
+    buttons: ['Disconnect', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  };
+  const w = parent();
+  const choice = w ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts);
+  if (choice.response !== 0) return;
+  claudeDesktop.disconnect();
+  await tellServer(null);
+  log.line('Claude Desktop disconnected');
+  buildMenu();
 }
 
 // ---------- life cycle ----------
@@ -291,10 +410,11 @@ app.on('before-quit', (e) => {
     e.preventDefault();
     log.line('quitting: stopping the server');
     void server.stop().finally(() => {
+      claudeDesktop.setPort(null); // closed: the bridge says so instead of knocking on the old port
       log.line('server stopped; bye');
       app.quit();
     });
-  }
+  } else claudeDesktop.setPort(null);
 });
 
 app.on('window-all-closed', () => app.quit());

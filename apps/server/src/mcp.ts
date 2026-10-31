@@ -234,8 +234,8 @@ export function connectAvoiding(map: Parameters<typeof connectOps>[0], from: str
 
 const pathLen = (path: readonly Point[]) => Math.round(path.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0) * 100) / 100;
 
-export function buildMcpServer(service: MapService, base: string, version: string, images?: ImageLibrary, props?: PropLibrary): McpServer {
-  const server = new McpServer({ name: 'delve', title: 'Delve map editor', version }, { instructions: INSTRUCTIONS });
+export function buildMcpServer(service: MapService, base: string, version: string, images?: ImageLibrary, props?: PropLibrary, opts: { note?: string } = {}): McpServer {
+  const server = new McpServer({ name: 'delve', title: 'Delve map editor', version }, { instructions: opts.note ? `${INSTRUCTIONS}\n${opts.note}` : INSTRUCTIONS });
   const { store } = service;
   const viewer = (id: string) => `${base}/maps/${encodeURIComponent(id)}`;
   const change = (id: string, ops: Op[], summary: string, baseRev?: number) => {
@@ -1373,20 +1373,32 @@ export function buildMcpServer(service: MapService, base: string, version: strin
 
 export function registerMcp(
   app: FastifyInstance,
-  deps: { service: MapService; token: string | undefined; version: string; chatTokens?: ChatTokens; images?: ImageLibrary; props?: PropLibrary },
+  deps: {
+    service: MapService;
+    token: string | undefined;
+    version: string;
+    chatTokens?: ChatTokens;
+    images?: ImageLibrary;
+    props?: PropLibrary;
+    /** The desktop app only: requests its gate let in with the Claude Desktop key (buildApp's `mcpGrant`). */
+    grant?: (req: FastifyRequest) => boolean;
+    /** The desktop app only: added to the instructions (buildApp's `mcpNote`). */
+    note?: string;
+  },
 ): void {
   const tokenOnly = tokenGuard(deps.token);
   // A chat run's short-lived token works too (see chat/tokens.ts).
   const chatGrant = (req: FastifyRequest) => deps.chatTokens?.lookup(bearer(req.headers.authorization)) ?? null;
   const guard = async (req: FastifyRequest, reply: FastifyReply) => {
     if (chatGrant(req)) return;
+    if (deps.grant?.(req)) return;
     return tokenOnly(req, reply);
   };
 
   app.post('/mcp', { preHandler: guard }, async (req: FastifyRequest, reply: FastifyReply) => {
     // Chat runs call in over 127.0.0.1, so their links use the address the user's browser used.
     const base = (chatGrant(req)?.base ?? process.env.DELVE_PUBLIC_URL ?? `${req.protocol}://${req.headers.host}`).replace(/\/$/, '');
-    const server = buildMcpServer(deps.service, base, deps.version, deps.images, deps.props);
+    const server = buildMcpServer(deps.service, base, deps.version, deps.images, deps.props, deps.note ? { note: deps.note } : {});
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     reply.hijack();
     reply.raw.on('close', () => {

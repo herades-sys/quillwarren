@@ -26,6 +26,9 @@ extraResources:
     to: icon.ico
   - from: build/resources/THIRD-PARTY-NOTICES.txt
     to: THIRD-PARTY-NOTICES.txt
+  # The Claude Desktop extension, opened by Help → Connect to Claude Desktop…
+  - from: build/resources/Delve.mcpb
+    to: Delve.mcpb
   # The built-in model runtime, once llama.cpp's llama-server is approved and
   # downloaded into build/resources/llama (llama-server.exe and its DLLs):
   # - from: build/resources/llama

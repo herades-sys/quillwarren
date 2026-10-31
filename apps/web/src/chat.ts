@@ -39,7 +39,10 @@ interface Msg {
   at?: number;
   /** Claude's plan for this reply, if it sent one. */
   plan?: PlanState;
+  /** The reply's token use, when the server says (the desktop app's API-key backends). */
+  tokens?: Tokens;
 }
+type Tokens = { input: number; output: number; cacheRead?: number; cacheWrite?: number };
 interface Saved {
   session?: string;
   messages: Msg[];
@@ -51,8 +54,15 @@ type ChatEv =
   | { type: 'tool_done'; id: string; ok: boolean; text: string }
   | { type: 'plan'; steps: PlanStep[]; note?: string; mode?: 'activity' }
   | { type: 'usage'; fiveHour?: number; sevenDay?: number; status?: string; resetsAt?: number }
-  | { type: 'done'; session: string; ok: boolean; turns: number; ms: number; error?: string }
+  | { type: 'done'; session: string; ok: boolean; turns: number; ms: number; error?: string; tokens?: Tokens }
   | { type: 'error'; error: string; code?: string };
+
+/** "12.3k in (9k cached) · 840 out" for a reply's meta line. */
+export function tokensText(t: Tokens | undefined): string {
+  if (!t || !(t.input || t.output)) return '';
+  const k = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  return `${k(t.input)} tokens in${t.cacheRead ? ` (${k(t.cacheRead)} cached)` : ''} · ${k(t.output)} out`;
+}
 
 const TOOL_LABEL: Record<string, string> = {
   list_maps: 'Listing maps',
@@ -260,6 +270,25 @@ interface ChatSettingsView {
   suggestions?: { label: string; url: string }[];
   /** The model manager page, where there is one (the desktop app). */
   links?: { models?: string };
+  /** Titles and lines for backends the page has no words for (the desktop app's API-key backends). */
+  labels?: Record<string, [string, string]>;
+  /** Backends that answer with the user's own API key, and what to show for each: never the key itself. */
+  keys?: Record<string, KeyBackendView>;
+}
+
+interface KeyBackendView {
+  /** A key is saved; hint is "…" plus its last four characters. */
+  set: boolean;
+  hint?: string;
+  /** encrypted: sealed with the user's Windows login; file: in a file only this user can read. */
+  storage?: 'encrypted' | 'file';
+  model: string;
+  models: { id: string; name: string }[];
+  /** Where the map and the chat go, and who pays. */
+  note: string;
+  placeholder?: string;
+  /** Where to make a key. */
+  getKey?: string;
 }
 
 const BACKEND_TEXT: Record<string, [string, string]> = {
@@ -318,6 +347,8 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
   const TheAi = isClaude ? 'Claude' : 'The assistant';
   let backend = opts.backend ?? 'claude';
   const choice = (opts.backends?.length ?? 0) > 1;
+  /** The desktop app offers more than a local model (the API-key backends). */
+  const moreThanLocal = (opts.backends ?? []).some((b) => b !== 'none' && b !== 'local');
   const modelBox = modelSel.closest<HTMLElement>('.select');
   const syncBackend = () => {
     if (modelBox) modelBox.style.display = backend === 'claude' ? '' : 'none';
@@ -512,7 +543,7 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
   }
 
   function claudeBody(m: Msg, working: boolean): HTMLElement {
-    const body = h('div', { class: 'ed-msg-body' }, meta(name, working ? 'working' : clock(m.at)));
+    const body = h('div', { class: 'ed-msg-body' }, meta(name, working ? 'working' : [clock(m.at), tokensText(m.tokens)].filter(Boolean).join(' · ')));
     if (m.plan && showPlan) body.append(busy && m === replying ? liveCard(m.plan) : doneCard(m.plan, m));
     let tools: ToolPart[] = [];
     const flushTools = () => {
@@ -549,8 +580,14 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
         h(
           'div',
           { class: 'ed-suggest' },
-          h('p', {}, 'The chat is off. With a local model (Ollama, LM Studio or llama.cpp’s llama-server on this computer or your network) the assistant builds and changes this map while you watch.'),
-          h('button', { type: 'button', onclick: () => void showSettings(true) }, 'Choose a local model…'),
+          h(
+            'p',
+            {},
+            moreThanLocal
+              ? 'The chat is off. With a local model, or an AI service on your own API key, the assistant builds and changes this map while you watch.'
+              : 'The chat is off. With a local model (Ollama, LM Studio or llama.cpp’s llama-server on this computer or your network) the assistant builds and changes this map while you watch.',
+          ),
+          h('button', { type: 'button', onclick: () => void showSettings(true) }, moreThanLocal ? 'Choose who answers…' : 'Choose a local model…'),
         ),
       );
     } else if (!messages.length) {
@@ -652,13 +689,77 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
         ...(s.links?.models ? [h('a', { class: 'btn btn-plain btn-sm', href: s.links.models }, 'Built-in models…')] : []),
       ),
     );
-    const syncLocal = () => (local.hidden = picked !== 'local');
+    // the backends on the user's own API key (the desktop app): a key field, Check the key, the model, Remove key.
+    // The page never gets a saved key back, only "…" and its last four characters.
+    const keyed = Object.entries(s.keys ?? {}).map(([b, k]) => {
+      const keyInput = h('input', { class: 'input', id: `cs-key-${b}`, type: 'password', placeholder: k.set ? `Saved (${k.hint ?? '…'}): type a new one to replace it` : (k.placeholder ?? ''), spellcheck: 'false', autocomplete: 'off' });
+      const select = h('select', { class: 'input', id: `cs-model-${b}` });
+      const fillModels = (list: { id: string; name: string }[], want: string) => {
+        const all = list.some((m) => m.id === want) || !want ? list : [{ id: want, name: want }, ...list];
+        select.replaceChildren(...all.map((m) => h('option', { value: m.id, selected: m.id === want }, m.name)));
+        if (!all.length) select.replaceChildren(h('option', { value: '' }, 'Check the key to list the models'));
+      };
+      fillModels(k.models, k.model);
+      const stored = h('span', { class: 'field-hint' }, k.set ? `Saved: ${k.hint ?? '…'}, ${k.storage === 'encrypted' ? 'encrypted with your Windows login' : 'in a file only you can read'}.` : 'No key saved yet.', ...(k.getKey ? [' ', h('a', { href: k.getKey, target: '_blank', rel: 'noopener' }, 'Get a key')] : []));
+      const check = h('button', {
+        type: 'button',
+        class: 'btn btn-secondary btn-sm',
+        onclick: async () => {
+          check.disabled = true;
+          say('Checking the key…');
+          try {
+            const res = await fetch('/api/v1/chat/settings/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: b, ...(keyInput.value.trim() ? { key: keyInput.value.trim() } : {}) }) });
+            const body = (await res.json()) as { ok?: boolean; error?: string; models?: { id: string; name: string }[] };
+            if (!res.ok || !body.ok) say(body.error ?? `the server answered ${res.status}`, 'bad');
+            else {
+              fillModels(body.models ?? [], select.value || k.model);
+              say(`The key works. ${body.models?.length ?? 0} model${body.models?.length === 1 ? '' : 's'} to choose from.${keyInput.value.trim() ? ' Save keeps the key.' : ''}`);
+            }
+          } catch (e) {
+            say(`Couldn’t check: ${(e as Error).message}`, 'bad');
+          } finally {
+            check.disabled = false;
+          }
+        },
+      }, 'Check the key');
+      const remove = h('button', {
+        type: 'button',
+        class: 'btn btn-plain btn-sm',
+        hidden: !k.set,
+        onclick: async () => {
+          say('Removing the key…');
+          try {
+            const res = await fetch('/api/v1/chat/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ [b]: { key: null } }) });
+            const body = (await res.json()) as ChatSettingsView & { error?: string };
+            if (!res.ok) throw new Error(body.error ?? `the server answered ${res.status}`);
+            backend = body.backend ?? backend;
+            syncBackend();
+            fillSettings(body);
+          } catch (e) {
+            say((e as Error).message, 'bad');
+          }
+        },
+      }, 'Remove key');
+      const section = h(
+        'div',
+        { class: 'ed-cs-local', 'data-key-backend': b },
+        h('div', { class: 'field' }, h('label', { for: `cs-key-${b}` }, 'API key'), keyInput, stored),
+        h('div', { class: 'ed-cs-actions' }, check, remove),
+        h('div', { class: 'field' }, h('label', { for: `cs-model-${b}` }, 'Model'), select),
+        h('p', { class: 'field-hint' }, k.note),
+      );
+      return { b, section, keyInput, select };
+    });
+    const syncLocal = () => {
+      local.hidden = picked !== 'local';
+      for (const k of keyed) k.section.hidden = picked !== k.b;
+    };
     const choices = h(
       'div',
       { class: 'ed-cs-choices', role: 'radiogroup', 'aria-label': 'Who answers in the chat' },
       ...s.offered.map((b) => {
         const radio = h('input', { type: 'radio', name: 'cs-backend', value: b, checked: b === picked, onchange: () => ((picked = b), syncLocal()) });
-        const [title, sub] = BACKEND_TEXT[b] ?? [b, ''];
+        const [title, sub] = BACKEND_TEXT[b] ?? s.labels?.[b] ?? [b, ''];
         return h('label', { class: 'ed-cs-choice' }, radio, h('span', {}, h('b', {}, title), h('span', { class: 'ed-cs-sub' }, sub)));
       }),
     );
@@ -670,7 +771,8 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
         saveBtn.disabled = true;
         say('Saving…');
         try {
-          const res = await fetch('/api/v1/chat/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: picked, local: { url: url.value.trim(), model: model.value.trim() } }) });
+          const keys = Object.fromEntries(keyed.map((k) => [k.b, { ...(k.select.value ? { model: k.select.value } : {}), ...(k.keyInput.value.trim() ? { key: k.keyInput.value.trim() } : {}) }]));
+          const res = await fetch('/api/v1/chat/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: picked, local: { url: url.value.trim(), model: model.value.trim() }, ...keys }) });
           const body = (await res.json()) as { backend?: string; error?: string };
           if (!res.ok) throw new Error(body.error ?? `the server answered ${res.status}`);
           backend = body.backend ?? picked;
@@ -690,6 +792,7 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
       h('p', { class: 'ed-cs-title' }, 'Who answers in the chat'),
       choices,
       local,
+      ...keyed.map((k) => k.section),
       result,
       h('div', { class: 'ed-cs-actions' }, saveBtn, h('button', { type: 'button', class: 'btn btn-secondary btn-sm', onclick: () => void showSettings(false) }, 'Cancel')),
     );
@@ -784,6 +887,7 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
               break;
             case 'done':
               session = ev.session || session;
+              if (ev.tokens) reply.tokens = ev.tokens;
               if (!ev.ok) {
                 if (!retried && /no conversation found/i.test(ev.error ?? '')) restart = true;
                 else {

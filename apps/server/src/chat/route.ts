@@ -65,8 +65,12 @@ export function parseChatRequest(body: unknown): ChatRequest {
   };
 }
 
-/** The ways a chat message can be answered: the Claude Code bridge (above), a local model, or not at all. */
-export const CHAT_BACKENDS = ['none', 'claude', 'local'] as const;
+/**
+ * The ways a chat message can be answered: the Claude Code bridge (above), a
+ * local model, the user's own Anthropic or OpenAI API key (the desktop app
+ * only: chat/api-chat.ts), or not at all.
+ */
+export const CHAT_BACKENDS = ['none', 'claude', 'local', 'anthropic', 'openai'] as const;
 export type ChatBackendName = (typeof CHAT_BACKENDS)[number];
 
 /** One message for the local model (chat/local-chat.ts answers it). */
@@ -93,7 +97,7 @@ export interface ChatBackends {
   current(): ChatBackendName;
   /** What the panel calls the assistant when it isn't Claude ("Assistant"). */
   name: string;
-  /** GET /api/v1/chat with the local backend: whether the model answers ({ ok, error?, model }). */
+  /** GET /api/v1/chat with any backend but none and claude: whether the model can answer ({ ok, error?, model }). */
   localStatus(): Promise<Record<string, unknown>>;
   /** GET /api/v1/chat/settings */
   settings(): Record<string, unknown>;
@@ -101,7 +105,7 @@ export interface ChatBackends {
   saveSettings(body: unknown): Promise<Record<string, unknown>>;
   /** POST /api/v1/chat/settings/test: does a model server answer at this address, and with which models. */
   test(body: unknown): Promise<Record<string, unknown>>;
-  /** Answer one message with the local model, as chat events. */
+  /** Answer one message with the backend in use (a local model, or an API key's), as chat events. */
   runLocal(run: LocalChatRun): Promise<void>;
 }
 
@@ -126,7 +130,7 @@ export function registerChat(app: FastifyInstance, { service, token, sessions, t
     if (backends && backends.current() !== 'claude') {
       const backend = backends.current();
       const head = { enabled: backend !== 'none', backend, backends: backends.offered, name: backends.name };
-      return backend === 'local' ? { ...head, ...(await backends.localStatus()) } : { ...head, ok: false };
+      return backend !== 'none' ? { ...head, ...(await backends.localStatus()) } : { ...head, ok: false };
     }
     if (!config) return { enabled: false };
     const base = { enabled: true, models: CHAT_MODELS, model: config.model ?? 'sonnet', ...(backends ? { backend: 'claude', backends: backends.offered, name: 'Claude' } : {}) };
@@ -231,7 +235,7 @@ function registerBackends(app: FastifyInstance, writer: Guard, backends: ChatBac
 /** A message for the local model (or for no backend at all), streamed back as chat events like the bridge's. */
 async function answerLocally(req: FastifyRequest, reply: FastifyReply, service: MapService, backends: ChatBackends) {
   if (backends.current() === 'none') {
-    return reply.code(503).send({ error: 'the chat is off: choose a local model in the chat settings' });
+    return reply.code(503).send({ error: `the chat is off: choose ${backends.offered.length > 2 ? 'who answers' : 'a local model'} in the chat settings` });
   }
   const { id } = req.params as { id: string };
   let request: ChatRequest;
@@ -252,7 +256,7 @@ async function answerLocally(req: FastifyRequest, reply: FastifyReply, service: 
   };
   void backends
     .runLocal({ mapId: id, request, base, send, signal: abort.signal })
-    .catch((e: unknown) => send({ type: 'error', code: 'bridge', error: `The local model failed: ${(e as Error).message}` }))
+    .catch((e: unknown) => send({ type: 'error', code: 'bridge', error: `${backends.current() === 'local' ? 'The local model' : 'The assistant'} failed: ${(e as Error).message}` }))
     .finally(() => {
       clearInterval(beat);
       out.end();

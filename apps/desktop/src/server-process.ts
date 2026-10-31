@@ -19,6 +19,8 @@ export interface ServerLaunch {
   version: string;
   /** llama-server, when the build has it. */
   llama?: string;
+  /** The Claude Desktop key while the user has connected Claude Desktop (claude-desktop.ts). */
+  claudeKey?: string;
 }
 
 /**
@@ -43,6 +45,7 @@ export function serverEnv(base: NodeJS.ProcessEnv, o: Omit<ServerLaunch, 'node' 
     DELVE_VERSION: o.version,
     PORT: String(o.port),
     ...(o.llama ? { DELVE_LLAMA_SERVER: o.llama } : {}),
+    ...(o.claudeKey ? { DELVE_CLAUDE_DESKTOP_KEY: o.claudeKey } : {}),
   };
 }
 
@@ -50,6 +53,8 @@ export interface ServerEvents {
   output(text: string): void;
   /** It stopped without being asked to. */
   crashed(code: number | null, signal: string | null): void;
+  /** Any other message from it (the key vault's requests: vault.ts). */
+  message?(msg: unknown): void;
 }
 
 export class ServerProcess {
@@ -104,7 +109,7 @@ export class ServerProcess {
           clearTimeout(timer);
           this.port = msg.port;
           resolve(msg.port);
-        }
+        } else if (msg?.type !== 'ready') this.events.message?.(m);
       });
       child.on('error', (e) => {
         clearTimeout(timer);
@@ -116,6 +121,43 @@ export class ServerProcess {
         if (!ready) reject(new Error(`the Delve server stopped while starting (${code ?? signal}):\n${recent.trim().slice(-1500)}`));
         else if (!this.stopping) this.events.crashed(code, signal);
       });
+    });
+  }
+
+  /** A message to the server over IPC; false when it isn't running. */
+  send(msg: unknown): boolean {
+    const child = this.child;
+    if (!child || !child.connected) return false;
+    try {
+      return child.send(msg as object);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Sends a message and waits for the first answer of `type` (or gives up after `timeoutMs`). */
+  request(msg: unknown, type: string, timeoutMs = 3000): Promise<unknown> {
+    const child = this.child;
+    if (!child || !child.connected) return Promise.reject(new Error('the server isn’t running'));
+    return new Promise((resolve, reject) => {
+      const done = () => {
+        clearTimeout(timer);
+        child.off('message', on);
+      };
+      const on = (m: unknown) => {
+        if ((m as { type?: unknown })?.type !== type) return;
+        done();
+        resolve(m);
+      };
+      const timer = setTimeout(() => {
+        done();
+        reject(new Error('the server didn’t answer'));
+      }, timeoutMs);
+      child.on('message', on);
+      if (!this.send(msg)) {
+        done();
+        reject(new Error('the server isn’t running'));
+      }
     });
   }
 

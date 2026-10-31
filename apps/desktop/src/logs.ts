@@ -59,16 +59,22 @@ export function tail(file: string, lines = 300, bytes = 256_000): string {
   }
 }
 
-/** Never let a secret reach the clipboard, even if something logged it. */
-export function redact(text: string, secrets: readonly string[]): string {
+/**
+ * Never let a secret reach the clipboard or a log file, even if something
+ * logged it: the launch secret and the Claude Desktop key (passed in), keys
+ * and tokens in headers, URLs and JSON ("key": …), and Anthropic or OpenAI
+ * API keys wherever they appear.
+ */
+export function redact(text: string, secrets: readonly (string | null | undefined)[]): string {
   let out = text;
   for (const s of secrets) if (s && s.length >= 8) out = out.split(s).join('[secret]');
-  // keys and tokens in URLs and headers, whatever wrote them
-  return out.replace(/(x-delve-desktop|authorization|api[-_]?key|token)(["'=:\s]+)(bearer\s+)?[A-Za-z0-9._~+/-]{16,}/gi, '$1$2$3[secret]');
+  return out
+    .replace(/\bsk-[A-Za-z0-9_-]{16,}/g, '[secret]')
+    .replace(/(x-delve-desktop|authorization|api[-_]?key|\bkey|token|secret)(["'=:\s]+)(bearer\s+)?[A-Za-z0-9._~+/-]{16,}/gi, '$1$2$3[secret]');
 }
 
 /** What "Copy logs" puts on the clipboard: versions, then the end of each log. */
-export function collectLogs(dir: string, about: Record<string, string>, secrets: readonly string[] = [], linesEach = 300): string {
+export function collectLogs(dir: string, about: Record<string, string>, secrets: readonly (string | null | undefined)[] = [], linesEach = 300): string {
   const head = Object.entries(about)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');

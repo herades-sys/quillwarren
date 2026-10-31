@@ -67,6 +67,10 @@ echo "== 5. icon and third-party notices"
 node scripts/icon.mjs
 node scripts/notices.mjs "$RES/THIRD-PARTY-NOTICES.txt" "$RES/node/LICENSE"
 
+echo "== 5b. the Claude Desktop extension (Delve.mcpb: the bridge, Delve's tool list, the icon)"
+# its tool list is read from the server's own MCP tools here, so it can't drift (docs/DESKTOP.md, "Claude Desktop")
+(cd "$ROOT" && node apps/server/src/cli/build-mcpb.ts "$RES/Delve.mcpb" --version "$APP_VERSION")
+
 echo "== 6. the Electron main process"
 (cd "$ROOT" && npx esbuild apps/desktop/src/main.ts --bundle --platform=node --format=cjs --target=node22 \
   --external:electron --outfile=apps/desktop/dist/main.cjs --log-level=warning)

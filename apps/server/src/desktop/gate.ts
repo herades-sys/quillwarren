@@ -11,12 +11,19 @@
 // - when it says where it comes from (Origin), come from this server's own pages.
 // Answers carry no CORS headers, so other web pages can't read them.
 //
+// One more caller, only while the user has connected Claude Desktop (Help →
+// Connect to Claude Desktop…): the Delve extension's bridge in Claude Desktop
+// (apps/desktop/claude-extension) reaches /mcp, and nothing else, with its own
+// per-install key as "Authorization: Bearer <key>" — never the window's secret.
+// The same Host check applies, it must send no Origin (browsers always do on
+// these requests), and only the methods MCP's Streamable HTTP transport uses.
+//
 // Desktop only: desktop/main.ts adds it through buildApp's `extend`. The web
 // server never loads this file.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { htmlDocument } from '@delve/ui';
-import { readCookie } from '../auth.ts';
+import { bearer, readCookie } from '../auth.ts';
 
 export const DESKTOP_HEADER = 'x-delve-desktop';
 export const DESKTOP_COOKIE = 'delve_desktop';
@@ -80,24 +87,73 @@ function feedbackPage(): string {
   });
 }
 
+/** The MCP endpoint, exactly (no sub-paths). */
+export const MCP_PATH = /^\/mcp(\?|$)/;
+/** What MCP's Streamable HTTP transport sends: POST for messages, GET for a stream, DELETE to end a session. */
+export const MCP_METHODS = new Set(['POST', 'GET', 'DELETE']);
+
+/** Claude Desktop's access to /mcp (Help → Connect to Claude Desktop…). */
+export interface ClaudeDesktopAccess {
+  /** The per-install key while connected, null while not. */
+  key(): string | null;
+  /** Called for each request let in with the key, so /mcp can tell it from the rest (buildApp's `mcpGrant`). */
+  grant(req: FastifyRequest): void;
+}
+
+/** Added to the MCP instructions in the desktop app (buildApp's `mcpNote`): links open only inside the app. */
+export const CLAUDE_DESKTOP_NOTE =
+  "This Delve is the desktop app on the user's own computer: the user watches the open map change in the Delve window. Links in tool results (viewer pages, exports) open only inside the Delve app, so don't offer them as links; use focus to show the user what you changed, and point them to Delve's Export menu for files.";
+
+/** A JSON-RPC error body, so an MCP client shows the reason rather than a bare status. */
+const rpcRefusal = (message: string) => ({ jsonrpc: '2.0', id: null, error: { code: -32001, message } });
+
+/**
+ * A request for /mcp that carries a bearer key and not the window's secret:
+ * Claude Desktop's bridge, let in only with the right key while connected.
+ * Returns undefined when it passes (and grants it), else the refusal sent.
+ */
+function claudeDesktopRequest(req: FastifyRequest, reply: FastifyReply, access: ClaudeDesktopAccess | undefined, given: string): FastifyReply | undefined {
+  const refuseMcp = (code: 401 | 403 | 405, message: string) => {
+    if (req.headers.upgrade !== undefined) reply.raw.once('finish', () => req.raw.socket?.destroy());
+    return reply.code(code).header('connection', 'close').send(rpcRefusal(message));
+  };
+  if (req.headers.upgrade !== undefined) return refuseMcp(403, 'not a WebSocket endpoint');
+  if (req.headers.origin !== undefined) return refuseMcp(403, 'Delve’s MCP endpoint takes no requests from web pages');
+  if (!MCP_METHODS.has(req.method)) return refuseMcp(405, 'MCP uses POST, GET and DELETE');
+  const key = access?.key() ?? null;
+  if (!key) return refuseMcp(401, 'Delve isn’t connected to Claude Desktop: in Delve, choose Help → Connect to Claude Desktop…');
+  if (!secretMatches(key, given)) return refuseMcp(401, 'Delve refused this key: in Delve, choose Help → Connect to Claude Desktop… again');
+  access!.grant(req);
+  return undefined;
+}
+
 /**
  * The gate, as the first hook of every request (plain HTTP and WebSocket
  * upgrades alike), plus the desktop app's answers for web-only pages.
  * `port` is the port the server listens on (known once it is bound).
+ * `claudeDesktop`: the Claude Desktop key for /mcp (see the top of this file).
  */
-export function registerDesktopGate(app: FastifyInstance, o: { secret: string; port: () => number }): void {
+export function registerDesktopGate(app: FastifyInstance, o: { secret: string; port: () => number; claudeDesktop?: ClaudeDesktopAccess }): void {
   if (!SECRET_PATTERN.test(o.secret)) throw new Error('the desktop secret must be at least 32 base64url characters');
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
     const host = req.headers.host;
     if (!hostAllowed(host, o.port())) return refuse(req, reply, 403);
-    if (!secretMatches(o.secret, requestSecret(req))) return refuse(req, reply, 401);
+    const windowSecret = requestSecret(req);
+    // Claude Desktop's bridge: /mcp only, its own key only (a key anywhere else meets the secret check below and fails)
+    const key = bearer(req.headers.authorization);
+    if (MCP_PATH.test(req.url) && key !== undefined && windowSecret === undefined) {
+      const refused = claudeDesktopRequest(req, reply, o.claudeDesktop, key);
+      if (refused) return refused;
+      return;
+    }
+    if (!secretMatches(o.secret, windowSecret)) return refuse(req, reply, 401);
     if (!originAllowed(req.headers.origin, host)) return refuse(req, reply, 403);
     const path = req.url;
     if (WEB_ONLY.some((re) => re.test(path))) {
       return req.method === 'GET' || req.method === 'HEAD' ? reply.redirect('/', 303) : reply.code(404).send({ error: 'not in the desktop app' });
     }
-    // MCP needs the API token, which the desktop app doesn't have: say so plainly
-    if (/^\/mcp(\/|\?|$)/.test(path)) return reply.code(404).send({ error: 'MCP is not available in the desktop app yet' });
+    // MCP is for Claude Desktop's bridge with its own key (above), never for the window
+    if (/^\/mcp(\/|\?|$)/.test(path)) return reply.code(404).send({ error: 'MCP is for Claude Desktop: in Delve, choose Help → Connect to Claude Desktop…' });
     if (/^\/feedback(\?|$)/.test(path)) {
       return req.method === 'GET' ? reply.type('text/html; charset=utf-8').send(feedbackPage()) : reply.code(404).send({ error: 'not in the desktop app' });
     }
