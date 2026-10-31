@@ -8,4 +8,4 @@ The user's design from Claude Design (claude.ai/design), exported 2026-10-02 as 
 - `delve-icons.js`: the icon set (24 × 24 stroke paths).
 - `delve-map.js`: the mockup's demo map renderer (not Delve's real renderer).
 - `shots/`: screenshots of both documents.
-- `support.js`: Claude Design's runtime, so the `.dc.html` files open in a browser (they use `<sc-if>`, `<sc-for>` and `<d-icon>` template tags).
+- `support.js` (Claude Design's runtime, which the `.dc.html` files load to open in a browser) is not included: it is Claude Design's own code, not part of Delve. Open the documents in Claude Design, or see `shots/`.

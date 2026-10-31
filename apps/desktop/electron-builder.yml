@@ -3,7 +3,7 @@
 # See docs/DESKTOP.md, "Building".
 appId: app.delve.desktop
 productName: Delve
-copyright: Copyright © 2026 the Delve authors
+copyright: Copyright © 2026 herades-sys
 directories:
   output: out
   buildResources: build
