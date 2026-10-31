@@ -63,9 +63,34 @@ curl -fsSL -o "$CACHE/SHASUMS256-v$NODE_VERSION.txt" "https://nodejs.org/dist/v$
 rm -rf "$RES/node" && mkdir -p "$RES/node"
 unzip -q -j -o "$CACHE/$ZIP" "node-v$NODE_VERSION-win-x64/node.exe" "node-v$NODE_VERSION-win-x64/LICENSE" -d "$RES/node"
 
+echo "== 4b. llama.cpp's llama-server for Windows (the built-in model runtime, github.com/ggml-org/llama.cpp)"
+# Pinned: the build the user approved on 2026-10-31 (Vulkan: NVIDIA, AMD and Intel GPUs, or the CPU).
+LLAMA_BUILD=b11476
+LLAMA_ZIP="llama-$LLAMA_BUILD-bin-win-vulkan-x64.zip"
+LLAMA_SHA256=5c71e7b749697da4a8d46e9ee55486845cbba27c9dfbecb4007f31ba6610d523
+LLAMA_LICENSE="llama.cpp-$LLAMA_BUILD-LICENSE"
+LLAMA_LICENSE_SHA256=94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d
+if [ ! -f "$CACHE/$LLAMA_ZIP" ]; then
+  curl -fsSL -o "$CACHE/$LLAMA_ZIP.part" "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_BUILD/$LLAMA_ZIP"
+  mv "$CACHE/$LLAMA_ZIP.part" "$CACHE/$LLAMA_ZIP"
+fi
+# the zip carries no llama.cpp licence: it comes from the same tag
+if [ ! -f "$CACHE/$LLAMA_LICENSE" ]; then
+  curl -fsSL -o "$CACHE/$LLAMA_LICENSE.part" "https://raw.githubusercontent.com/ggml-org/llama.cpp/$LLAMA_BUILD/LICENSE"
+  mv "$CACHE/$LLAMA_LICENSE.part" "$CACHE/$LLAMA_LICENSE"
+fi
+(cd "$CACHE" && printf '%s  %s\n%s  %s\n' "$LLAMA_SHA256" "$LLAMA_ZIP" "$LLAMA_LICENSE_SHA256" "$LLAMA_LICENSE" | sha256sum -c --quiet -) || { echo "llama.cpp: checksum mismatch"; exit 1; }
+rm -rf "$RES/llama" && mkdir -p "$RES/llama"
+# llama-server and what it loads (its DLLs, ggml with every CPU variant and the Vulkan backend, OpenMP);
+# the zip's other tools (llama-cli, llama-bench, …) and their *-impl.dll stay behind
+unzip -q -o "$CACHE/$LLAMA_ZIP" llama-server.exe llama-server-impl.dll llama.dll llama-common.dll mtmd.dll 'ggml*.dll' libomp.dll LICENSE-LLVM-OpenMP -d "$RES/llama"
+cp "$CACHE/$LLAMA_LICENSE" "$RES/llama/LICENSE-llama.cpp"
+printf '%s\n' "$LLAMA_BUILD" > "$RES/llama/VERSION"
+echo "llama.cpp $LLAMA_BUILD: $(ls "$RES/llama" | wc -l) files, $(du -sh "$RES/llama" | cut -f1)"
+
 echo "== 5. icon and third-party notices"
 node scripts/icon.mjs
-node scripts/notices.mjs "$RES/THIRD-PARTY-NOTICES.txt" "$RES/node/LICENSE"
+node scripts/notices.mjs "$RES/THIRD-PARTY-NOTICES.txt" "$RES/node/LICENSE" "$RES/llama"
 
 echo "== 5b. the Claude Desktop extension (Delve.mcpb: the bridge, Delve's tool list, the icon)"
 # its tool list is read from the server's own MCP tools here, so it can't drift (docs/DESKTOP.md, "Claude Desktop")

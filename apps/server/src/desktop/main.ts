@@ -23,7 +23,8 @@
 // listens, {type: "shutdown"} asks it to stop cleanly, {type: "claude-desktop",
 // key} turns Claude Desktop's access on (a key) or off (null) and is answered
 // {type: "claude-desktop", on}, and the server asks the app to seal and open
-// API keys ({type: "vault", …}). When the app goes away (the channel closes)
+// API keys ({type: "vault", …}) and, from the chat settings, to show its
+// Connect to Claude Desktop dialog ({type: "claude-desktop-connect"}). When the app goes away (the channel closes)
 // it stops too.
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,7 +32,7 @@ import { buildApp } from '../app.ts';
 import { localChatBackends } from '../chat/local-chat.ts';
 import { MapStore } from '../store.ts';
 import { desktopConfig } from './config.ts';
-import { CLAUDE_DESKTOP_NOTE, registerDesktopGate, SECRET_PATTERN } from './gate.ts';
+import { CLAUDE_DESKTOP_NOTE, registerClaudeDesktopConnect, registerDesktopGate, SECRET_PATTERN } from './gate.ts';
 import { registerModelManager } from './models-page.ts';
 import { ModelLibrary, RuntimeSettingsStore } from './models.ts';
 import { LlamaRuntime } from './runtime.ts';
@@ -45,6 +46,8 @@ delete process.env.DELVE_CLAUDE_DESKTOP_KEY;
 /** Claude Desktop's access to /mcp: the key while connected (desktop/gate.ts). */
 let claudeKey: string | null = cfg.claudeKey ?? null;
 const granted = new WeakSet<object>();
+/** The chat settings' Claude Desktop box (set once the routes are registered). */
+let claudeDesktopView: () => Record<string, unknown> = () => ({});
 
 function readVersion(): string {
   try {
@@ -79,6 +82,7 @@ const app = buildApp(
     extend: (a) => {
       registerDesktopGate(a, { secret: cfg.secret, port: () => port, claudeDesktop: { key: () => claudeKey, grant: (req) => granted.add(req.raw) } });
       registerModelManager(a, { models, settings: runtimeSettings, runtime, ollamaDir: cfg.ollamaModels, log: (m) => log(m) });
+      claudeDesktopView = registerClaudeDesktopConnect(a, { connected: () => claudeKey !== null, askApp: () => process.send?.({ type: 'claude-desktop-connect' }) ?? false });
     },
     mcpGrant: (req) => granted.has(req.raw),
     mcpNote: CLAUDE_DESKTOP_NOTE,
@@ -89,6 +93,7 @@ const app = buildApp(
         builtin: runtime.asBuiltin(models, runtimeSettings),
         log: (m) => log(m),
         api: { box: ipcSecretBox(), keysFile: join(cfg.dataDir, 'chat-keys.json') },
+        extra: () => claudeDesktopView(),
       }),
   },
 );

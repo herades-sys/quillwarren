@@ -104,6 +104,24 @@ export interface ClaudeDesktopAccess {
 export const CLAUDE_DESKTOP_NOTE =
   "This Delve is the desktop app on the user's own computer: the user watches the open map change in the Delve window. Links in tool results (viewer pages, exports) open only inside the Delve app, so don't offer them as links; use focus to show the user what you changed, and point them to Delve's Export menu for files.";
 
+/** Where the chat settings ask the app for its "Connect to Claude Desktop…" dialog. */
+export const CLAUDE_DESKTOP_CONNECT = '/api/v1/desktop/claude-desktop/connect';
+
+/**
+ * The chat settings' Claude Desktop box: whether it is connected (for the
+ * settings view, local-chat's `extra`) and POST CLAUDE_DESKTOP_CONNECT, which
+ * asks the app over IPC to show the same dialog as Help → Connect to Claude
+ * Desktop…, so nothing connects without the user's click there. Behind the
+ * gate like every route, so only the window reaches it.
+ */
+export function registerClaudeDesktopConnect(app: FastifyInstance, o: { connected: () => boolean; askApp: () => boolean }): () => Record<string, unknown> {
+  app.post(CLAUDE_DESKTOP_CONNECT, async (_req, reply) => {
+    if (!o.askApp()) return reply.code(503).send({ error: 'Delve couldn’t reach its window: choose Help → Connect to Claude Desktop… instead' });
+    return reply.code(202).send({ ok: true });
+  });
+  return () => ({ claudeDesktop: { connected: o.connected(), connect: CLAUDE_DESKTOP_CONNECT } });
+}
+
 /** A JSON-RPC error body, so an MCP client shows the reason rather than a bare status. */
 const rpcRefusal = (message: string) => ({ jsonrpc: '2.0', id: null, error: { code: -32001, message } });
 

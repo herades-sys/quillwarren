@@ -274,6 +274,8 @@ interface ChatSettingsView {
   labels?: Record<string, [string, string]>;
   /** Backends that answer with the user's own API key, and what to show for each: never the key itself. */
   keys?: Record<string, KeyBackendView>;
+  /** The desktop app: Claude in Claude Desktop on the user's own plan; connect asks the app for its dialog. */
+  claudeDesktop?: { connected: boolean; connect: string };
 }
 
 interface KeyBackendView {
@@ -340,18 +342,42 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
   if (!modelSel.value) modelSel.value = 'sonnet';
   modelSel.addEventListener('change', () => store.set('delve-chat-model', modelSel.value));
 
-  // Who answers: Claude (the web server, always), or in the desktop app a local model or nothing.
-  const name = opts.name ?? 'Claude';
-  const isClaude = name === 'Claude';
-  const theAi = isClaude ? 'Claude' : 'the assistant';
-  const TheAi = isClaude ? 'Claude' : 'The assistant';
+  // Who answers: Claude (the web server, always), or in the desktop app a local model, Claude or OpenAI
+  // on the user's own key, or nothing. The panel says "Claude" whenever Claude answers, else opts.name.
   let backend = opts.backend ?? 'claude';
+  const nameFor = (b: string) => (b === 'claude' || b === 'anthropic' ? 'Claude' : (opts.name ?? 'Claude'));
+  let name = nameFor(backend);
+  let isClaude = false;
+  let theAi = '';
+  let TheAi = '';
+  const syncWords = () => {
+    isClaude = name === 'Claude';
+    theAi = isClaude ? 'Claude' : 'the assistant';
+    TheAi = isClaude ? 'Claude' : 'The assistant';
+  };
+  syncWords();
+  /** Renames the panel in the page (its title, buttons and input) when another backend answers. */
+  const rename = (to: string) => {
+    if (to === name) return;
+    for (const id of ['chat-toggle', 'chat', 'chat-plan', 'chat-close', 'chat-input', 'chat-phone']) {
+      const el = document.getElementById(id);
+      for (const a of ['aria-label', 'title', 'placeholder', 'data-assistant']) {
+        const v = el?.getAttribute(a);
+        if (v) el!.setAttribute(a, v.split(name).join(to));
+      }
+    }
+    const title = panel.querySelector('.ed-panel-title');
+    if (title) title.textContent = to;
+    name = to;
+    syncWords();
+  };
   const choice = (opts.backends?.length ?? 0) > 1;
   /** The desktop app offers more than a local model (the API-key backends). */
   const moreThanLocal = (opts.backends ?? []).some((b) => b !== 'none' && b !== 'local');
   const modelBox = modelSel.closest<HTMLElement>('.select');
   const syncBackend = () => {
     if (modelBox) modelBox.style.display = backend === 'claude' ? '' : 'none';
+    rename(nameFor(backend));
   };
   syncBackend();
 
@@ -595,7 +621,7 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
         h(
           'div',
           { class: 'ed-suggest' },
-          h('p', {}, `Ask ${theAi} to build or change this map. It sees the whole map, what you have selected and where you are looking, and you watch every change happen. Each reply is one undo step.`),
+          h('p', {}, `Ask ${theAi} to build or change this map. It sees the whole map, what you have selected and where you are looking, and you watch every change happen. Each change it makes is one undo step.`),
           ...(backend === 'local' ? (host.hasObjects() ? LOCAL_SUGGESTIONS_FILLED : LOCAL_SUGGESTIONS_EMPTY) : host.hasObjects() ? SUGGESTIONS_FILLED : SUGGESTIONS_EMPTY).map((s) => h('button', { type: 'button', onclick: () => ((input.value = s), input.focus()) }, s)),
         ),
       );
@@ -788,11 +814,42 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
         }
       },
     }, 'Save');
+    // the desktop app: Claude in Claude Desktop instead of this panel; the app shows its own Connect dialog
+    const cd = s.claudeDesktop;
+    const connectBtn = cd
+      ? h('button', {
+          type: 'button',
+          class: 'btn btn-secondary btn-sm',
+          onclick: async () => {
+            connectBtn!.disabled = true;
+            try {
+              const res = await fetch(cd.connect, { method: 'POST' });
+              const body = (await res.json().catch(() => ({}))) as { error?: string };
+              if (!res.ok) say(body.error ?? `the server answered ${res.status}`, 'bad');
+              else say('Delve asks in its own window: answer there.');
+            } catch (e) {
+              say(`Couldn’t ask Delve: ${(e as Error).message}`, 'bad');
+            } finally {
+              connectBtn!.disabled = false;
+            }
+          },
+        }, cd.connected ? 'Connect again…' : 'Connect to Claude Desktop…')
+      : null;
+    const desktop = cd
+      ? h(
+          'div',
+          { class: 'ed-cs-local', 'data-claude-desktop': cd.connected ? 'connected' : 'off' },
+          h('p', { class: 'ed-cs-title' }, 'Or chat in Claude Desktop'),
+          h('p', { class: 'field-hint' }, cd.connected ? 'Connected. Chat with Claude in Claude Desktop on your own Claude plan, and watch it change your maps here. Help → Disconnect Claude Desktop turns it off.' : 'Chat with Claude in Claude Desktop on your own Claude plan, and watch it change your maps here. Delve adds an extension to Claude Desktop.'),
+          h('div', { class: 'ed-cs-actions' }, connectBtn!),
+        )
+      : null;
     pane.replaceChildren(
       h('p', { class: 'ed-cs-title' }, 'Who answers in the chat'),
       choices,
       local,
       ...keyed.map((k) => k.section),
+      ...(desktop ? [desktop] : []),
       result,
       h('div', { class: 'ed-cs-actions' }, saveBtn, h('button', { type: 'button', class: 'btn btn-secondary btn-sm', onclick: () => void showSettings(false) }, 'Cancel')),
     );

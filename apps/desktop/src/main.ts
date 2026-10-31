@@ -114,8 +114,13 @@ async function startServer(): Promise<number> {
     {
       output: (text) => serverLog.write(redact(text, secrets())),
       crashed: (code, signal) => void onServerCrash(code, signal),
-      // the server's key vault: API keys sealed and opened with safeStorage (DPAPI)
+      // the server's key vault: API keys sealed and opened with safeStorage (DPAPI),
+      // and the chat settings' "Connect to Claude Desktop…" (the same dialog as the Help menu's)
       message: (m) => {
+        if ((m as { type?: unknown } | null)?.type === 'claude-desktop-connect') {
+          void connectClaudeDesktop();
+          return;
+        }
         const reply = vaultReply(m, safeStorage);
         if (reply) server?.send(reply);
       },
@@ -318,7 +323,20 @@ const parent = () => (win && !win.isDestroyed() ? win : undefined);
  * the connection file and opens the extension, so Claude Desktop shows its own
  * install confirmation. Without Claude Desktop, points to its download.
  */
+let connecting = false;
+
 async function connectClaudeDesktop(): Promise<void> {
+  // the Help menu and the chat settings both ask: one dialog at a time
+  if (connecting) return;
+  connecting = true;
+  try {
+    await connectClaudeDesktopNow();
+  } finally {
+    connecting = false;
+  }
+}
+
+async function connectClaudeDesktopNow(): Promise<void> {
   const opts: Electron.MessageBoxOptions = {
     type: 'question',
     title: 'Connect to Claude Desktop',

@@ -333,6 +333,8 @@ export interface LocalChatOptions {
   log?: (msg: string) => void;
   /** Also offer Claude and OpenAI on the user's own API keys (chat/api-chat.ts): the desktop app. */
   api?: Omit<ApiChatOptions, 'log'>;
+  /** More for the settings view (the desktop app: whether Claude Desktop is connected, and how to connect it). */
+  extra?: () => Record<string, unknown>;
 }
 
 /** A model client that gives up as soon as the chat is stopped. */
@@ -413,6 +415,7 @@ export function localChatBackends(ctx: AppContext, o: LocalChatOptions = {}): Ch
       ...(o.links ? { links: o.links } : {}),
       ...(b ? { builtin: b } : {}),
       ...(api ? api.view(apiSettings) : {}),
+      ...(o.extra ? o.extra() : {}),
     };
   };
 

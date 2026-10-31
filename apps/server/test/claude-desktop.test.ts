@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.ts';
 import { localChatBackends } from '../src/chat/local-chat.ts';
 import { BRIDGE_FILE, buildMcpb, delveTools, extensionManifest, MANIFEST_VERSION, shortDescription, writeExtensionDir } from '../src/desktop/claude-extension.ts';
-import { CLAUDE_DESKTOP_NOTE, DESKTOP_HEADER, registerDesktopGate } from '../src/desktop/gate.ts';
+import { CLAUDE_DESKTOP_CONNECT, CLAUDE_DESKTOP_NOTE, DESKTOP_HEADER, registerClaudeDesktopConnect, registerDesktopGate } from '../src/desktop/gate.ts';
 import { MapStore } from '../src/store.ts';
 import { unzipEntry } from '../src/zip.ts';
 
@@ -188,6 +188,73 @@ class Bridge {
 
 const toolText = (m: Record<string, unknown>) => ((m.result as { content: { text?: string }[] }).content[0]?.text ?? '') as string;
 const isError = (m: Record<string, unknown>) => (m.result as { isError?: boolean }).isError === true;
+
+describe('Connect to Claude Desktop from the chat settings', () => {
+  const PORT = 47_322;
+  const HOST = `127.0.0.1:${PORT}`;
+  const ok = { host: HOST, [DESKTOP_HEADER]: SECRET };
+  let connected = false;
+  let reachable = true;
+  let asked = 0;
+  let app: FastifyInstance;
+  beforeAll(async () => {
+    const store = new MapStore(':memory:');
+    store.create(testMap, 'test');
+    let view: () => Record<string, unknown> = () => ({});
+    app = buildApp(
+      { version: 'test', started: 'now' },
+      {
+        store,
+        singleUser: true,
+        multiplayer: false,
+        extend: (a) => {
+          registerDesktopGate(a, { secret: SECRET, port: () => PORT, claudeDesktop: { key: () => (connected ? KEY : null), grant: () => undefined } });
+          view = registerClaudeDesktopConnect(a, { connected: () => connected, askApp: () => (asked++, reachable) });
+        },
+        chatBackends: (ctx) => localChatBackends(ctx, { extra: () => view() }),
+      },
+    );
+    app.addHook('onClose', async () => store.close());
+    await app.ready();
+  });
+  afterAll(async () => app.close());
+
+  it('tells the settings whether Claude Desktop is connected, and where to ask for the dialog', async () => {
+    const off = JSON.parse((await app.inject({ method: 'GET', url: '/api/v1/chat/settings', headers: ok })).body) as Record<string, unknown>;
+    expect(off.claudeDesktop).toEqual({ connected: false, connect: CLAUDE_DESKTOP_CONNECT });
+    connected = true;
+    const on = JSON.parse((await app.inject({ method: 'GET', url: '/api/v1/chat/settings', headers: ok })).body) as Record<string, unknown>;
+    expect(on.claudeDesktop).toEqual({ connected: true, connect: CLAUDE_DESKTOP_CONNECT });
+    connected = false;
+  });
+
+  it('asks the app for its own Connect dialog: it connects nothing by itself', async () => {
+    asked = 0;
+    const res = await app.inject({ method: 'POST', url: CLAUDE_DESKTOP_CONNECT, headers: ok });
+    expect(res.statusCode).toBe(202);
+    expect(asked).toBe(1);
+    expect(connected).toBe(false); // the app's dialog decides
+    reachable = false;
+    const gone = await app.inject({ method: 'POST', url: CLAUDE_DESKTOP_CONNECT, headers: ok });
+    expect(gone.statusCode).toBe(503);
+    expect(gone.body).toContain('Help → Connect to Claude Desktop');
+    reachable = true;
+  });
+
+  it('answers only the window: not without the secret, not other pages, not the Claude Desktop key', async () => {
+    asked = 0;
+    connected = true;
+    const tries = [
+      { host: HOST },
+      { ...ok, origin: 'http://evil.example' },
+      { host: HOST, authorization: `Bearer ${KEY}` },
+      { host: 'delve.example:80', [DESKTOP_HEADER]: SECRET },
+    ];
+    for (const headers of tries) expect((await app.inject({ method: 'POST', url: CLAUDE_DESKTOP_CONNECT, headers })).statusCode, JSON.stringify(headers)).toBeGreaterThanOrEqual(400);
+    expect(asked).toBe(0);
+    connected = false;
+  });
+});
 
 describe('the bridge between Claude Desktop and the Delve app', () => {
   let app: FastifyInstance;
@@ -390,7 +457,7 @@ describe('the Delve.mcpb bundle', () => {
       name: 'delve',
       display_name: 'Delve',
       version: '0.1.0',
-      author: { name: 'Delve' },
+      author: { name: 'herades-sys' },
       icon: 'icon.png',
       icons: [{ src: 'icon.png', size: '512x512' }],
       server: { type: 'node', entry_point: 'server/index.js', mcp_config: { command: 'node', args: ['${__dirname}/server/index.js'], env: {} } },

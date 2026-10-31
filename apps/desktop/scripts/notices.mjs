@@ -2,7 +2,8 @@
 // in what the app ships (found from esbuild's metafiles of the server bundle,
 // the browser bundles and the Electron main process, plus the packages copied
 // as they are), with its licence text; then Node.js, Electron and Chromium.
-//   node scripts/notices.mjs <out file> <node LICENSE file>   (from apps/desktop)
+// Then llama.cpp (the built-in model runtime) and the OpenMP runtime it ships with.
+//   node scripts/notices.mjs <out file> <node LICENSE file> [llama folder]   (from apps/desktop)
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative, sep } from 'node:path';
@@ -12,8 +13,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const desktop = join(here, '..');
 const root = join(desktop, '..', '..');
 const esbuild = createRequire(join(root, 'package.json'))('esbuild');
-const [out, nodeLicense] = process.argv.slice(2);
-if (!out) throw new Error('usage: node scripts/notices.mjs <out file> [node LICENSE]');
+const [out, nodeLicense, llamaDir] = process.argv.slice(2);
+if (!out) throw new Error('usage: node scripts/notices.mjs <out file> [node LICENSE] [llama folder]');
+const llama = llamaDir && existsSync(join(llamaDir, 'LICENSE-llama.cpp')) ? { build: existsSync(join(llamaDir, 'VERSION')) ? readFileSync(join(llamaDir, 'VERSION'), 'utf8').trim() : '', dir: llamaDir } : null;
 
 const metas = [];
 const build = async (entry, o) => {
@@ -71,6 +73,7 @@ const lines = [
   '',
   '- Electron (MIT) and Chromium (BSD-3-Clause and others): see LICENSE.electron.txt and LICENSES.chromium.html next to Delve.exe.',
   `- Node.js (MIT and others), run as resources\\node\\node.exe${nodeLicense ? ': its licence is at the end of this file' : ''}.`,
+  ...(llama ? [`- llama.cpp ${llama.build} with ggml (MIT), the built-in model runtime: resources\\llama\\llama-server.exe and its DLLs; libomp.dll there is the LLVM OpenMP runtime (Apache-2.0 WITH LLVM-exception). Both licences are at the end of this file.`] : []),
   ...entries.map((e) => `- ${e.name} ${e.version} (${e.license})`),
   '',
   'Fonts: IM FELL English (Igino Marini) and Marcellus SC (Astigmatic), SIL Open Font License 1.1, from the @expo-google-fonts packages above.',
@@ -80,5 +83,10 @@ for (const e of entries) {
   lines.push('', '='.repeat(72), `${e.name} ${e.version} — ${e.license}`, '='.repeat(72), e.texts.length ? e.texts.join('\n\n') : `(no licence file in the package; its package.json says ${e.license})`);
 }
 if (nodeLicense && existsSync(nodeLicense)) lines.push('', '='.repeat(72), 'Node.js', '='.repeat(72), readFileSync(nodeLicense, 'utf8').trim());
+if (llama) {
+  lines.push('', '='.repeat(72), `llama.cpp ${llama.build} and ggml — MIT`, '='.repeat(72), readFileSync(join(llama.dir, 'LICENSE-llama.cpp'), 'utf8').trim());
+  const omp = join(llama.dir, 'LICENSE-LLVM-OpenMP');
+  if (existsSync(omp)) lines.push('', '='.repeat(72), 'LLVM OpenMP runtime (libomp.dll) — Apache-2.0 WITH LLVM-exception', '='.repeat(72), readFileSync(omp, 'utf8').trim());
+}
 writeFileSync(out, `${lines.join('\n')}\n`);
 console.log(`notices: ${entries.length} packages -> ${out}`);

@@ -78,7 +78,8 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   const bg = scene.layers[0]?.kind === 'rect' ? scene.layers[0].color : 'var(--canvas-parchment)';
   const edit = o.loggedIn;
   const choice = o.chatChoice;
-  const ai = esc(choice?.name ?? 'Claude');
+  // "Claude" whenever Claude answers: the web's bridge, or the desktop app's Anthropic key (chat.ts renames it on a switch)
+  const ai = esc(!choice || choice.backend === 'anthropic' ? 'Claude' : choice.name);
   const chat = edit && (o.chatModel || choice) ? { enabled: true, model: o.chatModel ?? '', ...(choice ? { backend: choice.backend, backends: choice.offered, name: choice.name } : {}) } : undefined;
   const chatSettings = Boolean(choice && choice.offered.length > 1);
   const screen = o.multiplayer !== false;
@@ -200,7 +201,7 @@ ${chatSettings ? `  <div class="ed-chat-settings" id="chat-settings-pane" hidden
   <div class="ed-chat-status" id="chat-status" role="status" hidden></div>
   <form class="ed-chat-form" id="chat-form">
     <textarea class="input" id="chat-input" rows="3" aria-label="Message ${ai}" placeholder="Ask ${ai} to change the map"></textarea>
-    <div class="ed-chat-foot"><span class="ed-chat-hint" id="chat-usage">Each reply is one undo step. <kbd>/</kbd> focuses chat</span><button class="btn btn-primary" id="chat-send" type="submit" title="Send · Enter">${ic('send', 15)}<span>Send</span></button></div>
+    <div class="ed-chat-foot"><span class="ed-chat-hint" id="chat-usage">Each change is one undo step. <kbd>/</kbd> focuses chat</span><button class="btn btn-primary" id="chat-send" type="submit" title="Send · Enter">${ic('send', 15)}<span>Send</span></button></div>
   </form>
 </aside>`
     : '';

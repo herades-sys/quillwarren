@@ -467,6 +467,39 @@ describe('Claude on the user’s own Anthropic API key', () => {
   });
 });
 
+describe('the panel’s name follows who answers', () => {
+  const anthropic = new FakeApi();
+  const openai = new FakeApi();
+  let s: Setup;
+  beforeAll(async () => {
+    await anthropic.start();
+    await openai.start();
+    anthropic.models = CLAUDE_MODELS;
+    s = await setUp(anthropic, openai);
+  });
+  afterAll(async () => {
+    await s.app.close();
+    await anthropic.stop();
+    await openai.stop();
+    rmSync(s.dir, { recursive: true, force: true });
+  });
+
+  it('says Claude when Claude answers on the user’s key, and Assistant otherwise', async () => {
+    const page = async () => (await s.app.inject({ method: 'GET', url: `/maps/${MAP}` })).body;
+    expect(await page()).toContain('data-assistant="Assistant"');
+    expect((await put(s.app, { backend: 'anthropic', anthropic: { key: ANTHROPIC_KEY } })).statusCode).toBe(200);
+    const claude = await page();
+    expect(claude).toContain('data-assistant="Claude"');
+    expect(claude).toContain('Ask Claude to change the map');
+    expect(claude).toContain('<span class="ed-panel-title">Claude</span>');
+    // the page keeps the other backends' name, so the panel can rename itself on a switch (chat.ts)
+    const initial = JSON.parse(/<script id="delve-initial" type="application\/json">(.*?)<\/script>/s.exec(claude)![1]!) as { chat: { backend: string; name: string } };
+    expect(initial.chat).toMatchObject({ backend: 'anthropic', name: 'Assistant' });
+    expect((await put(s.app, { backend: 'none' })).statusCode).toBe(200);
+    expect(await page()).toContain('Ask Assistant to change the map');
+  });
+});
+
 describe('OpenAI on the user’s own API key', () => {
   const anthropic = new FakeApi();
   const openai = new FakeApi();

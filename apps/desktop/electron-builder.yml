@@ -29,10 +29,9 @@ extraResources:
   # The Claude Desktop extension, opened by Help → Connect to Claude Desktop…
   - from: build/resources/Delve.mcpb
     to: Delve.mcpb
-  # The built-in model runtime, once llama.cpp's llama-server is approved and
-  # downloaded into build/resources/llama (llama-server.exe and its DLLs):
-  # - from: build/resources/llama
-  #   to: llama
+  # The built-in model runtime: llama.cpp's llama-server.exe and its DLLs (build.sh step 4b)
+  - from: build/resources/llama
+    to: llama
 # Electron's fuses, set in Delve.exe itself: no running Electron as plain Node
 # (Delve's server has its own node.exe), no NODE_OPTIONS or --inspect from
 # outside, the app only from app.asar, cookies encrypted with the user's

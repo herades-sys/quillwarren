@@ -27,9 +27,9 @@ resources\node\node.exe (Node 24.21.0, nodejs.org)
      person's own API key (chat/api-chat.ts), never the Claude bridge
    - /mcp for Claude Desktop's bridge only, with its own key, while connected
    - /models: model files, Ollama import, the built-in runtime (desktop/runtime.ts)
-        │ later: spawn
+        │ spawn (the model page, or the chat on first use)
         ▼
-resources\llama\llama-server.exe (llama.cpp, MIT) — not bundled yet
+resources\llama\llama-server.exe (llama.cpp b11476, MIT; build.sh step 4b)
 ```
 
 - **`apps/desktop`** is outside the root npm workspaces, with its own `package.json` and `package-lock.json`. The root `npm ci` / `npm install` (the server release on the dev container) never sees Electron. Its dependencies are all dev dependencies: the main process is bundled by esbuild into `dist/main.cjs`, so nothing from `node_modules` ships in `app.asar`.
@@ -167,7 +167,7 @@ Server configuration, not a per-user choice:
 
 ## Claude Desktop
 
-**Help → Connect to Claude Desktop…** lets a person with Claude Desktop chat with Claude there, on their own Claude plan, while Claude builds and changes the maps in the running Delve app through Delve's existing MCP tools (the same `mcp.ts` tools, live in the Delve window through `LiveHub`).
+**Help → Connect to Claude Desktop…** (also in the chat settings: the "Or chat in Claude Desktop" box POSTs `/api/v1/desktop/claude-desktop/connect`, and the server asks the app over IPC, `{type: "claude-desktop-connect"}`, for the same dialog) lets a person with Claude Desktop chat with Claude there, on their own Claude plan, while Claude builds and changes the maps in the running Delve app through Delve's existing MCP tools (the same `mcp.ts` tools, live in the Delve window through `LiveHub`).
 
 ```
 Claude Desktop ──stdio (MCP)──▶ Delve extension: server/index.js ──HTTP POST /mcp, Bearer <key>──▶ Delve's server (127.0.0.1:<port>)
@@ -187,7 +187,7 @@ Claude Desktop ──stdio (MCP)──▶ Delve extension: server/index.js ─�
 
 ## The built-in model runtime
 
-Code only, with no binary yet. `apps/server/src/desktop/runtime.ts` (`LlamaRuntime`):
+Bundled since 2026-10-31: llama.cpp `b11476` (Vulkan build) in `resources\llama`. `apps/server/src/desktop/runtime.ts` (`LlamaRuntime`):
 
 - **Start.** It starts `llama-server` with the chosen GGUF on a free 127.0.0.1 port:
   `--model --alias --host 127.0.0.1 --port --api-key-file --ctx-size --n-gpu-layers --jinja --no-webui`.
@@ -225,13 +225,13 @@ Its REST API is `/api/v1/runtime` (GET), `/settings` (PUT), `/import` (POST), `/
   - both Apache-2.0.
 - Before switching it on, check the file names and pin each sha256.
 
-**To finish the runtime** (needs the user's approval for the download): put llama.cpp's Windows build in `apps/desktop/build/resources/llama/` and uncomment the `llama` entry under `extraResources` in `electron-builder.yml`. The app then passes `DELVE_LLAMA_SERVER`, and the model page's Start and "Use it for the chat" come alive.
+**The bundled runtime** (the user approved the download on 2026-10-31): build.sh step 4b fetches `llama-b11476-bin-win-vulkan-x64.zip` from https://github.com/ggml-org/llama.cpp/releases into `~/.cache/delve-desktop` (33,380,424 bytes, sha256 `5c71e7b749697da4a8d46e9ee55486845cbba27c9dfbecb4007f31ba6610d523`, pinned in the script) plus the tag's `LICENSE` (pinned too: the zip has none), and copies into `build/resources/llama` (→ `resources\llama` via `extraResources`) only what llama-server loads: `llama-server.exe`, `llama-server-impl.dll`, `llama.dll`, `llama-common.dll`, `mtmd.dll`, every `ggml*.dll` (the CPU variants and the Vulkan backend are loaded at run time), `libomp.dll`, with `LICENSE-llama.cpp`, `LICENSE-LLVM-OpenMP` and `VERSION`. The app passes `DELVE_LLAMA_SERVER` when `llama-server.exe` is there, and the model page's Start and "Use it for the chat" come alive.
 
-- **Recommended file**: `llama-b<build>-bin-win-vulkan-x64.zip` from https://github.com/ggml-org/llama.cpp/releases. The Vulkan build runs on NVIDIA, AMD and Intel GPUs and on the CPU. On 2026-10-07 that was `b11476`: 33,380,424 bytes, sha256 `5c71e7b749697da4a8d46e9ee55486845cbba27c9dfbecb4007f31ba6610d523`.
-- **Smaller**: the CPU-only zip, about 19.4 MB.
-- **Not suitable**: the CUDA builds are 150–265 MB plus a 390 MB runtime.
-- **Then check against the real binary**: the flags above (in particular `--api-key-file` and `--no-webui`), and that `/health` answers 503 while loading.
-- **Licences**: add llama.cpp's MIT licence and ggml's to the notices.
+- **Why Vulkan**: it runs on NVIDIA, AMD and Intel GPUs and on the CPU. The CPU-only zip is about 19.4 MB; the CUDA builds are 150–265 MB plus a 390 MB runtime.
+- **Checked against the binary** (strings in its DLLs): every flag above is in b11476, `--api-key-file` and `--no-webui` included. Not checked here (no Windows): that `/health` answers 503 while loading.
+- **Needs on the PC**: the Microsoft Visual C++ 2015–2022 runtime (`MSVCP140.dll`, `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`, imported by llama-server and ggml-vulkan), which most PCs already have; `vulkan-1.dll` comes with the GPU driver (without it ggml uses the CPU). Bundling the VC++ DLLs next to llama-server is open (a release checklist item).
+- **Licences**: llama.cpp and ggml (MIT) and the LLVM OpenMP runtime (Apache-2.0 WITH LLVM-exception) are listed in the notices with their texts.
+- **To change the build**: change `LLAMA_BUILD` and both sha256 values in build.sh, then check the flags against the new binary.
 
 ## Updates
 
@@ -257,11 +257,12 @@ Each is moved to `.1` at 5 MB. **Help → Copy logs** puts the versions and the 
 | Item | Status |
 |---|---|
 | Licence for Delve | **Open.** The user chooses (e.g. MIT, or AGPL-3.0 for the server). `apps/desktop/package.json` says `UNLICENSED` and the notices say "all rights reserved" until then. |
+| Visual C++ runtime | **Open.** llama-server and ggml-vulkan need `MSVCP140.dll`, `VCRUNTIME140.dll` and `VCRUNTIME140_1.dll` (most PCs have them). For a clean PC, ship them next to llama-server (Microsoft allows app-local copies of the redistributable DLLs) or have the installer run `vc_redist.x64.exe`; either needs the user's OK for the download. |
 | Code-signing certificate | **Open.** An OV certificate (~€200–400/year, a hardware token or cloud HSM since 2023) or Azure Trusted Signing (about $10/month, needs a company or a verified individual in supported countries). Configured and off (`win.signtoolOptions`). Build on Windows to sign. |
 | Name and trademark check for "Delve" | **Open.** "Delve" is a common word and used by other software products. Check the EUIPO, WIPO and USPTO registers in class 9 (software) and class 41 (games), and app stores, before the first public release. The `appId` `app.delve.desktop` should be final before then: changing it later breaks shortcuts and updates. |
 | Privacy | **Done for phase 1.** No telemetry, no crash reports, no update checks. The chat sends nothing unless the user sets up a local model server (on their own machine or network) or puts in their own Anthropic or OpenAI API key (then the map and the chat go to that provider, as the pane says). Claude Desktop reaches Delve only after Connect to Claude Desktop…. Spellchecking uses Windows' own. Say so on the release page. |
 | Claude Desktop extension | **Open.** Test the install on Windows; set the manifest's author, homepage, support and privacy links once the project has a public home (author is "Delve" with no email for now). |
-| Third-party notices | **Generated** at every build (`THIRD-PARTY-NOTICES.txt` in resources, Help → Third-party notices): Electron and Chromium (`LICENSE.electron.txt`, `LICENSES.chromium.html`), Node.js, resvg (MPL-2.0), three.js, clipper2-ts (BSL-1.0), fastify and the other bundled packages, IM FELL English and Marcellus SC (OFL-1.1); 86 packages since Delve Table's bundles stay out (PixiJS and its dependencies and cannon-es were 9 of the 95 before). **Later**: llama.cpp and ggml (MIT), Qwen (Apache-2.0, credited when a model is downloaded from inside the app). |
+| Third-party notices | **Generated** at every build (`THIRD-PARTY-NOTICES.txt` in resources, Help → Third-party notices): Electron and Chromium (`LICENSE.electron.txt`, `LICENSES.chromium.html`), Node.js, resvg (MPL-2.0), three.js, clipper2-ts (BSL-1.0), fastify and the other bundled packages, IM FELL English and Marcellus SC (OFL-1.1); 86 packages since Delve Table's bundles stay out (PixiJS and its dependencies and cannon-es were 9 of the 95 before). llama.cpp and ggml (MIT) and the LLVM OpenMP runtime (Apache-2.0 WITH LLVM-exception) since 2026-10-31. **Later**: Qwen (Apache-2.0, credited when a model is downloaded from inside the app). |
 | Update host | **Open.** A public HTTPS host (see Updates). |
 | Installer built on Windows | **Open.** For signing, the exe's icon and version info, and electron-updater's update flow. |
 | Asar integrity fuse | **Open.** Switch `enableEmbeddedAsarIntegrityValidation` on after one test on Windows. |

@@ -85,7 +85,8 @@ export function extensionManifest(o: { version: string; tools: readonly ToolInfo
       '',
       'Before installing: open Delve and choose **Help → Connect to Claude Desktop…**. The extension works only while Delve is open, and only on this computer. Your maps stay in Delve; what Claude reads through the tools is part of your conversation with Claude, on your own Claude plan.',
     ].join('\n'),
-    author: { name: 'Delve' },
+    // the user, 2026-10-31: "herades-sys" for now; no link while the repository is private
+    author: { name: 'herades-sys' },
     icon: 'icon.png',
     icons: [{ src: 'icon.png', size: '512x512' }],
     server: {
