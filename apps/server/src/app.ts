@@ -55,6 +55,12 @@ export interface AppOptions {
   // ----- the desktop app only (desktop/main.ts); the web server (main.ts) sets none of these -----
   /** One local user: whoever gets past the desktop gate (`extend`) is logged in, with no login page. */
   singleUser?: boolean;
+  /**
+   * false: one person's editor with no players (the desktop app). Delve Table
+   * (its routes, table.db, table-assets), the players' screen, Discord login and
+   * the links to them are left out. Unset: all of them, as on the web server.
+   */
+  multiplayer?: boolean;
   /** Chat backends besides the bridge (chat/local-chat.ts), made once the app's libraries exist. */
   chatBackends?: (ctx: AppContext) => ChatBackends;
   /** Hooks and routes added before any other (the desktop gate, the model manager). */
@@ -130,8 +136,10 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
 
   void app.register(websocket);
   const chatTokens = new ChatTokens();
+  // Delve Table, the players' screen and Discord: everywhere but the desktop app
+  const multiplayer = opts.multiplayer !== false;
   void app.register(async (scoped) => {
-    registerApi(scoped, { service, token: opts.token, sessions: auth.sessions });
+    registerApi(scoped, { service, token: opts.token, sessions: auth.sessions, screen: multiplayer });
     registerSegments(scoped, { service, token: opts.token, sessions: auth.sessions });
     registerAssets(scoped);
     registerImages(scoped, { images, store, token: opts.token, sessions: auth.sessions });
@@ -139,22 +147,24 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
     registerMcp(scoped, { service, token: opts.token, version: info.version, chatTokens, images, props });
     registerChat(scoped, { service, token: opts.token, sessions: auth.sessions, tokens: chatTokens, config: opts.chat, backends });
     registerLogin(scoped, auth, { adminSection: () => requestsSection(feedback.summary()) });
-    registerViewer(scoped, info, store, auth, opts.chat, backends);
+    registerViewer(scoped, info, store, auth, opts.chat, backends, multiplayer);
     registerStack(scoped, info, store);
-    registerPreview(scoped, info, store, auth);
+    registerPreview(scoped, info, store, auth, { multiplayer, singleUser: Boolean(opts.singleUser) });
     registerTracePage(scoped, info, auth);
     registerHandoutPage(scoped, store, auth, info.version);
     registerUi(scoped, info);
-    const table = registerTable(scoped, {
-      maps: store,
-      auth,
-      token: opts.token,
-      version: info.version,
-      dataDir: opts.dataDir,
-      onMapChange: (cb) => service.onChange(cb),
-      ...(opts.discord ? { discord: opts.discord } : {}),
-    });
-    registerFeedback(scoped, { auth, log: feedback, limits: new SendLimits(), table });
+    const table = multiplayer
+      ? registerTable(scoped, {
+          maps: store,
+          auth,
+          token: opts.token,
+          version: info.version,
+          dataDir: opts.dataDir,
+          onMapChange: (cb) => service.onChange(cb),
+          ...(opts.discord ? { discord: opts.discord } : {}),
+        })
+      : undefined;
+    registerFeedback(scoped, { auth, log: feedback, limits: new SendLimits(), ...(table ? { table } : {}) });
   });
   return app;
 }

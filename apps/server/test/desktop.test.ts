@@ -3,10 +3,11 @@
 // without a login, the web-only pages, the chat settings, the configuration
 // from the environment and where the data goes, and the real entry point
 // (desktop/main.ts) as the app starts it: IPC "ready", the data folder, a clean
-// shutdown.
+// shutdown. And what the app leaves out (`multiplayer: false`): Delve Table, the
+// players' screen, Discord login, and the links to them and to accounts.
 import { fork } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -32,6 +33,7 @@ function desktopApp(o: { dataDir?: string; port?: () => number } = {}): FastifyI
     {
       store,
       singleUser: true,
+      multiplayer: false,
       ...(o.dataDir ? { dataDir: o.dataDir } : {}),
       extend: (a) => registerDesktopGate(a, { secret: SECRET, port: o.port ?? (() => PORT) }),
       chatBackends: (ctx) => localChatBackends(ctx, { ...(o.dataDir ? { settingsFile: join(o.dataDir, 'chat-settings.json') } : {}), links: { models: '/models' } }),
@@ -42,6 +44,9 @@ function desktopApp(o: { dataDir?: string; port?: () => number } = {}): FastifyI
 }
 
 const ok = { host: HOST, [DESKTOP_HEADER]: SECRET };
+
+/** A page without its <style> blocks: what it shows and links to, not its CSS comments. */
+const withoutStyles = (html: string): string => html.replace(/<style[^>]*>[\s\S]*?<\/style>/g, '');
 
 describe('the desktop gate, piece by piece', () => {
   it('compares the secret in constant time, and only the exact secret', () => {
@@ -141,7 +146,7 @@ describe('desktop mode', () => {
   });
 
   it('sends the web server’s login and admin pages back to the library', async () => {
-    for (const url of ['/login', '/login?next=/x', '/admin', '/account', '/account/setup?token=x', '/auth/discord']) {
+    for (const url of ['/login', '/login?next=/x', '/admin', '/account', '/account/setup?token=x']) {
       const res = await app.inject({ method: 'GET', url, headers: ok });
       expect(res.statusCode, url).toBe(303);
       expect(res.headers.location).toBe('/');
@@ -184,6 +189,127 @@ describe('desktop mode', () => {
   it('keeps the map data in the data folder', () => {
     for (const f of ['accounts.db', 'chat-settings.json']) expect(existsSync(join(dir, f)), f).toBe(true);
   });
+
+  it('has no Delve Table, players’ screen or Discord login: nothing registered, so 404s', async () => {
+    const gets = [
+      '/play',
+      '/play/g_abcdefgh',
+      '/play/g_abcdefgh/3d',
+      '/play/g_abcdefgh/leave',
+      '/play/join/x',
+      '/api/v1/games',
+      '/api/v1/games/g_abcdefgh/notebook',
+      '/api/v1/games/g_abcdefgh/invites',
+      '/api/v1/games/g_abcdefgh/pages/p1/background.png',
+      '/api/v1/games/g_abcdefgh/pages/p1/scene3d.json',
+      '/maps/map_test4p/screen',
+      '/api/v1/maps/map_test4p/screen',
+      '/auth/discord',
+      '/auth/discord?next=%2Fplay',
+      '/auth/discord/callback?code=x&state=y',
+      '/auth/logout',
+      '/assets/table.js',
+      '/assets/table-dice.js',
+      '/assets/table3d.js',
+      '/assets/screen.js',
+    ];
+    for (const url of gets) expect((await app.inject({ method: 'GET', url, headers: ok })).statusCode, url).toBe(404);
+    const post = { ...ok, origin: `http://${HOST}`, 'content-type': 'application/json' };
+    for (const url of ['/api/v1/games', '/play/new', '/play/join/x', '/auth/logout']) {
+      expect((await app.inject({ method: 'POST', url, headers: post, payload: '{"name":"x"}' })).statusCode, url).toBe(404);
+    }
+    expect(app.printRoutes({ commonPrefix: false })).not.toMatch(/games|play|screen|discord|leave|invite/);
+    // the editor's own pages stay
+    for (const url of ['/maps/map_test4p/3d', '/maps/map_test4p/handout', '/import/image', '/assets/viewer.js', '/assets/stack.js']) {
+      expect((await app.inject({ method: 'GET', url, headers: ok })).statusCode, url).not.toBe(404);
+    }
+  });
+
+  it('makes no Delve Table files in the data folder', () => {
+    for (const f of ['table.db', 'table-assets']) expect(existsSync(join(dir, f)), f).toBe(false);
+  });
+
+  it('links to none of it from the start page: no Play, Admin, Account or log-out, no admin set-up banner', async () => {
+    const res = await app.inject({ method: 'GET', url: '/', headers: ok });
+    expect(res.statusCode).toBe(200);
+    const shown = withoutStyles(res.body);
+    for (const gone of ['href="/play"', 'Delve Table', 'href="/admin"', 'href="/account', 'action="/logout"', 'Log out', 'Log in', 'class="notice notice-warning lib-secure"', 'Create your admin account', 'Discord']) {
+      expect(shown, gone).not.toContain(gone);
+    }
+    // "Request a feature" stays and leads to the desktop app's own page
+    expect(res.body).toContain('href="/feedback"');
+    expect(res.body).toContain('data-new-map');
+  });
+
+  it('shows no players’ screen button in the editor, but keeps the view toggle, exports and the handout', async () => {
+    const page = (await app.inject({ method: 'GET', url: '/maps/map_test4p', headers: ok })).body;
+    const shown = withoutStyles(page); // the shared layout CSS keeps its comments, as on the web
+    expect(shown).not.toContain('id="screen-link"');
+    expect(shown).not.toContain('/screen');
+    expect(shown).not.toMatch(/players’ screen|players' screen/i);
+    expect(shown).not.toContain('Delve Table');
+    // the GM / players view toggle (top bar and phone), the exports (players' too) and the parchment handout
+    expect(page).toContain('name="view" value="players"');
+    expect(page).toContain('name="view-phone" value="players"');
+    expect(page).toContain('id="export-btn"');
+    expect(page).toContain('id="png-link" href="/api/v1/maps/map_test4p/render.png?view=gm"');
+    expect(page).toContain('id="view-handout" href="/maps/map_test4p/handout"');
+    expect(page).toContain('href="/maps/map_test4p/3d"');
+    expect(page).toContain('data-crop="png-players"');
+    const players = (await app.inject({ method: 'GET', url: '/maps/map_test4p?view=players', headers: ok })).body;
+    expect(players).toContain('id="png-link" href="/api/v1/maps/map_test4p/render.png?view=players"');
+    expect((await app.inject({ method: 'GET', url: '/api/v1/maps/map_test4p/render.png?view=players', headers: ok })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/maps/map_test4p/handout.svg', headers: ok })).statusCode).toBe(200);
+    // the editor's script hears it too, for its hints
+    const initial = JSON.parse(/<script id="delve-initial" type="application\/json">(.*?)<\/script>/s.exec(page)![1]!) as { multiplayer?: boolean };
+    expect(initial.multiplayer).toBe(false);
+  });
+});
+
+describe('desktop mode leaves Delve Table’s files alone', () => {
+  it('never opens or deletes a table.db or table-assets already in the data folder', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'delve-desktop-old-'));
+    try {
+      writeFileSync(join(dir, 'table.db'), 'an older table database');
+      mkdirSync(join(dir, 'table-assets'));
+      writeFileSync(join(dir, 'table-assets', 'a.png'), 'x');
+      const app = desktopApp({ dataDir: dir });
+      await app.ready();
+      expect((await app.inject({ method: 'GET', url: '/play', headers: ok })).statusCode).toBe(404);
+      await app.close();
+      expect(readFileSync(join(dir, 'table.db'), 'utf8')).toBe('an older table database');
+      expect(readFileSync(join(dir, 'table-assets', 'a.png'), 'utf8')).toBe('x');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('multiplayer: false without the desktop gate', () => {
+  it('still takes feature requests: the form works without Delve Table behind it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'delve-noplay-'));
+    const app = buildApp({ version: 'test', started: 'now' }, { multiplayer: false, openEdit: true, dataDir: dir });
+    try {
+      await app.ready();
+      const form = await app.inject({ method: 'GET', url: '/feedback?from=%2Fmaps%2Fx' });
+      expect(form.statusCode).toBe(200);
+      expect(form.body).toContain('name="title"');
+      expect(form.body).not.toContain('Delve Table');
+      const sent = await app.inject({
+        method: 'POST',
+        url: '/feedback',
+        headers: { host: 'localhost', origin: 'http://localhost', 'content-type': 'application/x-www-form-urlencoded' },
+        payload: new URLSearchParams({ kind: 'idea', title: 'More doors', description: 'Round ones', from: '/maps/x', website: '' }).toString(),
+      });
+      expect(sent.statusCode).toBe(303);
+      expect(readFileSync(join(dir, 'feature-requests.txt'), 'utf8')).toContain('More doors');
+      expect((await app.inject({ method: 'GET', url: '/play' })).statusCode).toBe(404);
+      expect(existsSync(join(dir, 'table.db'))).toBe(false);
+    } finally {
+      await app.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('desktop mode over a real socket (WebSocket upgrades too)', () => {
@@ -217,6 +343,21 @@ describe('desktop mode over a real socket (WebSocket upgrades too)', () => {
     expect(await connect({})).toBe('refused 401');
     expect(await connect({ [DESKTOP_HEADER]: SECRET, origin: 'https://evil.example' })).toBe('refused 403');
     expect(await connect({ [DESKTOP_HEADER]: SECRET, host: `rebound.example:${port}` })).toBe('refused 403');
+  });
+
+  it('refuses the players’ screen’s live mode (?screen=1), and keeps the editor’s', async () => {
+    const got = await new Promise<{ first: string; code: number }>((done) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/api/v1/maps/map_test4p/live?screen=1`, { headers: { [DESKTOP_HEADER]: SECRET } });
+      let first = '';
+      ws.on('message', (m) => (first ||= String(m)));
+      ws.on('close', (code) => done({ first, code }));
+      ws.on('error', () => {});
+    });
+    expect(JSON.parse(got.first)).toMatchObject({ type: 'error' });
+    expect(got.first).not.toContain('"rev"');
+    expect(got.code).toBe(4404);
+    // the editor's save path (LiveHub) is the same socket without ?screen=1
+    expect(await connect({ [DESKTOP_HEADER]: SECRET })).toMatch(/^message \{"type":"hello"/);
   });
 
   it('answers fetch from another port’s page with nothing it can read', async () => {
@@ -284,11 +425,15 @@ describe('the desktop server as the app starts it (desktop/main.ts)', () => {
     const rt = (await (await fetch(`http://127.0.0.1:${port}/api/v1/runtime`, { headers: h })).json()) as { runtime: { state: string; bundled: boolean }; folder: string };
     expect(rt.runtime).toMatchObject({ state: 'unavailable', bundled: false });
     expect(rt.folder).toBe(join(root, 'Local', 'Delve', 'models'));
+    // no players here: the entry turns Delve Table, the players' screen and Discord off
+    for (const url of ['/play', '/api/v1/games', '/maps/map_x/screen', '/auth/discord']) expect((await fetch(`http://127.0.0.1:${port}${url}`, { headers: h })).status, url).toBe(404);
     // the server listens on loopback only
     expect(s.output()).toContain('127.0.0.1');
     s.child.send({ type: 'shutdown' });
     expect(await s.exited).toBe(0);
     expect(existsSync(join(data, 'delve.db'))).toBe(true);
+    expect(existsSync(join(data, 'table.db'))).toBe(false);
+    expect(existsSync(join(data, 'table-assets'))).toBe(false);
     expect(existsSync(join(root, 'Roaming', 'Delve', 'logs'))).toBe(true);
     // the map is in the database file, so it survives a restart
     const again = start({ DELVE_DESKTOP_SECRET: SECRET, DELVE_DATA: data, OLLAMA_MODELS: join(root, 'no-ollama') });

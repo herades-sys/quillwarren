@@ -39,6 +39,8 @@ export interface ApiDeps {
   service: MapService;
   token: string | undefined;
   sessions: Sessions;
+  /** false (the desktop app): there is no players' screen, so the live channel refuses ?screen=1. Default true. */
+  screen?: boolean;
 }
 
 interface ErrorBody {
@@ -107,7 +109,7 @@ export function writeGuard(token: string | undefined, sessions: Sessions) {
   };
 }
 
-export function registerApi(app: FastifyInstance, { service, token, sessions }: ApiDeps): void {
+export function registerApi(app: FastifyInstance, { service, token, sessions, screen = true }: ApiDeps): void {
   const { store } = service;
   const fail = (reply: FastifyReply, e: unknown) => {
     const { status, body } = errorResponse(e);
@@ -375,6 +377,11 @@ export function registerApi(app: FastifyInstance, { service, token, sessions }: 
     }
     // ?screen=1: a players' screen. It gets no map data at all, only "changed" and "look".
     if ((req.query as { screen?: string }).screen === '1') {
+      if (!screen) {
+        LiveHub.send(socket, { type: 'error', error: 'there is no players’ screen here' });
+        socket.close(4404, 'no players screen');
+        return;
+      }
       service.hub.join(id, socket, 'screen');
       LiveHub.send(socket, { type: 'hello', rev: cur.rev });
       socket.on('message', (raw) => {

@@ -4,7 +4,7 @@
 //   %APPDATA%\Delve\              Electron's userData: the window's browser
 //                                 storage, window-state.json, desktop.json
 //   %APPDATA%\Delve\data\         the server's DELVE_DATA: maps (delve.db),
-//                                 pictures, props, Delve Table, chat settings
+//                                 pictures, props, chat settings
 //   %APPDATA%\Delve\logs\         main.log, server.log, llama-server.log
 //   %LOCALAPPDATA%\Delve\models\  GGUF model files (gigabytes: kept out of the
 //                                 roaming profile)

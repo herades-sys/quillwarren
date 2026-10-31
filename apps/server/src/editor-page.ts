@@ -27,6 +27,8 @@ export interface EditorPageOpts {
   chatChoice?: { backend: string; offered: readonly string[]; name: string };
   /** Snip an area to a PNG (the Snip button, Shift S): admin and GM accounts, and open-edit development servers. */
   snip: boolean;
+  /** The desktop app (no players): false leaves out the players' screen links, and the editor's hints about Delve Table. Never set on the web server. */
+  multiplayer?: false;
 }
 
 /** "AN" for Ana, "MV" for Mara Venn. */
@@ -73,6 +75,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   const ai = esc(choice?.name ?? 'Claude');
   const chat = edit && (o.chatModel || choice) ? { enabled: true, model: o.chatModel ?? '', ...(choice ? { backend: choice.backend, backends: choice.offered, name: choice.name } : {}) } : undefined;
   const chatSettings = Boolean(choice && choice.offered.length > 1);
+  const screen = o.multiplayer !== false;
   const initial = JSON.stringify({
     id,
     rev,
@@ -82,6 +85,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
     account: o.account,
     ...(chat ? { chat } : {}),
     ...(o.snip ? { snip: true } : {}),
+    ...(screen ? {} : { multiplayer: false }),
   }).replace(/</g, '\\u003c');
   const q = `view=${view}${style ? `&style=${encodeURIComponent(style)}` : ''}`;
   const loginHref = `/login?next=${encodeURIComponent(`/maps/${id}`)}`;
@@ -115,7 +119,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   const exportItems = snipItem + exports.map((e) => menuItem(...e)).join('') + cropGroup;
   const moreItems = [
     menuItem('3d', '', `/maps/${enc}/3d`, '3D view', 'All storeys stacked', ''),
-    menuItem('screen', '', `/maps/${enc}/screen`, 'Players’ screen', 'Opens in a new window', '', ' target="_blank" rel="noopener"'),
+    screen ? menuItem('screen', '', `/maps/${enc}/screen`, 'Players’ screen', 'Opens in a new window', '', ' target="_blank" rel="noopener"') : '',
     snipItem,
     exports.map((e) => menuItem(e[0], '', e[2], e[3], e[4], e[5])).join(''),
     cropGroup,
@@ -146,12 +150,12 @@ ${viewSeg('view', '')}
   <span class="status status-connecting ed-desk" id="conn" role="status" title="Connecting to the live map">Connecting…</span>
   <span class="vsep ed-wide"></span>
   <a class="btn btn-plain ed-wide" id="view-3d" href="/maps/${enc}/3d" title="All storeys stacked in 3D · Shift 3">${ic('3d', 17)}3D</a>
-  <a class="btn btn-primary ed-wide" id="screen-link" href="/maps/${enc}/screen" target="_blank" rel="noopener" title="Open the players' screen in a new window">${ic('screen', 17)}Players’ screen</a>
+  ${screen ? `<a class="btn btn-primary ed-wide" id="screen-link" href="/maps/${enc}/screen" target="_blank" rel="noopener" title="Open the players' screen in a new window">${ic('screen', 17)}Players’ screen</a>` : ''}
   ${o.snip ? `<button class="btn btn-plain ed-wide" type="button" id="snip-btn" aria-pressed="false" title="Snip an area and save it as a PNG · Shift S">${SNIP_ICON}Snip</button>` : ''}
   <div class="ed-menu-wrap ed-wide"><button class="btn btn-secondary" type="button" id="export-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu">${ic('download', 17)}Export${icon('chevron-down', { size: 14, className: 'text-muted' })}</button>
     <div class="menu ed-menu" role="menu" id="export-menu" hidden>${exportItems}</div></div>
   <button class="btn btn-icon ed-storey-btn" type="button" id="storey-btn" aria-label="Change storey" aria-haspopup="menu" aria-expanded="false"${o.levels.length > 1 ? '' : ' hidden'}><span class="ed-storey-chip" id="storey-chip"></span></button>
-  <div class="ed-menu-wrap ed-narrow"><button class="btn btn-icon" type="button" id="more-btn" aria-label="More: export, 3D, players’ screen, settings" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">${ic('more', 20)}</button>
+  <div class="ed-menu-wrap ed-narrow"><button class="btn btn-icon" type="button" id="more-btn" aria-label="More: export, 3D, ${screen ? 'players’ screen, ' : ''}settings" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">${ic('more', 20)}</button>
     <div class="menu ed-menu" role="menu" id="more-menu" hidden>${moreItems}</div></div>
   <span class="vsep ed-desk"></span>
   ${chat ? `<button class="btn btn-icon ed-chat-btn" type="button" id="chat-toggle" aria-pressed="false" aria-label="Chat with ${ai}" title="${ai} · Ctrl .">${ic('chat')}</button>` : ''}

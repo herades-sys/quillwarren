@@ -24,6 +24,8 @@ interface Initial {
   chat?: { enabled: boolean; model: string; backend?: string; backends?: string[]; name?: string };
   /** Snip an area to a PNG (snip.ts): admin and GM accounts only. */
   snip?: boolean;
+  /** false in the desktop app: no Delve Table or players' screen (editor-page.ts). */
+  multiplayer?: false;
 }
 type Incoming =
   | { type: 'hello'; rev: number; map: DelveMap }
@@ -554,6 +556,7 @@ if (initial.edit.loggedIn) {
     grid: () => grid,
     toggleGrid,
     previewBackground,
+    ...(initial.multiplayer === false ? { multiplayer: false as const } : {}),
   });
 }
 

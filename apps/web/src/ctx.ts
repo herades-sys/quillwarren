@@ -50,4 +50,6 @@ export interface ViewerCtx {
    * sent, so the picture keeps the colour until the map's redraw).
    */
   previewBackground?(hex: string | null, repaint?: boolean): void;
+  /** false in the desktop app, which has no Delve Table or players' screen: the hints leave them out. Unset on the web. */
+  multiplayer?: false;
 }

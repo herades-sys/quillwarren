@@ -9,10 +9,12 @@
 // - every request passes the desktop gate (desktop/gate.ts): the launch secret,
 //   the Host check, the Origin check; there is no API token and no MCP;
 // - one local user and no login (`singleUser`);
+// - no players (`multiplayer: false`): no Delve Table (no table.db), no
+//   players' screen, no Discord login, and no links to them;
 // - the data lives where the app says (%APPDATA%\Delve\data);
 // - the chat answers with a local model or not at all (chat/local-chat.ts),
 //   never through the Claude bridge, plus the model manager (/models);
-// - no Cloudflare tunnel, no public URL, no Discord.
+// - no Cloudflare tunnel, no public URL.
 // The app talks to it over Node's IPC channel: {type: "ready", port} once it
 // listens, and {type: "shutdown"} asks it to stop cleanly. When the app goes
 // away (the channel closes) it stops too.
@@ -60,6 +62,7 @@ const app = buildApp(
     store,
     dataDir: cfg.dataDir,
     singleUser: true,
+    multiplayer: false,
     extend: (a) => {
       registerDesktopGate(a, { secret: cfg.secret, port: () => port });
       registerModelManager(a, { models, settings: runtimeSettings, runtime, ollamaDir: cfg.ollamaModels, log: (m) => log(m) });

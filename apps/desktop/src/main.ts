@@ -8,8 +8,9 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, BrowserWindow, clipboard, dialog, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, Menu, nativeTheme, screen, session, shell, type WebContents } from 'electron';
 import { collectLogs, LogFile } from './logs.ts';
+import { menuTemplate } from './menu.ts';
 import { desktopPaths, resourcePaths } from './paths.ts';
 import { ServerProcess } from './server-process.ts';
 import { setUpUpdates } from './updater.ts';
@@ -177,7 +178,7 @@ function secureWebContents(contents: WebContents): void {
   });
   contents.setWindowOpenHandler(({ url }) => {
     if (isOwn(url)) {
-      // the players' screen, the 3D view in a new window: Delve's own pages, same rules
+      // Delve's own pages in a new window (the snip's handout): same rules
       return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, webPreferences: webPreferences() } };
     }
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
@@ -245,59 +246,30 @@ function buildMenu(): void {
     const wc = BrowserWindow.getFocusedWindow()?.webContents;
     if (wc) wc.setZoomLevel(d === 0 ? 0 : wc.getZoomLevel() + d);
   };
-  // No Edit menu: the editor handles Ctrl Z, Ctrl D, Ctrl 0 itself, and text fields get copy and paste from Windows.
-  const template: MenuItemConstructorOptions[] = [
-    {
-      label: '&File',
-      submenu: [
-        { label: 'Library', accelerator: 'Alt+Home', click: () => go('/') },
-        { label: 'Trace a map picture…', click: () => go('/import/image') },
-        { label: 'Delve Table', click: () => go('/play') },
-        { type: 'separator' },
-        { label: 'Open the data folder', click: () => void shell.openPath(paths.data) },
-        { type: 'separator' },
-        { label: 'Quit', accelerator: 'Ctrl+Q', click: () => app.quit() },
-      ],
-    },
-    {
-      label: '&View',
-      submenu: [
-        { label: 'Back', accelerator: 'Alt+Left', click: () => win?.webContents.navigationHistory.goBack() },
-        { label: 'Forward', accelerator: 'Alt+Right', click: () => win?.webContents.navigationHistory.goForward() },
-        { label: 'Reload', accelerator: 'F5', click: () => win?.webContents.reload() },
-        { type: 'separator' },
-        { label: 'Larger interface', click: () => zoom(0.5) },
-        { label: 'Smaller interface', click: () => zoom(-0.5) },
-        { label: 'Normal interface size', click: () => zoom(0) },
-        { type: 'separator' },
-        { label: 'Full screen', accelerator: 'F11', click: () => win?.setFullScreen(!win.isFullScreen()) },
-      ],
-    },
-    {
-      label: '&Help',
-      submenu: [
-        { label: 'Models for the chat…', click: () => go('/models') },
-        { type: 'separator' },
-        { label: 'Copy logs', click: () => copyLogs() },
-        { label: 'Open the logs folder', click: () => void shell.openPath(paths.logs) },
-        { label: 'Developer tools', click: () => win?.webContents.toggleDevTools() },
-        { type: 'separator' },
-        { label: 'Third-party notices', click: () => void shell.openPath(res.notices) },
-        {
-          label: 'About Delve',
-          click: () =>
-            void dialog.showMessageBox({
-              type: 'info',
-              title: 'About Delve',
-              message: `Delve ${app.getVersion()}`,
-              detail: `A dungeon map editor.\n\n${Object.entries(about())
-                .map(([k, v]) => `${k}: ${v}`)
-                .join('\n')}`,
-            }),
-        },
-      ],
-    },
-  ];
+  // the items themselves are in menu.ts (tested there): no Delve Table, no players' screen
+  const template = menuTemplate({
+    go,
+    openDataFolder: () => void shell.openPath(paths.data),
+    quit: () => app.quit(),
+    back: () => win?.webContents.navigationHistory.goBack(),
+    forward: () => win?.webContents.navigationHistory.goForward(),
+    reload: () => win?.webContents.reload(),
+    zoom,
+    toggleFullScreen: () => win?.setFullScreen(!win.isFullScreen()),
+    copyLogs: () => copyLogs(),
+    openLogsFolder: () => void shell.openPath(paths.logs),
+    toggleDevTools: () => win?.webContents.toggleDevTools(),
+    openNotices: () => void shell.openPath(res.notices),
+    showAbout: () =>
+      void dialog.showMessageBox({
+        type: 'info',
+        title: 'About Delve',
+        message: `Delve ${app.getVersion()}`,
+        detail: `A dungeon map editor.\n\n${Object.entries(about())
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('\n')}`,
+      }),
+  });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -328,8 +300,9 @@ app.on('before-quit', (e) => {
 app.on('window-all-closed', () => app.quit());
 
 app.whenReady().then(async () => {
-  // no camera, microphone, location or notifications; full screen (the players' screen) and writing to the clipboard only
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'fullscreen' || permission === 'clipboard-sanitized-write'));
+  // no camera, microphone, location, notifications or page-requested full screen (that was the players' screen, which
+  // the app leaves out; F11 still works, from the menu): writing to the clipboard only
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'clipboard-sanitized-write'));
   buildMenu();
   try {
     const port = await startServer();

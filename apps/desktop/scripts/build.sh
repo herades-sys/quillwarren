@@ -26,6 +26,11 @@ echo "== 1. the web release (npm run build, unchanged)"
 echo "== 2. the desktop server: release/ plus desktop-main.mjs"
 rm -rf "$RES/server" && mkdir -p "$RES/server/node_modules/@resvg"
 cp -R "$ROOT/release/web" "$ROOT/release/assets" "$ROOT/release/fonts" "$RES/server/"
+# The app has no Delve Table and no players' screen (docs/DESKTOP.md, "What the Windows app
+# leaves out"), so their browser bundles stay behind: table.js, table-dice.js and table3d.js
+# (with PixiJS and cannon-es) and screen.js, as scripts/build-web.sh names them.
+rm -f "$RES/server/web"/table* "$RES/server/web"/screen.*
+echo "web bundles shipped: $(cd "$RES/server/web" && echo *)"
 cp -R "$ROOT/release/node_modules/@resvg/resvg-js" "$RES/server/node_modules/@resvg/"
 (cd "$ROOT" && npx esbuild apps/server/src/desktop/main.ts \
   --bundle --platform=node --format=esm --target=node24 \

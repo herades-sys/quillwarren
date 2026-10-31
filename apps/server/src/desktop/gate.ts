@@ -54,8 +54,12 @@ export function originAllowed(origin: string | undefined, host: string | undefin
   }
 }
 
-/** Pages of the web server that mean nothing on one computer with one user: they go back to the library. */
-const WEB_ONLY = [/^\/(login|logout)(\?|$)/, /^\/admin(\/|\?|$)/, /^\/account(\/|\?|$)/, /^\/auth\//];
+/**
+ * Pages of the web server that mean nothing on one computer with one user: they go back to the library.
+ * Delve Table, the players' screen and Discord login (/play, /api/v1/games, /maps/:id/screen,
+ * /auth/discord) aren't here: the desktop app never registers them (buildApp's `multiplayer: false`), so they are 404s.
+ */
+const WEB_ONLY = [/^\/(login|logout)(\?|$)/, /^\/admin(\/|\?|$)/, /^\/account(\/|\?|$)/];
 
 const REFUSED = 'This is the Delve app’s own server. It only answers the Delve window.';
 

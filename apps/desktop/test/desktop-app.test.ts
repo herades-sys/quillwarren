@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { collectLogs, LogFile, redact, tail } from '../src/logs.ts';
+import { menuTemplate, type MenuActions } from '../src/menu.ts';
 import { desktopPaths, resourcePaths } from '../src/paths.ts';
 import { ServerProcess, serverEnv } from '../src/server-process.ts';
 import { DEFAULT_SIZE, parseWindowState, placeWindow } from '../src/window-state.ts';
@@ -40,6 +41,28 @@ describe('folders', () => {
       notices: join('/app/resources', 'THIRD-PARTY-NOTICES.txt'),
       icon: join('/app/resources', 'icon.png'),
     });
+  });
+});
+
+describe('the menu', () => {
+  type Item = { label?: string; click?: (...a: never[]) => void; submenu?: unknown };
+  const flatten = (items: readonly Item[]): Item[] => items.flatMap((i) => [i, ...(Array.isArray(i.submenu) ? flatten(i.submenu as Item[]) : [])]);
+
+  it('is one person’s editor: no Delve Table and no players’ screen, only Delve’s own pages', () => {
+    const went: string[] = [];
+    const done: string[] = [];
+    const actions = new Proxy({} as MenuActions, {
+      get: (_t, name) => (name === 'go' ? (path: string) => went.push(path) : () => done.push(String(name))),
+    });
+    const items = flatten(menuTemplate(actions) as Item[]);
+    const labels = items.map((i) => i.label).filter((l): l is string => Boolean(l));
+    expect(labels).not.toContain('Delve Table');
+    expect(labels.join(' | ')).not.toMatch(/table|player|invite|discord/i);
+    expect(labels.slice(0, 5)).toEqual(['&File', 'Library', 'Trace a map picture…', 'Open the data folder', 'Quit']);
+    for (const i of items) i.click?.();
+    expect(went).toEqual(['/', '/import/image', '/models']);
+    expect(done).toContain('showAbout');
+    expect(done).toContain('copyLogs');
   });
 });
 

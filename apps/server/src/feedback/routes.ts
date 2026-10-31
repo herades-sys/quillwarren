@@ -20,7 +20,8 @@ export interface FeedbackDeps {
   auth: EditorAuth;
   log: FeedbackLog;
   limits: SendLimits;
-  table: TableIdentity;
+  /** Who a request is at Delve Table. Without it (the desktop app has no table) there are no players and no Discord. */
+  table?: TableIdentity;
 }
 
 /** Who is sending, as the server knows it. `key` is what the per-person limit counts. */
@@ -73,9 +74,9 @@ export function registerFeedback(app: FastifyInstance, deps: FeedbackDeps): void
   const senderOf = (req: FastifyRequest, from: string): Sender | null => {
     const cur = currentAccount(auth, req);
     if (cur) return { kind: 'account', key: `account:${cur.user.id}`, name: cur.user.name, role: cur.user.role };
-    const discord = table.account(req);
-    if (discord && table.coGm(req)) return { kind: 'table-gm', key: `discord:${discord.id}`, name: discord.name };
-    const seats = table.seats(req);
+    const discord = table?.account(req) ?? null;
+    if (discord && table?.coGm(req)) return { kind: 'table-gm', key: `discord:${discord.id}`, name: discord.name };
+    const seats = table?.seats(req) ?? [];
     const game = /^\/play\/([^/?#]+)/.exec(from)?.[1];
     const seat = seats.find((s) => s.gameId === game) ?? seats[0];
     if (seat) {
@@ -92,10 +93,10 @@ export function registerFeedback(app: FastifyInstance, deps: FeedbackDeps): void
   };
 
   const loginNote = (req: FastifyRequest) => {
-    const discord = table.account(req);
+    const discord = table?.account(req) ?? null;
     return loginNotePage({
       loginHref: canLogIn(auth) ? '/login?next=%2Ffeedback' : null,
-      discordHref: table.discord && !discord ? discordLoginUrl('/feedback') : null,
+      discordHref: table?.discord && !discord ? discordLoginUrl('/feedback') : null,
       discordName: discord?.name ?? null,
     });
   };

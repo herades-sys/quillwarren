@@ -21,7 +21,9 @@ const build = async (entry, o) => {
   metas.push(r.metafile);
 };
 await build(join(root, 'apps/server/src/desktop/main.ts'), { platform: 'node', format: 'esm', external: ['@resvg/resvg-js', 'bufferutil', 'utf-8-validate'] });
-for (const e of ['viewer', 'stack', 'screen', 'trace', 'trace-worker', 'table', 'table-dice', 'table3d', 'handout']) await build(join(root, `apps/web/src/${e}.ts`), { platform: 'browser', format: 'esm' });
+// the browser bundles the app ships: build.sh leaves out Delve Table's (table, table-dice, table3d: PixiJS,
+// cannon-es) and the players' screen's (screen), so their packages aren't listed unless something shipped uses them too
+for (const e of ['viewer', 'stack', 'trace', 'trace-worker', 'handout']) await build(join(root, `apps/web/src/${e}.ts`), { platform: 'browser', format: 'esm' });
 await build(join(desktop, 'src/main.ts'), { platform: 'node', format: 'cjs', external: ['electron'], nodePaths: [join(desktop, 'node_modules')] });
 
 /** The package folder an input file belongs to. */

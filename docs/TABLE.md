@@ -8,6 +8,10 @@ Delve Table lives inside the Delve monorepo and runs in the same server
 process, so a Delve map becomes a playable page directly, and it uses the same
 login, database directory and release pipeline.
 
+It is part of the web app only. The Windows app (docs/DESKTOP.md) leaves Delve
+Table out, with the players' screen and Discord login: see "What the Windows app
+leaves out" there.
+
 ## Scope of phase 1
 
 - **Games** with one GM, who is Delve's editor login, and players who join through invite links. Players need no account or password; they may log in with Discord (see "Discord login").

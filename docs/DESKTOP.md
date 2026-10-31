@@ -2,14 +2,16 @@
 
 Delve also runs as a Windows desktop app: one window with the editor, the maps on the user's own computer, no login, no server to set up. It is the same code as the web app at delve.example.com. The server runs in **desktop mode**, which is switched on only by the desktop app's own entry point. The web server (`main.ts`, `npm run build`, the release on the dev container) is unchanged: `fixtures/web-baseline.json` pins its routes, pages and answers as they were before the desktop work, and `apps/server/test/web-baseline.test.ts` checks them.
 
-Status (phase 1, 2026-10-07): the app, desktop mode, the local-model chat and the runtime manager are built and tested on the dev container. The built app itself is tested by the user on Windows (see `D:\Claude\delve-windows\TESTING.md` on the main PC). The built-in model runtime has no binary yet.
+The app is **one person's map editor**. The multiplayer and player-facing parts of the web app (Delve Table, the players' screen, Discord login, accounts and admin) are left out; see "What the Windows app leaves out".
+
+Status (phase 1, 2026-10-07): the app, desktop mode, the local-model chat and the runtime manager are built and tested on the dev container. The built app itself is tested by the user on Windows (see `D:\Claude\delve-windows\TESTING.md` on the main PC). The built-in model runtime has no binary yet. Multiplayer and the players' screen were taken out of the app on 2026-10-31.
 
 ## Architecture
 
 ```
 Delve.exe (Electron 44, apps/desktop)                       %APPDATA%\Delve\
   main process: src/main.ts                                    data\   maps (delve.db), pictures, props,
-   - one instance, the menu, the window's place                       Delve Table, chat-settings.json, runtime.json
+   - one instance, the menu, the window's place                       chat-settings.json, runtime.json
    - a random secret per launch                                logs\   main.log, server.log, llama-server.log
    - starts the server, stops it on quit                       window-state.json, desktop.json (the last port)
         │ spawn + IPC ({type:"ready",port} / {type:"shutdown"})
@@ -17,7 +19,8 @@ Delve.exe (Electron 44, apps/desktop)                       %APPDATA%\Delve\
 resources\node\node.exe (Node 24.21.0, nodejs.org)
   resources\server\desktop-main.mjs (apps/server/src/desktop/main.ts, bundled)
    - Fastify on 127.0.0.1:<port>, desktop gate in front of every request
-   - the whole web app: library, editor, 3D, handout, trace, Delve Table, PNG export (resvg)
+   - the editor side of the web app: library, editor, 3D, handout, trace, PNG export (resvg);
+     no Delve Table, players' screen, Discord or accounts (buildApp's multiplayer: false)
    - chat: none or a local model (chat/local-chat.ts), never the Claude bridge
    - /models: model files, Ollama import, the built-in runtime (desktop/runtime.ts)
         │ later: spawn
@@ -26,7 +29,7 @@ resources\llama\llama-server.exe (llama.cpp, MIT) — not bundled yet
 ```
 
 - **`apps/desktop`** is outside the root npm workspaces, with its own `package.json` and `package-lock.json`. The root `npm ci` / `npm install` (the server release on the dev container) never sees Electron. Its dependencies are all dev dependencies: the main process is bundled by esbuild into `dist/main.cjs`, so nothing from `node_modules` ships in `app.asar`.
-- **The window** loads `http://127.0.0.1:<port>/` (the library). It runs with `contextIsolation`, `sandbox` and no Node integration, and has no preload script. Links to other sites open in the default browser; nothing navigates the window away from Delve. Delve's own pages that open a new window (the players' screen) get a window with the same rules. Permissions are denied except full screen and writing to the clipboard.
+- **The window** loads `http://127.0.0.1:<port>/` (the library). It runs with `contextIsolation`, `sandbox` and no Node integration, and has no preload script. Links to other sites open in the default browser; nothing navigates the window away from Delve. Delve's own pages that open a new window (the snip's handout) get a window with the same rules. Permissions are denied except writing to the clipboard; pages can't ask for full screen (only the players' screen did), and F11 still makes the window full screen.
 - **The port**: the server takes the port it had last time (`desktop.json`) and falls back to any free one. A stable port keeps the window's origin the same, and with it what the editor keeps in the browser storage (theme, chat history, panel states).
 - **Shutdown**: on quit the app sends `{type: "shutdown"}`. The server stops llama-server, closes the database and exits. After 6 s the app kills it. If the app dies, the IPC channel closes and the server stops on its own. A llama-server left over from a killed launch is ended at the next start (pid file, checked against the process name).
 - **Crashes**: if the server stops unexpectedly, the app restarts it (twice in two minutes), then offers "Try again", "Copy logs" and "Quit".
@@ -41,6 +44,24 @@ The server runs on its own `node.exe` (Node 24.21.0 from nodejs.org, checked aga
 - **Security.** Running the server inside Electron would need the `runAsNode` fuse. That fuse lets any program start `Delve.exe` as a plain Node interpreter, so it stays off.
 - **The cost**: `node.exe` is about 94 MB unpacked and about 22 MB in the installer.
 
+## What the Windows app leaves out
+
+The app is for a public release as one person's map editor. The web app's multiplayer and player-facing parts need other people's devices, accounts or Discord, so the app leaves them out (the user, 2026-10-31). On the server it is one switch, `buildApp`'s `multiplayer: false`, set only by `desktop/main.ts`; the build and the Electron menu do the rest. The web app is unchanged (`fixtures/web-baseline.json`).
+
+| Left out | How |
+|---|---|
+| **Delve Table**: `/play`, `/play/new`, `/play/:id`, `/play/:id/3d`, `/play/:id/leave`, `/play/join/*`, and `/api/v1/games/*` (games, invites, seats, pages and their `background.png`, the table's live channel, the notebook, 3D scenes) | Not registered: 404. `table.db` and `table-assets` are never created in the data folder; ones left by an older build stay as they are, unread. No "Delve Table" item in the File menu. Its browser bundles (`table.js`, `table-dice.js`, `table3d.js`) aren't shipped, so PixiJS and cannon-es are gone from the app and its third-party notices. |
+| **The players' screen**: `/maps/:id/screen`, `GET /api/v1/maps/:id/screen`, the live channel's `?screen=1` | Not registered: 404. `?screen=1` gets an error message and close code 4404. The editor doesn't render its "Players' screen" buttons (the top bar, and the ⋯ menu narrow windows and phones use). `screen.js` isn't shipped. Pages can't ask the window for full screen any more (only the players' screen did). |
+| **Discord login**: `/auth/discord`, `/auth/discord/callback`, `/auth/logout` | Not registered: 404. Nothing links to it. |
+| **Accounts, admin, logging in and out** | `/login`, `/logout`, `/admin*` and `/account*` send the window back to the library (the gate, as before). The start page has no Play, Admin, Account or Log out link and no "create your admin account" banner. |
+| **Delve Table in the editor's hints** | The hints for GM notes, hidden heights, hidden props and "Where you can go" don't mention Delve Table or the players' screen. |
+
+"Request a feature" stays where it was (the start page, the editor's ⋯ menu and shortcuts dialog) and still opens the app's own "Ideas and problems" page: no place to send requests yet, and a pointer to Help → Copy logs.
+
+**What stays**, because it is one person's editing, not multiplayer: the editor and its live channel (`LiveHub` carries the editor's saves, and whatever MCP, the chat, focus and storey changes send to the open editor), autosave, rendering and every export including the players' version (`view=players`, Roll20's player layer), the GM / Players view toggle (it previews that export), fog of war and the GM-only flags (they shape the players' exports and the handout), the parchment handout, the 3D view of a map (`/maps/:id/3d`; the 3D table view belongs to Delve Table and is gone with it), the local chat and the model page.
+
+**Still in the files, unused**: Delve Table's server code (`apps/server/src/table`, `packages/table`, about 210 KB of the 4.6 MB `desktop-main.mjs`) is compiled in, because `app.ts` imports it for the web server; desktop mode never calls it. `viewer.js` is the web's own file, so it still carries the web wording of the editor's hints. The shared stylesheet keeps the table's CSS, and the style guide at `/ui` (linked from the start page's footer) uses table examples as sample text.
+
 ## Building
 
 On the dev container (Linux), with no wine:
@@ -54,10 +75,10 @@ sh apps/desktop/scripts/build.sh                       # out/Delve-Setup-<v>.exe
 `scripts/build.sh` does this:
 
 1. `npm run build`: the web release, unchanged.
-2. Copies `release/{web,assets,fonts}` and resvg's JavaScript into `build/resources/server`. Bundles `apps/server/src/desktop/main.ts` into `desktop-main.mjs` and copies `chat/lean-prompt.md` next to it, because `local-setup.ts` reads it beside the bundle.
+2. Copies `release/{web,assets,fonts}` and resvg's JavaScript into `build/resources/server`, leaving out the browser bundles of Delve Table (`table.js`, `table-dice.js`, `table3d.js`) and the players' screen (`screen.js`). Bundles `apps/server/src/desktop/main.ts` into `desktop-main.mjs` and copies `chat/lean-prompt.md` next to it, because `local-setup.ts` reads it beside the bundle.
 3. `@resvg/resvg-js-win32-x64-msvc` (the same version as `@resvg/resvg-js`) via `npm pack`, checked against npm's integrity hash.
 4. `node-v<version>-win-x64.zip` from nodejs.org (the CT's own Node version, or `DELVE_NODE_VERSION`), checked against `SHASUMS256.txt`. Only `node.exe` and `LICENSE` are kept.
-5. The icon from Delve's own `brand/mark.svg` (`scripts/icon.mjs`: rendered with resvg into a PNG-compressed `.ico`). `THIRD-PARTY-NOTICES.txt` comes from esbuild's metafiles, so it lists every bundled package with its licence text (`scripts/notices.mjs`).
+5. The icon from Delve's own `brand/mark.svg` (`scripts/icon.mjs`: rendered with resvg into a PNG-compressed `.ico`). `THIRD-PARTY-NOTICES.txt` comes from esbuild's metafiles of what ships (the desktop server, the five browser bundles the app keeps, the Electron main process), so it lists every bundled package with its licence text (`scripts/notices.mjs`).
 6. Bundles the Electron main process and typechecks `apps/desktop`.
 7. electron-builder: the `zip` target and the unpacked app first, then the NSIS installer from the unpacked app.
 
@@ -87,12 +108,12 @@ Without a certificate, Windows SmartScreen warns on first start ("Windows protec
 1. The server listens on **127.0.0.1 only**, on a port from this launch or the last. Other computers can't reach it.
 2. Every request needs **the launch secret**: 32 random bytes, new each launch, passed to the server in its environment (and removed from it at once, so llama-server never inherits it). The window's session adds it as the header `X-Delve-Desktop` to requests for the server's exact origin (HTTP and WebSocket), and also holds it as an HttpOnly, SameSite=Strict cookie. Page scripts can read neither. Other programs and web pages don't have it and get 401.
 3. **Host must be `127.0.0.1:<port>` or `localhost:<port>`**, so a web page that points its own domain at 127.0.0.1 (DNS rebinding) is refused even with a guessed port. A request that names an Origin must come from the server's own origin. **No CORS headers**: other origins can't read answers. Pages can't be framed (`X-Frame-Options: DENY`, `Cross-Origin-Resource-Policy: same-origin`).
-4. Behind the gate there is **one local user** (`singleUser`: the editor without a login) and **no API token**, so the API token's routes and `/mcp` are closed. The web server's login, admin, account and Discord pages send the window back to the library. `DELVE_INSECURE_OPEN_EDIT` is not used.
+4. Behind the gate there is **one local user** (`singleUser`: the editor without a login) and **no API token**, so the API token's routes and `/mcp` are closed. The web server's login, admin and account pages send the window back to the library. Delve Table, the players' screen and Discord login are never registered (`multiplayer: false`), so their routes are 404s. `DELVE_INSECURE_OPEN_EDIT` is not used.
 5. What it doesn't defend against: software running as the same Windows user can read the user's files (the maps) and process memory anyway. That is outside any app's control.
 
-Code: `apps/server/src/desktop/gate.ts` (the gate), `config.ts` (the environment: the secret is required, the data folder must be absolute, nothing falls back to the web defaults) and `main.ts` (the entry). Tests: `apps/server/test/desktop.test.ts`, which covers the secret, the Host and Origin checks, WebSocket upgrades over a real socket, no CORS, the single user, where the data goes, and the entry point started as the app starts it, including IPC, port fallback and a clean shutdown.
+Code: `apps/server/src/desktop/gate.ts` (the gate), `config.ts` (the environment: the secret is required, the data folder must be absolute, nothing falls back to the web defaults) and `main.ts` (the entry). Tests: `apps/server/test/desktop.test.ts`, which covers the secret, the Host and Origin checks, WebSocket upgrades over a real socket, no CORS, the single user, where the data goes, what the app leaves out (404s, no table files, no links), and the entry point started as the app starts it, including IPC, port fallback and a clean shutdown.
 
-**Delve Table for players on the LAN (later).** Players join from their own devices, so the table needs a second listener that is opt-in, off by default, switched on per session from the app ("Host a game on this network"). It would:
+**Delve Table for players on the LAN: not in the app.** The Windows app leaves Delve Table out (see "What the Windows app leaves out"), so this is not planned for it. The notes stay in case that changes. Players would join from their own devices, so the table would need a second listener that is opt-in, off by default, switched on per session from the app ("Host a game on this network"). It would:
 
 - listen on the LAN address;
 - answer only `/play/*`, `/api/v1/games/*` and the static assets, with the invite and player-cookie flow the web server already uses;
@@ -201,7 +222,7 @@ Each is moved to `.1` at 5 MB. **Help → Copy logs** puts the versions and the 
 | Code-signing certificate | **Open.** An OV certificate (~€200–400/year, a hardware token or cloud HSM since 2023) or Azure Trusted Signing (about $10/month, needs a company or a verified individual in supported countries). Configured and off (`win.signtoolOptions`). Build on Windows to sign. |
 | Name and trademark check for "Delve" | **Open.** "Delve" is a common word and used by other software products. Check the EUIPO, WIPO and USPTO registers in class 9 (software) and class 41 (games), and app stores, before the first public release. The `appId` `app.delve.desktop` should be final before then: changing it later breaks shortcuts and updates. |
 | Privacy | **Done for phase 1.** No telemetry, no crash reports, no update checks. The chat sends nothing unless the user sets up a local model server (on their own machine or network). Spellchecking uses Windows' own. Say so on the release page. |
-| Third-party notices | **Generated** at every build (`THIRD-PARTY-NOTICES.txt` in resources, Help → Third-party notices): Electron and Chromium (`LICENSE.electron.txt`, `LICENSES.chromium.html`), Node.js, resvg (MPL-2.0), three.js, PixiJS, cannon-es, clipper2-ts (BSL-1.0), fastify and the other bundled packages, IM FELL English and Marcellus SC (OFL-1.1). **Later**: llama.cpp and ggml (MIT), Qwen (Apache-2.0, credited when a model is downloaded from inside the app). |
+| Third-party notices | **Generated** at every build (`THIRD-PARTY-NOTICES.txt` in resources, Help → Third-party notices): Electron and Chromium (`LICENSE.electron.txt`, `LICENSES.chromium.html`), Node.js, resvg (MPL-2.0), three.js, clipper2-ts (BSL-1.0), fastify and the other bundled packages, IM FELL English and Marcellus SC (OFL-1.1); 86 packages since Delve Table's bundles stay out (PixiJS and its dependencies and cannon-es were 9 of the 95 before). **Later**: llama.cpp and ggml (MIT), Qwen (Apache-2.0, credited when a model is downloaded from inside the app). |
 | Update host | **Open.** A public HTTPS host (see Updates). |
 | Installer built on Windows | **Open.** For signing, the exe's icon and version info, and electron-updater's update flow. |
 | Asar integrity fuse | **Open.** Switch `enableEmbeddedAsarIntegrityValidation` on after one test on Windows. |

@@ -72,7 +72,8 @@ function screenPage(info: AppInfo, id: string, rev: number, map: DelveMap): stri
   return htmlDocument({ title: `${map.name} · Players’ screen`, body, extra: css });
 }
 
-export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, chat?: ChatConfig, backends?: ChatBackends): void {
+/** The players' screen's page and the picture it fetches (everywhere but the desktop app). */
+function registerScreen(app: FastifyInstance, info: AppInfo, store: MapStore): void {
   app.get('/maps/:id/screen', async (req, reply) => {
     const { id } = req.params as { id: string };
     try {
@@ -95,6 +96,11 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
       return reply.code(404).send({ error: `no map with id "${id}"` });
     }
   });
+}
+
+/** `multiplayer` false (the desktop app): no players' screen, and no players' screen or Delve Table scripts. */
+export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, chat?: ChatConfig, backends?: ChatBackends, multiplayer = true): void {
+  if (multiplayer) registerScreen(app, info, store);
 
   const scripts = new Map<string, string>();
 
@@ -117,6 +123,8 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
         account: user ? { name: user.name, role: user.role } : null,
         // snip an area to a PNG: admin and GM accounts (and open-edit development servers)
         snip: user?.role === 'admin' || user?.role === 'gm' || auth.sessions.open,
+        // the desktop app: no players' screen button, no Delve Table hints (never on the web server)
+        ...(multiplayer ? {} : { multiplayer: false as const }),
       };
       return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(editorPage(info, id, rev, map, opts));
     } catch (e) {
@@ -130,7 +138,9 @@ export function registerViewer(app: FastifyInstance, info: AppInfo, store: MapSt
 
   // viewer.js: the viewer and editor; stack.js: the 3D view (with three.js, so only that page loads it);
   // table-dice.js: the table's 3D dice, which table.js imports on the first roll; table3d.js: the 3D table view.
-  for (const name of ['viewer.js', 'stack.js', 'screen.js', 'trace.js', 'trace-worker.js', 'table.js', 'table-dice.js', 'table3d.js']) {
+  // The desktop app (multiplayer false) serves neither the players' screen's script nor Delve Table's, and ships none of them.
+  const players = new Set(['screen.js', 'table.js', 'table-dice.js', 'table3d.js']);
+  for (const name of ['viewer.js', 'stack.js', 'screen.js', 'trace.js', 'trace-worker.js', 'table.js', 'table-dice.js', 'table3d.js'].filter((n) => multiplayer || !players.has(n))) {
     app.get(`/assets/${name}`, async (_req, reply) => {
       let script = scripts.get(name);
       if (script === undefined) {

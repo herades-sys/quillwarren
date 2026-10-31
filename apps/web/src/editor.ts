@@ -240,6 +240,8 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
   const phonetools = document.getElementById('phonetools');
   const layer = svgEl('g', { class: 'ed' });
   ctx.overlay.appendChild(layer);
+  // Delve Table and the players' screen: not in the desktop app, so its hints leave them out
+  const hasTable = ctx.multiplayer !== false;
 
   let tool: Tool = 'select';
   let tab: 'inspector' | 'map' = 'inspector';
@@ -1796,7 +1798,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
     });
   const two = (...kids: HTMLElement[]) => h('div', { class: 'ed-two' }, ...kids);
   /** The GM's notes on a room, corridor or terrain: never drawn; the GM reads them on Delve Table too. */
-  const gmNotes = (o: MapObject) => field('GM note · only you see this', text(o.id, 'notes', o.notes, { area: true, max: NOTES_MAX, placeholder: 'A description, monsters, loot… Only you see this, here and on Delve Table.' }));
+  const gmNotes = (o: MapObject) => field('GM note · only you see this', text(o.id, 'notes', o.notes, { area: true, max: NOTES_MAX, placeholder: hasTable ? 'A description, monsters, loot… Only you see this, here and on Delve Table.' : 'A description, monsters, loot… Only you see this.' }));
 
   /** A room, corridor or cutout's own wall roughness, or the map's. */
   function roughnessField(o: MapObject & { roughness?: number }): HTMLElement {
@@ -1938,7 +1940,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
       ),
       h('p', { class: 'hint' }, `${heightText(o.height, unit)} from the floor${heightProfile(o) === 'hill' ? ' at its top: a hill, rounded from its edge' : ''}. ${reach}`),
       checkbox('Hidden from players', Boolean(o.hidden), (on) => (on ? upd({ hidden: true }) : unset('hidden'))),
-      ...(o.hidden ? [h('p', { class: 'hint' }, 'Players see flat ground here, and Delve Table doesn’t hold their tokens back at its edge.')] : []),
+      ...(o.hidden ? [h('p', { class: 'hint' }, hasTable ? 'Players see flat ground here, and Delve Table doesn’t hold their tokens back at its edge.' : 'Players see flat ground here.')] : []),
       shapeRow(o),
       ...shapeFields(o),
       field('GM note · only you see this', text(o.id, 'notes', o.notes, { area: true, max: NOTES_MAX })),
@@ -2038,7 +2040,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
             ? []
             : [
                 checkbox('Hidden from players', propHidden(o), (on) => (on === hiddenByDefault(o.asset) ? unset('gmOnly') : upd({ gmOnly: on }))),
-                ...(propHidden(o) ? [h('p', { class: 'hint' }, 'Only in the GM view: players don’t see it on their screen, on Delve Table or in their exports. Untick it once they find it.')] : []),
+                ...(propHidden(o) ? [h('p', { class: 'hint' }, hasTable ? 'Only in the GM view: players don’t see it on their screen, on Delve Table or in their exports. Untick it once they find it.' : 'Only in the GM view: players don’t see it in their exports or handouts. Untick it once they find it.')] : []),
               ]),
           field('GM note · only you see this', text(id, 'notes', o.notes, { area: true })),
         );
@@ -2285,7 +2287,7 @@ export function initEditor(ctx: ViewerCtx): { selection(): string[]; tool(): str
           'p',
           { class: 'hint' },
           m.objects.some((o) => o.type === 'height')
-            ? `${m.objects.filter((o) => o.type === 'height').length} height area${m.objects.filter((o) => o.type === 'height').length === 1 ? '' : 's'}. Red dashes: cliff edges nobody can walk over; green: stairs, ladders, slopes and steps. On Delve Table, “Respect heights” holds players to it.`
+            ? `${m.objects.filter((o) => o.type === 'height').length} height area${m.objects.filter((o) => o.type === 'height').length === 1 ? '' : 's'}. Red dashes: cliff edges nobody can walk over; green: stairs, ladders, slopes and steps.${hasTable ? ' On Delve Table, “Respect heights” holds players to it.' : ''}`
             : 'Ledges, hills and pits on this map: the Height tool (K).',
         ),
         movement ? movementLegend() : null,

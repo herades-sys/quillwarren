@@ -45,6 +45,10 @@ interface Access {
   account: { name: string; role: string } | null;
   /** Logged in with the shared password while there's no admin account yet. */
   bootstrap: boolean;
+  /** Delve Table is here (everywhere but the desktop app): the Play link. */
+  table: boolean;
+  /** One local user (the desktop app): no accounts, no logging in or out. */
+  singleUser: boolean;
 }
 
 /** "AN" for Ana, "MV" for Mara Venn. */
@@ -55,12 +59,13 @@ const initials = (name: string): string => {
 
 /** The right end of the top bar: Play, Admin, the theme, and who is logged in. */
 function barEnd(a: Access): string {
-  const play = `<a class="btn btn-primary" href="/play" title="Delve Table: your games, invite players, play">${icon('play', { size: 15 })}Play</a>`;
+  const play = a.table ? `<a class="btn btn-primary" href="/play" title="Delve Table: your games, invite players, play">${icon('play', { size: 15 })}Play</a>` : '';
   const admin = a.account?.role === 'admin' ? `<a class="btn btn-plain lib-wide" href="/admin" title="Accounts, GMs and logins">${icon('admin', { size: 16 })}Admin</a>` : '';
   const ideas = a.loggedIn ? `<a class="btn btn-plain lib-wide lib-ideas" href="/feedback" title="Request a feature: ask for one, or report a problem">${icon('send', { size: 15 })}<span>Request a feature</span></a>` : '';
   const logout = `<form method="post" action="/logout" class="inline"><button class="btn btn-ghost" type="submit">Log out</button></form>`;
   let who: string;
-  if (a.account) who = `<a class="lib-account" href="/account" title="Your account"><span class="avatar">${esc(initials(a.account.name))}</span>${esc(a.account.name)}</a>${logout}`;
+  if (a.singleUser) who = '';
+  else if (a.account) who = `<a class="lib-account" href="/account" title="Your account"><span class="avatar">${esc(initials(a.account.name))}</span>${esc(a.account.name)}</a>${logout}`;
   else if (a.loggedIn) who = logout;
   else who = a.passwordSet ? `<a class="btn btn-secondary" href="/login">${icon('lock', { size: 15 })}Log in to edit</a>` : `<span class="text-muted lib-wide" style="font-size:12px">Editing: set a password with <code>delve-passwd</code> on the container</span>`;
   return `${play}${ideas}${admin}<span class="vsep" style="margin:0 4px"></span>${themeSwitch()}${who}`;
@@ -245,18 +250,22 @@ ${cards}
   return htmlDocument({ title: 'Delve', body, extra: `<style>${PAGE_CSS}${LIBRARY_CSS}</style>` });
 }
 
-export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth): void {
+/** `o` (the desktop app): multiplayer false leaves out the Play link, singleUser the account, admin and log-out links and the admin set-up banner. */
+export function registerPreview(app: FastifyInstance, info: AppInfo, store: MapStore, auth: EditorAuth, o: { multiplayer?: boolean; singleUser?: boolean } = {}): void {
   const fonts = Object.entries(FONT_FILES).map(([served, path]) => [served, readFileSync(path)] as const);
+  const singleUser = Boolean(o.singleUser);
 
   app.get('/', async (req, reply) => {
     const view = asView((req.query as { view?: string }).view);
     const loggedIn = isLoggedIn(auth, req);
-    const account = currentAccount(auth, req)?.user ?? null;
+    const account = singleUser ? null : (currentAccount(auth, req)?.user ?? null);
     const html = page(info, view, store, {
       loggedIn,
       passwordSet: canLogIn(auth) || auth.sessions.open,
       account,
-      bootstrap: loggedIn && !account && !auth.sessions.legacyOff && !auth.sessions.open,
+      bootstrap: !singleUser && loggedIn && !account && !auth.sessions.legacyOff && !auth.sessions.open,
+      table: o.multiplayer !== false,
+      singleUser,
     });
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(html);
   });
