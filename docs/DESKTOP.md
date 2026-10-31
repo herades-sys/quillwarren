@@ -235,7 +235,7 @@ Its REST API is `/api/v1/runtime` (GET), `/settings` (PUT), `/import` (POST), `/
 
 ## Updates
 
-electron-updater is prepared and off (`src/updater.ts`, `UPDATE_URL = ''`, `publish: null`). Nothing is contacted. The GitHub repository is private, so its releases can't serve updates without a token, and a token must never ship in the app. To switch it on:
+electron-updater is prepared and off (`src/updater.ts`, `UPDATE_URL = ''`, `publish: null`). Nothing is contacted. The repository (herades-sys/delve-app) can serve them from its GitHub releases once it is public; a token must never ship in the app. To switch it on:
 
 1. Choose a public HTTPS host: a public GitHub repository's releases, or any static host.
 2. Set `publish` in `electron-builder.yml` and `UPDATE_URL` to it.

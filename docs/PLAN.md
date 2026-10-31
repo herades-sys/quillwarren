@@ -179,7 +179,7 @@ Sizes are rough (S, M, L) and show relative effort only.
 ## Decisions
 
 - **Setup:** devbox. Claude Code runs inside the dev container, which also hosts the live app.
-- **Code:** GitHub `herades-sys/delve` (private). The CT pushes with its own deploy key, which has access to this one repo only.
+- **Code:** GitHub `herades-sys/delve-app`, Apache-2.0. The dev container pushes with its own deploy key, which has access to this one repo only.
 - **Virtual tabletop:** Roll20. See section 4.
 - **Geometry library:** `clipper2-ts` 2.0.1-18 (Boost licence), a TypeScript port of Clipper2 with union, difference, xor and offset. In the spike, the test dungeon's floor XORed against the Dungeon Scrawl original gave area 0 once DS's 0.01 px vertex insets were rounded off. Pinned exactly, because its npm `latest` tag carries a prerelease number. Rejected: `clipper2-js` (unmaintained since 2024), `js-angusj-clipper` (Clipper1 WASM, 2023), `polygon-clipping` (no offset).
 - **TypeScript 7** (the native compiler) works with our settings (`tsconfig.base.json`).
