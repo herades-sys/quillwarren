@@ -181,7 +181,8 @@ export function registerDesktopGate(app: FastifyInstance, o: { secret: string; p
     reply.header('x-frame-options', 'DENY');
     reply.header('x-content-type-options', 'nosniff');
     reply.header('cross-origin-resource-policy', 'same-origin');
-    reply.header('referrer-policy', 'no-referrer');
+    // Not "no-referrer": with it, browsers send "Origin: null" on form posts (the library's New map), and the check above refuses them.
+    reply.header('referrer-policy', 'same-origin');
     return payload;
   });
 }

@@ -157,6 +157,19 @@ describe('desktop mode', () => {
     expect(fb.body).toContain('Copy logs');
   });
 
+  it('lets the library’s New map form through: its pages must not make browsers send "Origin: null" on form posts', async () => {
+    const page = await app.inject({ method: 'GET', url: '/', headers: ok });
+    expect(page.body).toContain('action="/maps/new"');
+    // "no-referrer" is what made every form post in the app send Origin: null, which the gate rightly refuses
+    expect(page.headers['referrer-policy']).toBe('same-origin');
+    const form = { 'content-type': 'application/x-www-form-urlencoded' };
+    const made = await app.inject({ method: 'POST', url: '/maps/new', headers: { ...ok, ...form, origin: `http://${HOST}` }, payload: 'name=Form+test' });
+    expect(made.statusCode).toBe(303);
+    expect(made.headers.location).toMatch(/^\/maps\/map_/);
+    const opaque = await app.inject({ method: 'POST', url: '/maps/new', headers: { ...ok, ...form, origin: 'null' }, payload: 'name=Sandboxed' });
+    expect(opaque.statusCode).toBe(403);
+  });
+
   it('offers the chat as none or a local model, never Claude, under its own name', async () => {
     const page = (await app.inject({ method: 'GET', url: '/maps/map_test4p', headers: ok })).body;
     expect(page).toContain('id="chat-settings"');
