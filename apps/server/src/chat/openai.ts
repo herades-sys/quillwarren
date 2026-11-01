@@ -1,6 +1,6 @@
 // OpenAI through the user's own API key: the desktop app's "OpenAI (your API
 // key)" chat backend. Plain fetch to the Chat Completions API (no SDK in the
-// project, and none is added), streamed, with the full Delve tool set as
+// project, and none is added), streamed, with the full Quillwarren tool set as
 // function tools (api-tools.ts). Pictures from tools (render) can't go into a
 // tool message there, so they follow the tool results as a user message; a
 // model that takes no pictures gets a note instead, from then on. OpenAI

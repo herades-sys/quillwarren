@@ -1,17 +1,17 @@
-# Delve
+# Quillwarren
 
 A self-hosted dungeon map editor for tabletop games. You draw maps in the browser, or let an AI build them: Claude (through MCP) or a local model edits the map while you watch every change happen live. Maps export as PNG for Roll20 and other virtual tabletops, and as a printable parchment handout for your players.
 
-![The Delve editor: a small dungeon with the props picker open](docs/images/editor.png)
+![The Quillwarren editor: a small dungeon with the props picker open](docs/images/editor.png)
 
 - **Editor:** rooms in any shape, corridors that find their own way, doors at any angle, stairs between storeys, pillars, terrain that fades into its neighbours, heights and cliffs, over 700 props in ink and colour, labels, GM markers and notes, fog of war, a 3D view of all storeys.
 - **AI that edits live:** over 40 MCP tools that work by meaning ("a 6×4 room east of room 1, joined by a door"), so Claude Code, Claude Desktop or a small local model can build and fix maps. Every change is one undo step.
 - **Exports:** PNG at 70 px per square for Roll20 (GM or players' version, whole map or cropped), SVG, Dungeon Scrawl `.ds`, and a parchment handout with a hand-drawn legend.
-- **Two ways to run it:** a web server for you and your group (this README), or **Delve for Windows**, a single-user desktop app with a built-in local model runtime ([docs/DESKTOP.md](docs/DESKTOP.md)).
+- **Two ways to run it:** a web server for you and your group (this README), or **Quillwarren for Windows**, a single-user desktop app with a built-in local model runtime ([docs/DESKTOP.md](docs/DESKTOP.md)).
 
 ## What you need
 
-- **Node.js 24** or newer (Delve uses `node:sqlite`).
+- **Node.js 24** or newer (Quillwarren uses `node:sqlite`).
 - Linux or macOS for the build scripts (they are POSIX shell). The server itself is plain Node.
 - Optional: [Claude Code](https://claude.com/claude-code) or Claude Desktop for the AI, or a local model server such as [Ollama](https://ollama.com).
 
@@ -20,8 +20,8 @@ A self-hosted dungeon map editor for tabletop games. You draw maps in the browse
 ### 1. Get it and build it
 
 ```sh
-git clone https://github.com/herades-sys/delve-app.git delve
-cd delve
+git clone https://github.com/herades-sys/quillwarren.git quillwarren
+cd quillwarren
 npm ci
 npm run build
 ```
@@ -37,7 +37,7 @@ npm run -s password-hash          # asks for a password (12+ characters), prints
 openssl rand -hex 32              # any long random string works as the API token
 ```
 
-Put both in an env file, for example `delve.env` (keep it private, `chmod 600 delve.env`):
+Put both in an env file, for example `quillwarren.env` (keep it private, `chmod 600 quillwarren.env`):
 
 ```sh
 DELVE_EDIT_PASSWORD_HASH=scrypt:16384:8:1:…   # the line password-hash printed
@@ -47,13 +47,13 @@ DELVE_API_TOKEN=…                              # the random string
 ### 3. Start the server
 
 ```sh
-set -a; . ./delve.env; set +a
+set -a; . ./quillwarren.env; set +a
 PORT=8790 HOST=0.0.0.0 DELVE_DATA=./data node release/main.mjs
 ```
 
 Open `http://<your-server's-IP>:8790/` from any computer on your network. `DELVE_DATA` is where your maps live (an SQLite database plus pictures and custom props); back up that folder. `GET /health` answers once the server runs.
 
-Delve answers to IP addresses, `localhost`, single-word names and home-network names (`.local`, `.lan`, `.home.arpa`…). If you reach it by another name, add it to `DELVE_ALLOWED_HOSTS` (see [docs/API.md](docs/API.md), "Access").
+Quillwarren answers to IP addresses, `localhost`, single-word names and home-network names (`.local`, `.lan`, `.home.arpa`…). If you reach it by another name, add it to `DELVE_ALLOWED_HOSTS` (see [docs/API.md](docs/API.md), "Access").
 
 ### 4. Log in and secure the login
 
@@ -72,10 +72,10 @@ Delve answers to IP addresses, `localhost`, single-word names and home-network n
 
 ### 6. Let Claude build one
 
-Register Delve's MCP endpoint with Claude Code (the token from step 2):
+Register Quillwarren's MCP endpoint with Claude Code (the token from step 2):
 
 ```sh
-claude mcp add --transport http delve http://<your-server's-IP>:8790/mcp --header "Authorization: Bearer <your API token>"
+claude mcp add --transport http quillwarren http://<your-server's-IP>:8790/mcp --header "Authorization: Bearer <your API token>"
 ```
 
 Open the map in your browser, then ask Claude Code something like:
@@ -86,16 +86,18 @@ You watch the rooms appear while Claude works, and it looks at the rendered pict
 
 For a chat panel inside the browser editor, run the chat bridge as a user who is logged in to Claude Code (`node apps/server/src/cli/chat-bridge.ts`, listening on `127.0.0.1:8792`) and start the server with `DELVE_CHAT_URL=http://127.0.0.1:8792`. The bridge answers with that user's Claude Code login, so keep it for your own use. See [docs/API.md](docs/API.md), "Chat".
 
-## Delve for Windows
+## Quillwarren for Windows
 
-A desktop version for one person: no server, no login, maps in `%APPDATA%\Delve`. Its chat can use a model on your own computer (a built-in llama.cpp runtime, or Ollama / LM Studio), Claude or OpenAI with your own API key, or Claude Desktop through a Delve extension. Multiplayer is left out.
+A desktop version for one person: no server, no login, maps in `%APPDATA%\Quillwarren`. Its chat can use a model on your own computer (a built-in llama.cpp runtime, or Ollama / LM Studio), Claude or OpenAI with your own API key, or Claude Desktop through a Quillwarren extension. Multiplayer is left out.
 
-There is no download yet. To build the installer on Linux:
+Download the installer from [the releases page](https://github.com/herades-sys/quillwarren/releases). The app isn't code-signed yet, so Windows SmartScreen shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
+
+Or build it yourself. To build the installer on Linux:
 
 ```sh
 npm ci
 (cd apps/desktop && npm ci)
-sh apps/desktop/scripts/build.sh     # → apps/desktop/out/Delve-Setup-<version>.exe and a portable zip
+sh apps/desktop/scripts/build.sh     # → apps/desktop/out/Quillwarren-Setup-<version>.exe and a portable zip
 ```
 
 The script downloads the Windows Node.js runtime, resvg's Windows build and llama.cpp, each checked against a pinned checksum. The build isn't code-signed yet, so Windows SmartScreen will warn. Details: [docs/DESKTOP.md](docs/DESKTOP.md).
@@ -114,16 +116,16 @@ The server runs straight from the TypeScript sources on Node 24. `DELVE_INSECURE
 | Where | What |
 |---|---|
 | `packages/core` | the map model, operations and undo, geometry, the renderer (SVG), imports and exports; no Node or DOM APIs |
-| `packages/table` | Delve Table: the rules, dice and views for playing on a map with your group |
+| `packages/table` | Quillwarren Table: the rules, dice and views for playing on a map with your group |
 | `packages/ui` | the shared stylesheet, icons and page helpers |
 | `apps/server` | Fastify: REST, WebSocket, MCP (`/mcp`), the pages, PNG export via resvg, the chat |
-| `apps/web` | the browser editor, live viewer, 3D view, handout and Delve Table client |
-| `apps/desktop` | the Electron shell for Delve for Windows |
+| `apps/web` | the browser editor, live viewer, 3D view, handout and Quillwarren Table client |
+| `apps/desktop` | the Electron shell for Quillwarren for Windows |
 
-More: [docs/API.md](docs/API.md) (REST, WebSocket, MCP, every feature), [docs/PLAN.md](docs/PLAN.md) (design and file formats), [docs/TABLE.md](docs/TABLE.md) (Delve Table), [docs/DESKTOP.md](docs/DESKTOP.md) (the Windows app), [docs/UI.md](docs/UI.md) (the design system).
+More: [docs/API.md](docs/API.md) (REST, WebSocket, MCP, every feature), [docs/PLAN.md](docs/PLAN.md) (design and file formats), [docs/TABLE.md](docs/TABLE.md) (Quillwarren Table), [docs/DESKTOP.md](docs/DESKTOP.md) (the Windows app), [docs/UI.md](docs/UI.md) (the design system).
 
 ## Licence
 
-Delve is licensed under the [Apache License 2.0](LICENSE). Copyright 2026 herades-sys.
+Quillwarren is licensed under the [Apache License 2.0](LICENSE). Copyright 2026 herades-sys.
 
-Third-party parts keep their own licences: the npm dependencies (listed with their texts in the Windows app's `THIRD-PARTY-NOTICES.txt`), the fonts IM FELL English and Marcellus SC (SIL Open Font License 1.1), and llama.cpp (MIT) in the Windows app. Delve can import Dungeon Scrawl `.ds` files and Watabou city maps; it isn't affiliated with either.
+Third-party parts keep their own licences: the npm dependencies (listed with their texts in the Windows app's `THIRD-PARTY-NOTICES.txt`), the fonts IM FELL English and Marcellus SC (SIL Open Font License 1.1), and llama.cpp (MIT) in the Windows app. Quillwarren can import Dungeon Scrawl `.ds` files and Watabou city maps; it isn't affiliated with either.

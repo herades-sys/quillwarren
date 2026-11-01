@@ -56,7 +56,7 @@ describe('StreamTranslator', () => {
     expect(t.done).toBe(true);
   });
 
-  it('says so when Delve\'s tools did not connect, or Claude failed', () => {
+  it('says so when Quillwarren\'s tools did not connect, or Claude failed', () => {
     const t = new StreamTranslator();
     expect(t.feed(JSON.stringify({ type: 'system', subtype: 'init', session_id: SESSION, mcp_servers: [{ name: 'delve', status: 'failed' }] }))[1]).toMatchObject({
       type: 'error',
@@ -71,7 +71,7 @@ describe('StreamTranslator', () => {
 });
 
 describe('bridge request checks', () => {
-  const good = { prompt: '[Delve context]\nhi', system: 'x', mcp: { url: 'http://127.0.0.1:8790/mcp', token: 'abcdefghijklmnopqrstuvwx' } };
+  const good = { prompt: '[Quillwarren context]\nhi', system: 'x', mcp: { url: 'http://127.0.0.1:8790/mcp', token: 'abcdefghijklmnopqrstuvwx' } };
   it('accepts a normal run and refuses odd ones', () => {
     expect(parseRun(good)).toMatchObject({ prompt: good.prompt });
     expect(parseRun({ ...good, mcp: { ...good.mcp, url: 'http://evil.example/mcp' } })).toContain('127.0.0.1');
@@ -81,7 +81,17 @@ describe('bridge request checks', () => {
     expect(parseRun({ ...good, mcp: { url: good.mcp.url } })).toContain('token');
   });
 
-  it('runs Claude Code with Delve\'s tools only', () => {
+  it('allows the tools by the bridge\'s own MCP config key, whatever the server calls itself', () => {
+    const args = claudeArgs(good, { system: 's', mcp: 'm' }, 'sonnet');
+    expect(args[args.indexOf('--allowedTools') + 1]).toContain('mcp__delve,');
+    expect(args).toContain('--strict-mcp-config');
+    // the translator looks for that key too, not for a name the server sends
+    const t = new StreamTranslator();
+    const events = t.feed(JSON.stringify({ type: 'system', subtype: 'init', session_id: 's', model: 'm', mcp_servers: [{ name: 'delve', status: 'connected' }] }));
+    expect(events.map((e) => e.type)).not.toContain('error');
+  });
+
+  it('runs Claude Code with Quillwarren\'s tools only', () => {
     const args = claudeArgs(parseRun({ ...good, resume: SESSION }) as never, { system: '/s.md', mcp: '/m.json' }, 'sonnet');
     const after = (flag: string) => args[args.indexOf(flag) + 1];
     expect(args).toContain('-p');
@@ -219,8 +229,8 @@ describe('what Claude is told', () => {
     expect(ctx).toContain('Objects (exact, in squares):');
     expect(ctx).toMatch(/d\d+ door at \[/);
     // the plan reminder comes last, right before the user's words (the system prompt alone was ignored)
-    expect(ctx).toMatch(/Plan: if this request takes 3 or more steps, first create a task for each step with TaskCreate[^\n]*\n\[End of Delve context\]$/);
-    expect(chatPrompt({ map: testMap, rev: 7 }, '  make it bigger ')).toMatch(/\[End of Delve context\]\n\nmake it bigger$/);
+    expect(ctx).toMatch(/Plan: if this request takes 3 or more steps, first create a task for each step with TaskCreate[^\n]*\n\[End of Quillwarren context\]$/);
+    expect(chatPrompt({ map: testMap, rev: 7 }, '  make it bigger ')).toMatch(/\[End of Quillwarren context\]\n\nmake it bigger$/);
   });
 
   it('lists only a summary for huge maps', () => {

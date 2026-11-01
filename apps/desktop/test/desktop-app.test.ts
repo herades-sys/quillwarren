@@ -23,18 +23,18 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('folders', () => {
-  it('keeps maps and logs in %APPDATA%\\Delve and models in %LOCALAPPDATA%\\Delve', () => {
+  it('keeps maps and logs in %APPDATA%\\Quillwarren and models in %LOCALAPPDATA%\\Quillwarren', () => {
     const p = desktopPaths({ appData: '/u/AppData/Roaming', localAppData: '/u/AppData/Local' });
     expect(p).toEqual({
-      userData: join('/u/AppData/Roaming', 'Delve'),
-      data: join('/u/AppData/Roaming', 'Delve', 'data'),
-      logs: join('/u/AppData/Roaming', 'Delve', 'logs'),
-      models: join('/u/AppData/Local', 'Delve', 'models'),
-      windowState: join('/u/AppData/Roaming', 'Delve', 'window-state.json'),
-      desktopFile: join('/u/AppData/Roaming', 'Delve', 'desktop.json'),
-      claudeDesktopFile: join('/u/AppData/Roaming', 'Delve', 'claude-desktop.json'),
+      userData: join('/u/AppData/Roaming', 'Quillwarren'),
+      data: join('/u/AppData/Roaming', 'Quillwarren', 'data'),
+      logs: join('/u/AppData/Roaming', 'Quillwarren', 'logs'),
+      models: join('/u/AppData/Local', 'Quillwarren', 'models'),
+      windowState: join('/u/AppData/Roaming', 'Quillwarren', 'window-state.json'),
+      desktopFile: join('/u/AppData/Roaming', 'Quillwarren', 'desktop.json'),
+      claudeDesktopFile: join('/u/AppData/Roaming', 'Quillwarren', 'claude-desktop.json'),
     });
-    expect(desktopPaths({ appData: '/a' }).models).toBe(join('/a', 'Delve', 'models'));
+    expect(desktopPaths({ appData: '/a' }).models).toBe(join('/a', 'Quillwarren', 'models'));
   });
 
   it('finds the bundled programs in resources', () => {
@@ -44,7 +44,7 @@ describe('folders', () => {
       llama: join('/app/resources', 'llama', 'llama-server.exe'),
       notices: join('/app/resources', 'THIRD-PARTY-NOTICES.txt'),
       icon: join('/app/resources', 'icon.png'),
-      mcpb: join('/app/resources', 'Delve.mcpb'),
+      mcpb: join('/app/resources', 'Quillwarren.mcpb'),
     });
   });
 });
@@ -53,7 +53,7 @@ describe('the menu', () => {
   type Item = { label?: string; click?: (...a: never[]) => void; submenu?: unknown };
   const flatten = (items: readonly Item[]): Item[] => items.flatMap((i) => [i, ...(Array.isArray(i.submenu) ? flatten(i.submenu as Item[]) : [])]);
 
-  it('is one person’s editor: no Delve Table and no players’ screen, only Delve’s own pages', () => {
+  it('is one person’s editor: no Quillwarren Table and no players’ screen, only Quillwarren’s own pages', () => {
     const went: string[] = [];
     const done: string[] = [];
     const actions = new Proxy({} as MenuActions, {
@@ -61,7 +61,7 @@ describe('the menu', () => {
     });
     const items = flatten(menuTemplate(actions) as Item[]);
     const labels = items.map((i) => i.label).filter((l): l is string => Boolean(l));
-    expect(labels).not.toContain('Delve Table');
+    expect(labels).not.toContain('Quillwarren Table');
     expect(labels.join(' | ')).not.toMatch(/table|player|invite|discord/i);
     expect(labels.slice(0, 5)).toEqual(['&File', 'Library', 'Trace a map picture…', 'Open the data folder', 'Quit']);
     for (const i of items) i.click?.();
@@ -92,7 +92,7 @@ describe('the menu', () => {
 
 describe('Claude Desktop’s connection file', () => {
   it('makes a key on the first connect, keeps it, writes the port, and revokes it on disconnect', () => {
-    const file = join(dir, 'Delve', 'claude-desktop.json');
+    const file = join(dir, 'Quillwarren', 'claude-desktop.json');
     const link = new ClaudeDesktopLink(file);
     expect(link.connected()).toBe(false);
     expect(link.key()).toBe(null);
@@ -101,10 +101,10 @@ describe('Claude Desktop’s connection file', () => {
     const key = link.connect(51234);
     expect(key).toMatch(KEY_PATTERN);
     expect(key.length).toBeGreaterThanOrEqual(43);
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ app: 'Delve', version: 1, port: 51234, key });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ app: 'Quillwarren', version: 1, port: 51234, key });
     if (process.platform !== 'win32') expect(statSync(file).mode & 0o077).toBe(0);
     expect(link.connect(51235)).toBe(key); // connecting again keeps the key
-    link.setPort(null); // Delve closes
+    link.setPort(null); // Quillwarren closes
     expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ port: null, key });
     link.setPort(40000); // the next launch
     expect(JSON.parse(readFileSync(file, 'utf8')).port).toBe(40000);
@@ -114,8 +114,19 @@ describe('Claude Desktop’s connection file', () => {
     const next = link.connect(null);
     expect(next).not.toBe(key); // a new key after a disconnect
     // a file with a bad key counts as not connected
-    writeFileSync(file, JSON.stringify({ app: 'Delve', version: 1, port: 1, key: 'short' }));
+    writeFileSync(file, JSON.stringify({ app: 'Quillwarren', version: 1, port: 1, key: 'short' }));
     expect(link.connected()).toBe(false);
+  });
+
+  it('keeps working with a file moved over from the old folder, which still says the old name', () => {
+    const file = join(dir, 'moved', 'claude-desktop.json');
+    const key = new ClaudeDesktopLink(file).connect(1);
+    writeFileSync(file, JSON.stringify({ app: 'Delve', version: 1, port: null, key, updated: '2026-10-31T00:00:00.000Z' }));
+    const link = new ClaudeDesktopLink(file);
+    expect(link.connected()).toBe(true);
+    expect(link.key()).toBe(key);
+    link.setPort(41000);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ app: 'Quillwarren', port: 41000, key });
   });
 
   it('never uses the window’s launch secret, and the server gets the key only while connected', () => {
@@ -184,8 +195,8 @@ describe('logs', () => {
     mkdirSync(join(dir, 'logs'));
     writeFileSync(join(dir, 'logs', 'main.log'), Array.from({ length: 500 }, (_, i) => `main ${i}`).join('\n'));
     writeFileSync(join(dir, 'logs', 'server.log'), `{"msg":"ready"}\nleaked ${secret} here\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz\n`);
-    const text = collectLogs(join(dir, 'logs'), { Delve: '0.1.0', Electron: '44.6.0' }, [secret], 100);
-    expect(text).toContain('Delve: 0.1.0');
+    const text = collectLogs(join(dir, 'logs'), { Quillwarren: '0.1.0', Electron: '44.6.0' }, [secret], 100);
+    expect(text).toContain('Quillwarren: 0.1.0');
     expect(text).toContain('===== main.log (last 100 lines)');
     expect(text).toContain('main 499');
     expect(text).not.toContain('main 300\n');
@@ -199,7 +210,7 @@ describe('logs', () => {
     const key = randomBytes(32).toString('base64url');
     mkdirSync(join(dir, 'logs'));
     writeFileSync(join(dir, 'logs', 'server.log'), [`{"key":"${key}"}`, 'x-api-key: sk-ant-api03-FAKEFAKEFAKEFAKEFAKE', 'error sk-proj-FAKEFAKEFAKEFAKEFAKE00 refused', `"key": "${'Z'.repeat(43)}"`].join('\n'));
-    const text = collectLogs(join(dir, 'logs'), { Delve: '0.1.0' }, ['launch-secret-0000000000', key, null]);
+    const text = collectLogs(join(dir, 'logs'), { Quillwarren: '0.1.0' }, ['launch-secret-0000000000', key, null]);
     expect(text).not.toContain(key);
     expect(text).not.toMatch(/sk-ant-api03|sk-proj-FAKE|ZZZZZZZZZZZZZZZZ/);
     expect(text).toContain('refused');
@@ -207,7 +218,7 @@ describe('logs', () => {
 });
 
 describe('the server process', () => {
-  it('gets the user’s environment without Electron’s, Node’s or old Delve settings, plus its own', () => {
+  it('gets the user’s environment without Electron’s, Node’s or old Quillwarren settings, plus its own', () => {
     const paths = desktopPaths({ appData: '/r', localAppData: '/l' });
     const env = serverEnv(
       { PATH: '/bin', SystemRoot: 'C:\\Windows', ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '--require=/evil.js', DELVE_INSECURE_OPEN_EDIT: '1', DELVE_API_TOKEN: 'x', PORT: '80', HOST: '0.0.0.0' },
@@ -292,7 +303,7 @@ describe('the server process', () => {
       expect(await s.request({ type: 'claude-desktop', key: null }, 'claude-desktop')).toEqual({ type: 'claude-desktop', on: false });
       expect((await listMaps()).text).toMatch(/isn’t connected/);
       // even with the old file back, the server no longer takes the old key
-      writeFileSync(paths.claudeDesktopFile, JSON.stringify({ app: 'Delve', version: 1, port, key }));
+      writeFileSync(paths.claudeDesktopFile, JSON.stringify({ app: 'Quillwarren', version: 1, port, key }));
       expect((await listMaps()).text).toMatch(/isn’t connected/);
       expect(output).toContain('Claude Desktop access on');
       expect(output).not.toContain(key);

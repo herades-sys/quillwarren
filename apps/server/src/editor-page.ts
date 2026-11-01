@@ -33,7 +33,7 @@ export interface EditorPageOpts {
   chatChoice?: { backend: string; offered: readonly string[]; name: string };
   /** Snip an area to a PNG (the Snip button, Shift S): admin and GM accounts, and open-edit development servers. */
   snip: boolean;
-  /** The desktop app (no players): false leaves out the players' screen links, and the editor's hints about Delve Table. Never set on the web server. */
+  /** The desktop app (no players): false leaves out the players' screen links, and the editor's hints about Quillwarren Table. Never set on the web server. */
   multiplayer?: false;
 }
 
@@ -156,7 +156,7 @@ export function editorPage(info: AppInfo, id: string, rev: number, map: DelveMap
   const top = `<header class="topbar ed-top">
 <div class="ed-top-start">
   <a class="ed-back btn btn-icon" href="/" aria-label="Back to library">${icon('chevron-right', { size: 22, className: 'flip' })}</a>
-  <a class="topbar-brand" href="/">Delve</a><span class="vsep ed-desk"></span>
+  <a class="topbar-brand" href="/">Quillwarren</a><span class="vsep ed-desk"></span>
   <a class="crumb ed-desk ed-crumb-lib" href="/">Library</a>${icon('chevron-right', { size: 14, className: 'crumb-sep ed-desk ed-crumb-lib' })}
   <div class="ed-title"><span class="crumb-title" id="map-name">${esc(map.name)}</span><span class="ed-subline"><span class="status status-connecting" id="conn-mini">Connecting…</span></span></div>
   ${storey}
@@ -279,7 +279,7 @@ export const EDITOR_CSS = `
   .ed-status { gap: 6px; padding-left: 2px; }
   .ed-view .seg-opt { padding: 6px 12px; }
   /* the storey button, after the place's name: the floor number and the storey's name */
-  .ed-top-start > .ed-storey { flex: 0 2 auto; min-width: 0; }
+  .ed-top-start > .ed-storey { flex: 0 2 auto; min-width: 86px; }
   .ed-storey { display: flex; align-items: center; gap: 10px; }
   .ed-storey-btn { min-width: 0; max-width: 100%; gap: 6px; padding: 0 6px 0 4px; }
   .ed-storey-chip { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -651,6 +651,7 @@ export const EDITOR_CSS = `
     .ed-top > .ed-group-view .ed-view .lbl { display: none; }
     .ed-top > .ed-group-view .ed-view .lbl-short { display: inline; }
     .ed-storey-name { max-width: 150px; }
+    .ed-top .topbar-brand { font-size: 21px; }
   }
   /* the floating chat starts under the context strip, so the tool's options stay in sight */
   @media (min-width: 768px) and (max-width: 1279px) {
@@ -682,7 +683,7 @@ export const EDITOR_CSS = `
     /* the storey: its number only, so the place's name keeps the room (the button's label and its menu name the
        storeys); the menu drops down across the screen */
     .ed-storey { margin-left: 4px; }
-    .ed-top-start > .ed-storey { flex-shrink: 0; }
+    .ed-top-start > .ed-storey { flex-shrink: 0; min-width: 0; }
     .ed-storey-btn { height: 44px; padding: 0 4px; gap: 4px; }
     .ed-storey-name { display: none; }
     .ed-storey-menu { position: fixed; left: 8px; right: 8px; top: 56px; width: auto; }

@@ -2,7 +2,7 @@
 // cloudflared runs on this container: it connects from loopback, with the public
 // host name and Cloudflare's headers. Such requests get less than the home
 // network: no API token and no MCP (those stay home-only), and nothing of
-// Delve's maps without a login. Claiming to come through the tunnel only ever
+// Quillwarren's maps without a login. Claiming to come through the tunnel only ever
 // takes rights away, so these checks can trust the headers.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { bearer } from './auth.ts';

@@ -1,5 +1,5 @@
 // The GM's tokens tab: upload a picture and drop it on the page as a token, or
-// pick one of Delve's props. New tokens land in the middle of the view on the
+// pick one of Quillwarren's props. New tokens land in the middle of the view on the
 // layer being worked on, controlled by nobody (the GM) until set otherwise.
 import type { TableCtx } from './ctx.ts';
 import { $, api, h, store, toast } from './dom.ts';
@@ -113,7 +113,7 @@ export function initLibrary(ctx: TableCtx): void {
     h('h3', {}, 'Pictures'),
     h('div', { class: 'row' }, h('span', { class: 'btn primary file-btn' }, 'Upload a picture…', file)),
     upGrid,
-    h('h3', {}, 'Delve props'),
+    h('h3', {}, 'Quillwarren props'),
     h('div', { class: 'row' }, search, category),
     grid,
     layerNote,

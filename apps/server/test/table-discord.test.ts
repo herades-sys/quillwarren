@@ -1,4 +1,4 @@
-// Delve Table's Discord login against a fake Discord (a small Fastify server):
+// Quillwarren Table's Discord login against a fake Discord (a small Fastify server):
 // the OAuth round trip, state and next checks, error pages, account seats on a
 // second device, requireDiscord, co-GMs, logout, and that no Discord or account
 // id ever reaches the table.
@@ -245,7 +245,7 @@ describe('the OAuth round trip', () => {
     const denied = await app.inject({ url: `/auth/discord/callback?error=access_denied&error_description=The+resource+owner+denied&state=${s.state}`, headers: { host: HOST, cookie: s.cookie } });
     expect(denied.statusCode).toBe(403);
     expect(denied.headers['content-type']).toMatch(/^text\/html/);
-    expect(denied.body).toContain('You didn&#39;t allow Delve Table to see your Discord name');
+    expect(denied.body).toContain('You didn&#39;t allow Quillwarren Table to see your Discord name');
     expect(denied.body).toContain('href="/auth/discord?next=%2Fplay%2Fjoin%2Ftok"'); // try again, back to the same invite
     expect(cookieNamed(denied, 'delve_account')).toBeUndefined();
 

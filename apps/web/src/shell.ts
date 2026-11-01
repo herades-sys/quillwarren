@@ -29,7 +29,7 @@ export interface ShellHooks {
   fit(): void;
 }
 
-/** The design's list, with Delve's letters (the rail shows the same ones). */
+/** The design's list, with Quillwarren's letters (the rail shows the same ones). */
 export const SHORTCUTS: [string, string][] = [
   ['V', 'Select'],
   ['H', 'Pan (or hold Space)'],

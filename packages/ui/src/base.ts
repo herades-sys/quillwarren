@@ -1,8 +1,8 @@
 // Nocturne's base and component layer, from the design's _ds/nocturne-*/styles.css.
-// Kept as it is, so Delve's pages share the classes the design names (.btn,
+// Kept as it is, so Quillwarren's pages share the classes the design names (.btn,
 // .seg, .field, .card, .table, .tag, .dialog…). Left out: its Inter import and
 // its :root tokens (TOKENS_CSS replaces them), and .tag-accent-2, whose
-// stand-in accent Delve doesn't have. Delve's own adjustments come after this
+// stand-in accent Quillwarren doesn't have. Quillwarren's own adjustments come after this
 // layer, in components.ts.
 
 export const NOCTURNE_CSS = `

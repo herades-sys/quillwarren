@@ -1,4 +1,4 @@
-// Delve's icon set, from the design (docs/design/ui-v1/delve-icons.js): a 24 px
+// Quillwarren's icon set, from the design (docs/design/ui-v1/delve-icons.js): a 24 px
 // grid, 1.7 stroke, round caps and joins, drawn in currentColor. Each entry is
 // the inner SVG markup. Use them at 16, 18, 20 or 24 px.
 
@@ -82,7 +82,7 @@ export const ICON_GROUPS: { title: string; note: string; icons: IconName[] }[] =
     icons: ['chat', 'corridor', 'door', 'download', 'eraser', 'eye', 'eye-off', 'fit', 'grid', 'label', 'layers', 'lock', 'unlock', 'pan', 'pillar', 'polygon', 'prop', 'redo', 'undo', 'room', 'select', 'send', 'settings', 'stairs', 'stop', 'terrain', 'trash', 'upload', 'zoom-in', 'zoom-out'],
   },
   {
-    title: 'New for Delve · 9',
+    title: 'New for Quillwarren · 9',
     note: 'marker, image, segment, fog, dice, 3D, play, admin, notes',
     icons: ['marker', 'image', 'segment', 'fog', 'dice', '3d', 'play', 'admin', 'notes'],
   },

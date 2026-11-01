@@ -5,7 +5,7 @@
 //
 // The scene (walls, doors, stairs, the floor picture) comes from the server's
 // scene3d.json, filtered for this member, and is fetched again whenever the page
-// or its Delve map changes. Players follow the page the GM moves them to; the
+// or its Quillwarren map changes. Players follow the page the GM moves them to; the
 // GM picks pages and can look as the players do.
 //
 // startTable3d returns a Table3dCtx for later panels (notes): addPanel() gives
@@ -271,7 +271,7 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
           selection = new Set([...selection].filter((id) => ids.has(id)));
           changes.add('selection');
         }
-        // the Delve map behind the page changed (a room revealed, a door moved): new geometry and picture
+        // the Quillwarren map behind the page changed (a room revealed, a door moved): new geometry and picture
         if (reload) void loadScene(Date.now());
         else if (cosmetic && scene) view?.setScene(scene, page(), 0);
         view?.update();
@@ -300,7 +300,7 @@ export function startTable3d(initial: Initial3d): Table3dCtx {
     const v = state?.view;
     if (!v) return;
     ui.name.textContent = v.name;
-    document.title = `${v.name} in 3D · Delve Table`;
+    document.title = `${v.name} in 3D · Quillwarren Table`;
     ui.meName.textContent = v.you.name;
     ui.meDot.style.setProperty('--c', v.you.color);
   }

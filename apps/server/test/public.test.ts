@@ -1,6 +1,6 @@
 // Public mode: what a request through the Cloudflare tunnel may do (no API token,
 // no MCP, nothing but the table and the login without logging in), the client IP
-// behind it, and Delve page pictures served to members of a game.
+// behind it, and Quillwarren page pictures served to members of a game.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,7 +31,7 @@ const fakeReq = (remote: string, headers: Record<string, string>) => ({ socket: 
 
 describe('requests through the tunnel', () => {
   it('are told apart by the public host or Cloudflare headers', () => {
-    expect(publicHostOf('https://Delve.Example/')).toBe('delve.example');
+    expect(publicHostOf('https://Quillwarren.Example/')).toBe('quillwarren.example');
     expect(viaTunnel(fakeReq('127.0.0.1', { host: 'delve.example' }), 'delve.example')).toBe(true);
     expect(viaTunnel(fakeReq('127.0.0.1', { host: '127.0.0.1:8790', 'cf-ray': 'x' }), 'delve.example')).toBe(true);
     expect(viaTunnel(fakeReq('192.168.1.20', { host: '192.168.1.9:8790' }), 'delve.example')).toBe(false);
@@ -80,7 +80,7 @@ describe('requests through the tunnel', () => {
   });
 });
 
-describe('Delve page pictures through the game', () => {
+describe('Quillwarren page pictures through the game', () => {
   it('go to members only, and players only get their own page in the players view', async () => {
     const { id: mapId } = (await app.inject({ method: 'POST', url: '/api/v1/maps', headers: bearer, payload: { template: 'test-dungeon' } })).json() as { id: string };
     const { id: gameId } = (await app.inject({ method: 'POST', url: '/api/v1/games', headers: bearer, payload: { name: 'Crypt' } })).json() as { id: string };

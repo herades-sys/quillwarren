@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Delve for Windows (x64) on Linux (the dev container): a portable zip and, when
+# Builds Quillwarren for Windows (x64) on Linux (the dev container): a portable zip and, when
 # NSIS can be built without wine, an installer. Everything it downloads is
 # kept in ~/.cache/delve-desktop (and electron-builder's own caches) and
 # checked against published checksums. Run from anywhere:
@@ -26,7 +26,7 @@ echo "== 1. the web release (npm run build, unchanged)"
 echo "== 2. the desktop server: release/ plus desktop-main.mjs"
 rm -rf "$RES/server" && mkdir -p "$RES/server/node_modules/@resvg"
 cp -R "$ROOT/release/web" "$ROOT/release/assets" "$ROOT/release/fonts" "$RES/server/"
-# The app has no Delve Table and no players' screen (docs/DESKTOP.md, "What the Windows app
+# The app has no Quillwarren Table and no players' screen (docs/DESKTOP.md, "What the Windows app
 # leaves out"), so their browser bundles stay behind: table.js, table-dice.js and table3d.js
 # (with PixiJS and cannon-es) and screen.js, as scripts/build-web.sh names them.
 rm -f "$RES/server/web"/table* "$RES/server/web"/screen.*
@@ -92,9 +92,9 @@ echo "== 5. icon and third-party notices"
 node scripts/icon.mjs
 node scripts/notices.mjs "$RES/THIRD-PARTY-NOTICES.txt" "$RES/node/LICENSE" "$RES/llama"
 
-echo "== 5b. the Claude Desktop extension (Delve.mcpb: the bridge, Delve's tool list, the icon)"
+echo "== 5b. the Claude Desktop extension (Quillwarren.mcpb: the bridge, Quillwarren's tool list, the icon)"
 # its tool list is read from the server's own MCP tools here, so it can't drift (docs/DESKTOP.md, "Claude Desktop")
-(cd "$ROOT" && node apps/server/src/cli/build-mcpb.ts "$RES/Delve.mcpb" --version "$APP_VERSION")
+(cd "$ROOT" && node apps/server/src/cli/build-mcpb.ts "$RES/Quillwarren.mcpb" --version "$APP_VERSION")
 
 echo "== 6. the Electron main process"
 (cd "$ROOT" && npx esbuild apps/desktop/src/main.ts --bundle --platform=node --format=cjs --target=node22 \
@@ -103,7 +103,7 @@ echo "== 6. the Electron main process"
 
 echo "== 7. package (electron-builder, Windows x64, cross-built without wine)"
 rm -rf out
-# rcedit and signing need Windows or wine: off here (Delve.exe keeps Electron's icon and version info).
+# rcedit and signing need Windows or wine: off here (Quillwarren.exe keeps Electron's icon and version info).
 npx electron-builder --win zip --x64 -c.win.signAndEditExecutable=false --publish never
 if [ "${DELVE_NSIS:-1}" = "1" ]; then
   # electron-builder's own NSIS template runs a generated program under wine to
@@ -112,4 +112,4 @@ if [ "${DELVE_NSIS:-1}" = "1" ]; then
     -c.nsis.script=build/installer-nowine.nsi --publish never || echo "!! the NSIS installer failed: the zip is the build to test"
 fi
 ls -la out
-echo "built Delve $APP_VERSION ($STAMP)"
+echo "built Quillwarren $APP_VERSION ($STAMP)"

@@ -1,5 +1,5 @@
 // "Import from Ollama": a model the user already pulled with Ollama is a GGUF
-// file in Ollama's blob store, so Delve's built-in runtime can use it without
+// file in Ollama's blob store, so Quillwarren's built-in runtime can use it without
 // downloading it again. Ollama keeps
 //   <models>/manifests/<registry>/<namespace>/<model>/<tag>   a JSON manifest (OCI style)
 //   <models>/blobs/sha256-<hex>                                the layers, named by digest
@@ -7,7 +7,7 @@
 // on Windows). The manifest's layer with mediaType
 // application/vnd.ollama.image.model is the GGUF weights; the others are the
 // chat template, parameters, licence and, for vision models, the projector.
-// Importing hard-links that blob into Delve's models folder (no extra disk
+// Importing hard-links that blob into Quillwarren's models folder (no extra disk
 // space, works without admin rights on the same drive) or copies it when a
 // link isn't possible (another drive).
 import { createHash } from 'node:crypto';
@@ -37,7 +37,7 @@ export interface OllamaModel {
   usable: boolean;
   /** Why not, when it isn't. */
   problem?: string;
-  /** A vision model's projector layer is left behind: Delve's chat reads text only. */
+  /** A vision model's projector layer is left behind: Quillwarren's chat reads text only. */
   hasProjector: boolean;
 }
 
@@ -49,7 +49,7 @@ export function ollamaName(registry: string, namespace: string, model: string, t
   return `${base}:${tag}`;
 }
 
-/** A file name for Delve's models folder: "qwen3:8b" → "qwen3-8b.gguf". */
+/** A file name for Quillwarren's models folder: "qwen3:8b" → "qwen3-8b.gguf". */
 export function ggufFileName(name: string): string {
   const slug = name
     .toLowerCase()
@@ -66,7 +66,7 @@ export function weightsLayer(manifest: unknown): { layer: OllamaLayer; hasProjec
   const layers = m.layers.filter((l): l is OllamaLayer => Boolean(l) && typeof (l as OllamaLayer).mediaType === 'string' && typeof (l as OllamaLayer).digest === 'string');
   const weights = layers.filter((l) => l.mediaType === OLLAMA_MODEL_LAYER);
   if (!weights.length) return 'the manifest has no model weights';
-  if (weights.length > 1) return 'the model is split into several weight files, which Delve can’t use yet';
+  if (weights.length > 1) return 'the model is split into several weight files, which Quillwarren can’t use yet';
   const layer = weights[0]!;
   if (!DIGEST.test(layer.digest)) return `the weights have an unknown digest "${layer.digest}"`;
   return { layer: { ...layer, size: Number(layer.size) || 0 }, hasProjector: layers.some((l) => l.mediaType === 'application/vnd.ollama.image.projector') };
@@ -166,7 +166,7 @@ export interface ImportResult {
 }
 
 /**
- * Brings an Ollama model into Delve's models folder as <name>.gguf: a hard
+ * Brings an Ollama model into Quillwarren's models folder as <name>.gguf: a hard
  * link where the file system allows it, else a copy (written to .part first,
  * so a cancelled copy never looks like a model). An existing file of that
  * name is replaced only with `replace`.

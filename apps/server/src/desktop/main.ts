@@ -1,4 +1,4 @@
-// The Delve server inside the Windows desktop app. apps/desktop runs it with
+// The Quillwarren server inside the Windows desktop app. apps/desktop runs it with
 // its own bundled Node.js (node.exe, the same Node 24 the server is tested on)
 // as a child process, bundled by apps/desktop/scripts/build.sh into
 // server/desktop-main.mjs. The web server's entry is main.ts; this file and
@@ -11,9 +11,9 @@
 //   only Claude Desktop's bridge with the Claude Desktop key, while the user has
 //   connected it (DELVE_CLAUDE_DESKTOP_KEY at start, then IPC messages);
 // - one local user and no login (`singleUser`);
-// - no players (`multiplayer: false`): no Delve Table (no table.db), no
+// - no players (`multiplayer: false`): no Quillwarren Table (no table.db), no
 //   players' screen, no Discord login, and no links to them;
-// - the data lives where the app says (%APPDATA%\Delve\data);
+// - the data lives where the app says (%APPDATA%\Quillwarren\data);
 // - the chat answers with a local model, with Claude or OpenAI on the user's
 //   own API key (chat/api-chat.ts; the key sealed by the app's safeStorage over
 //   IPC, desktop/vault.ts), or not at all (chat/local-chat.ts), never through
@@ -135,6 +135,6 @@ try {
 }
 const addr = app.server.address();
 port = typeof addr === 'object' && addr ? addr.port : 0;
-app.log.info({ port, data: cfg.dataDir, models: cfg.modelsDir, runtime: runtime.status().state, claudeDesktop: claudeKey !== null }, 'Delve desktop server ready');
+app.log.info({ port, data: cfg.dataDir, models: cfg.modelsDir, runtime: runtime.status().state, claudeDesktop: claudeKey !== null }, 'Quillwarren desktop server ready');
 await runtime.cleanUpStale().catch(() => false);
 process.send?.({ type: 'ready', port });

@@ -6,7 +6,7 @@
 // palette colour to style colour is worked out once per style and reused.
 import type { Style } from '../render/style.ts';
 
-/** The Delve palette, by name, exactly as in Prompt 0 of docs/ASSETS-COLOUR.md (a test keeps the two equal). */
+/** The Quillwarren palette, by name, exactly as in Prompt 0 of docs/ASSETS-COLOUR.md (a test keeps the two equal). */
 export const COLOUR_PALETTE = {
   ink: '#000000',
   paper: '#FFFFFF',

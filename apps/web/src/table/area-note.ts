@@ -1,5 +1,5 @@
 // The editor for one area's GM notes (a room, corridor or terrain of the page's
-// Delve map): its name, the other areas under the same spot, and the notes,
+// Quillwarren map): its name, the other areas under the same spot, and the notes,
 // saved as map ops a moment after typing stops (so the editor, Claude and the
 // GM's other tabs see them). Used by the 2D board's note box and the 3D Notes tab.
 import { areaTitle, isNoteArea, NOTES_MAX, noteAreasAt, notesOps, type NoteArea, type Point } from '@delve/core';

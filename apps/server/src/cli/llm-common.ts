@@ -1,5 +1,5 @@
 // Shared by the local-model CLIs (local-llm.ts, llm-bench.ts): the command-line
-// options for the model, the model client, and the Delve server the tools run
+// options for the model, the model client, and the Quillwarren server the tools run
 // on (DELVE_URL + DELVE_API_TOKEN, or a throwaway one started in this process).
 import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
@@ -72,7 +72,7 @@ Loop:
   --prompt-file F    another system prompt (lean: placeholders {{PROPS}}, {{TERRAIN}}, {{DOOR_STYLES}})
   --max-turns N (30)  --max-calls N (80)  --time-limit S (600 per task)  --max-result N (4000 characters per tool result)
   --verbose          print every reply and tool call
-Delve: DELVE_URL + DELVE_API_TOKEN for a running server (a dev server, never the live one); without them a throwaway Delve runs in this process.`;
+Quillwarren: DELVE_URL + DELVE_API_TOKEN for a running server (a dev server, never the live one); without them a throwaway Quillwarren runs in this process.`;
 
 export function num(v: string | undefined, name: string): number | undefined {
   if (v === undefined || v === '') return undefined;
@@ -129,9 +129,9 @@ export async function makeModel(f: ModelFlags, tools: ToolSet): Promise<ModelSet
   return { client: openAiClient({ ...common, baseUrl, ...(apiKey ? { apiKey } : {}) }), api: 'openai', baseUrl, model, ...(think ? { think } : {}) };
 }
 
-// ---------- Delve ----------
+// ---------- Quillwarren ----------
 
-export interface Delve {
+export interface Quillwarren {
   base: string;
   token: string;
   version: string;
@@ -140,14 +140,14 @@ export interface Delve {
   close(): Promise<void>;
 }
 
-export async function connectDelve(): Promise<Delve> {
+export async function connectDelve(): Promise<Quillwarren> {
   let base = process.env.DELVE_URL?.replace(/\/$/, '');
   let token = process.env.DELVE_API_TOKEN;
   let stopServer = async () => {};
   if (base) {
     if (!token) throw new Error('DELVE_URL is set but DELVE_API_TOKEN is not');
   } else {
-    // a throwaway Delve in this process: in-memory maps, temp dirs for props and images
+    // a throwaway Quillwarren in this process: in-memory maps, temp dirs for props and images
     const { buildApp } = await import('../app.ts');
     token = randomBytes(18).toString('base64url');
     const app = buildApp({ version: 'llm-bench', started: new Date().toISOString() }, { token });
@@ -174,7 +174,7 @@ export async function connectDelve(): Promise<Delve> {
   };
 }
 
-async function rest(d: Delve, method: string, path: string, body?: unknown): Promise<Response> {
+async function rest(d: Quillwarren, method: string, path: string, body?: unknown): Promise<Response> {
   const res = await fetch(`${d.base}${path}`, {
     method,
     headers: { authorization: `Bearer ${d.token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
@@ -184,15 +184,15 @@ async function rest(d: Delve, method: string, path: string, body?: unknown): Pro
   return res;
 }
 
-export async function createMap(d: Delve, o: { name: string; template: 'empty' | 'test-dungeon'; unit?: string }): Promise<{ id: string; rev: number; map: DelveMap }> {
+export async function createMap(d: Quillwarren, o: { name: string; template: 'empty' | 'test-dungeon'; unit?: string }): Promise<{ id: string; rev: number; map: DelveMap }> {
   return (await (await rest(d, 'POST', '/api/v1/maps', { name: o.name, template: o.template, ...(o.unit ? { unit: o.unit } : {}), by: 'llm-bench' })).json()) as { id: string; rev: number; map: DelveMap };
 }
 
-export async function getMap(d: Delve, id: string): Promise<{ rev: number; map: DelveMap }> {
+export async function getMap(d: Quillwarren, id: string): Promise<{ rev: number; map: DelveMap }> {
   return (await (await rest(d, 'GET', `/api/v1/maps/${encodeURIComponent(id)}`)).json()) as { rev: number; map: DelveMap };
 }
 
-export async function renderPng(d: Delve, id: string, ppg = 40): Promise<Buffer> {
+export async function renderPng(d: Quillwarren, id: string, ppg = 40): Promise<Buffer> {
   return Buffer.from(await (await rest(d, 'GET', `/api/v1/maps/${encodeURIComponent(id)}/render.png?view=gm&ppg=${ppg}`)).arrayBuffer());
 }
 

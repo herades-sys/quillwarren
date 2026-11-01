@@ -82,7 +82,7 @@ describe('HOTP (RFC 4226) and TOTP (RFC 6238)', () => {
 
   it('builds the otpauth URI the apps scan', () => {
     expect(otpauthUri('Ana Lee', 'JBSWY3DPEHPK3PXP')).toBe(
-      'otpauth://totp/Delve:Ana%20Lee?secret=JBSWY3DPEHPK3PXP&issuer=Delve&algorithm=SHA1&digits=6&period=30',
+      'otpauth://totp/Quillwarren:Ana%20Lee?secret=JBSWY3DPEHPK3PXP&issuer=Quillwarren&algorithm=SHA1&digits=6&period=30',
     );
   });
 

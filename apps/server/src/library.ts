@@ -329,7 +329,7 @@ document.querySelectorAll('[data-rename]').forEach((b) => b.addEventListener('cl
   location.reload();
 }));
 document.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', async () => {
-  if (!confirm('Delete "' + b.dataset.name + '"? It disappears from Delve for everyone.')) return;
+  if (!confirm('Delete "' + b.dataset.name + '"? It disappears from Quillwarren for everyone.')) return;
   const res = await fetch('/api/v1/maps/' + encodeURIComponent(b.dataset.delete), { method: 'DELETE' });
   if (!res.ok) { const body = await res.json().catch(() => ({})); alert('Deleting failed: ' + (body.error || res.status)); return; }
   location.reload(); // a place's card and counts follow

@@ -1,4 +1,4 @@
-// "Log in with Discord" for Delve Table players (docs/TABLE.md, "Discord login").
+// "Log in with Discord" for Quillwarren Table players (docs/TABLE.md, "Discord login").
 // OAuth2 authorization code flow with the `identify` scope only:
 //   GET /auth/discord?next=/path   → a signed 10-minute state cookie, then off to Discord
 //   GET /auth/discord/callback     → check the state, swap the code for a token, read
@@ -37,7 +37,7 @@ const TIMEOUT_MS = 10_000;
 const MAX_AVATAR_BYTES = 1024 * 1024;
 const DEFAULT_API = 'https://discord.com/api';
 const DEFAULT_CDN = 'https://cdn.discordapp.com';
-const USER_AGENT = 'DelveTable (self-hosted, 1)';
+const USER_AGENT = 'QuillwarrenTable (self-hosted, 1)';
 
 const trimSlash = (s: string): string => s.replace(/\/+$/, '');
 const apiBase = (c: DiscordConfig): string => trimSlash(c.api || DEFAULT_API);
@@ -236,7 +236,7 @@ export function registerDiscord(app: FastifyInstance, deps: DiscordDeps): void {
     void reply.header('set-cookie', clearStateCookie()); // one try per state
 
     if (q.error === 'access_denied') {
-      return failed(reply, 403, 'Not logged in', "You didn't allow Delve Table to see your Discord name, so you're not logged in. You can try again, or go back.", next);
+      return failed(reply, 403, 'Not logged in', "You didn't allow Quillwarren Table to see your Discord name, so you're not logged in. You can try again, or go back.", next);
     }
     if (q.error !== undefined) return failed(reply, 502, 'Discord login did not work', 'Discord did not log you in. Try again in a moment.', next);
     if (!valid || valid.e < Date.now() || typeof q.state !== 'string' || !sameMac(q.state, valid.s) || !useState(valid.s, valid.e)) {
@@ -279,7 +279,7 @@ export function registerDiscord(app: FastifyInstance, deps: DiscordDeps): void {
       reply,
       200,
       shell(
-        'Log out · Delve Table',
+        'Log out · Quillwarren Table',
         `<main class="page narrow"><h1>Log out</h1><form class="card" method="post" action="/auth/logout">
   <p>Log out of your Discord login on this device? Games you joined with it stay yours; log in again to get back to them.</p>
   <input type="hidden" name="next" value="${esc(next)}">
@@ -290,7 +290,7 @@ export function registerDiscord(app: FastifyInstance, deps: DiscordDeps): void {
   });
 
   app.post('/auth/logout', async (req, reply) => {
-    if (!sameOrigin(req.headers.origin, req.headers.host)) return page(reply, 403, messagePage('Not allowed', ['Log out from Delve Table itself.']));
+    if (!sameOrigin(req.headers.origin, req.headers.host)) return page(reply, 403, messagePage('Not allowed', ['Log out from Quillwarren Table itself.']));
     store.deleteAccountSession(readCookie(req.headers.cookie, ACCOUNT_COOKIE));
     const next = localPath((req.body as { next?: unknown } | undefined)?.next);
     return reply.header('set-cookie', clearAccountCookie()).redirect(next, 303);

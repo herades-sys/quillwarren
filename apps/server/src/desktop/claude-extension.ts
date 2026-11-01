@@ -1,14 +1,14 @@
-// The Claude Desktop extension the Windows app ships (resources\Delve.mcpb):
+// The Claude Desktop extension the Windows app ships (resources\Quillwarren.mcpb):
 // an MCPB bundle (https://github.com/modelcontextprotocol/mcpb, manifest
 // version 0.3) holding
 //   manifest.json      what Claude Desktop shows and how it starts the bridge
 //   server/index.js    the bridge (apps/desktop/claude-extension/server/index.js:
-//                      MCP over stdio to Claude Desktop, HTTP to Delve's /mcp)
-//   server/tools.json  Delve's tools and instructions, for when Delve is closed
-//   icon.png           Delve's mark, 512 px
+//                      MCP over stdio to Claude Desktop, HTTP to Quillwarren's /mcp)
+//   server/tools.json  Quillwarren's tools and instructions, for when Quillwarren is closed
+//   icon.png           Quillwarren's mark, 512 px
 // The tool list in the manifest and in tools.json is read from mcp.ts's own
 // server when the bundle is built (cli/build-mcpb.ts, run by
-// apps/desktop/scripts/build.sh), so it can't drift from the tools Delve has;
+// apps/desktop/scripts/build.sh), so it can't drift from the tools Quillwarren has;
 // apps/server/test/claude-desktop.test.ts checks that too. Built with
 // zip.ts zipFiles: no packaging tool needed.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -39,7 +39,7 @@ export interface ToolInfo {
   annotations?: unknown;
 }
 
-/** Delve's MCP tools and instructions as the desktop app serves them (with every optional library, as buildApp has them). */
+/** Quillwarren's MCP tools and instructions as the desktop app serves them (with every optional library, as buildApp has them). */
 export async function delveTools(version = 'build'): Promise<{ tools: ToolInfo[]; instructions: string }> {
   const store = new MapStore(':memory:');
   const images = new ImageLibrary(undefined);
@@ -64,7 +64,7 @@ export async function delveTools(version = 'build'): Promise<{ tools: ToolInfo[]
   }
 }
 
-/** A tool's description for the manifest: its first sentence (Claude Desktop lists them; the full text comes from Delve). */
+/** A tool's description for the manifest: its first sentence (Claude Desktop lists them; the full text comes from Quillwarren). */
 export function shortDescription(d: string | undefined): string {
   const text = (d ?? '').replace(/\s+/g, ' ').trim();
   // a sentence ends at . ! ? before a capital (so "e.g. a cave" and "(5 ft)." inside go on)
@@ -76,14 +76,14 @@ export function shortDescription(d: string | undefined): string {
 export function extensionManifest(o: { version: string; tools: readonly ToolInfo[] }): Record<string, unknown> {
   return {
     manifest_version: MANIFEST_VERSION,
-    name: 'delve',
-    display_name: 'Delve',
+    name: 'quillwarren',
+    display_name: 'Quillwarren',
     version: o.version,
-    description: 'Build and change dungeon maps in the Delve app on this computer, and watch every change live in its window.',
+    description: 'Build and change dungeon maps in the Quillwarren app on this computer, and watch every change live in its window.',
     long_description: [
-      'Connects Claude to **Delve**, the dungeon map editor, running on this computer. Claude builds rooms, corridors, doors, stairs, props and terrain with Delve’s own tools, looks at the result, and you watch every change happen in the Delve window. Each change is one undo step in Delve.',
+      'Connects Claude to **Quillwarren**, the dungeon map editor, running on this computer. Claude builds rooms, corridors, doors, stairs, props and terrain with Quillwarren’s own tools, looks at the result, and you watch every change happen in the Quillwarren window. Each change is one undo step in Quillwarren.',
       '',
-      'Before installing: open Delve and choose **Help → Connect to Claude Desktop…**. The extension works only while Delve is open, and only on this computer. Your maps stay in Delve; what Claude reads through the tools is part of your conversation with Claude, on your own Claude plan.',
+      'Before installing: open Quillwarren and choose **Help → Connect to Claude Desktop…**. The extension works only while Quillwarren is open, and only on this computer. Your maps stay in Quillwarren; what Claude reads through the tools is part of your conversation with Claude, on your own Claude plan.',
     ].join('\n'),
     // the user, 2026-10-31: "herades-sys" for now; no link while the repository is private
     author: { name: 'herades-sys' },
@@ -101,7 +101,7 @@ export function extensionManifest(o: { version: string; tools: readonly ToolInfo
   };
 }
 
-/** Delve's mark as the extension's icon. */
+/** Quillwarren's mark as the extension's icon. */
 export function extensionIcon(size = 512): Buffer {
   const svg = readFileSync(MARK_FILE, 'utf8');
   return Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: size }, background: 'rgba(0,0,0,0)' }).render().asPng());
@@ -119,7 +119,7 @@ export async function extensionFiles(o: { version: string }): Promise<{ name: st
   ];
 }
 
-/** Writes Delve.mcpb. */
+/** Writes Quillwarren.mcpb. */
 export async function buildMcpb(outFile: string, o: { version: string }): Promise<{ bytes: number; tools: number }> {
   const files = await extensionFiles(o);
   const zip = zipFiles(files);

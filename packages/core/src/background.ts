@@ -1,6 +1,6 @@
 // A map's own background colour: stored as style.overrides.background
 // ("#RRGGBB"), drawn by resolveStyle wherever the scene's background is
-// (editor and viewer, exports, the players' screen, Delve Table pages). Unset
+// (editor and viewer, exports, the players' screen, Quillwarren Table pages). Unset
 // means the style's own colour. The parchment handout keeps its own paper.
 import { contrastRatio, normalizeHex } from './colour-math.ts';
 import type { Op } from './ops.ts';

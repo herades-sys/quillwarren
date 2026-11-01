@@ -1,6 +1,6 @@
-# Delve UI
+# Quillwarren UI
 
-Delve's pages share one look: the user's design from Claude Design, committed in `docs/design/ui-v1/` ("Ink, stone & parchment", built on Nocturne). The design is the source of truth; `packages/ui` (`@delve/ui`) turns it into code, and `/ui` shows every token and component in both themes next to each other, laid out like the design document, so the two can be compared.
+Quillwarren's pages share one look: the user's design from Claude Design, committed in `docs/design/ui-v1/` ("Ink, stone & parchment", built on Nocturne). The design is the source of truth; `packages/ui` (`@delve/ui`) turns it into code, and `/ui` shows every token and component in both themes next to each other, laid out like the design document, so the two can be compared.
 
 ## What's in `@delve/ui`
 
@@ -8,7 +8,7 @@ Delve's pages share one look: the user's design from Claude Design, committed in
 |---|---|
 | `src/tokens.ts` | The token sheet, value for value as in `delve-tokens.css`. The fonts are our own files under `/fonts`, never Google Fonts or a CDN. |
 | `src/base.ts` | Nocturne's base and component layer, as it is in the design (`.btn`, `.seg`, `.field`, `.input`, `.card`, `.table`, `.tag`, `.dialog`…). |
-| `src/components.ts` | Delve's components on top: everything in the design's "Components and their states". |
+| `src/components.ts` | Quillwarren's components on top: everything in the design's "Components and their states". |
 | `src/css.ts` | `UI_CSS` (all three, in that order) and `UI_CSS_VERSION`, a hash of it. |
 | `src/theme.ts` | `THEME_BOOT`, the inline theme script, and `themeSwitch()`. |
 | `src/icons.ts` | The design's 67 icons and `icon(name, {size, stroke, label, className})`. |
@@ -22,7 +22,7 @@ The server sends the stylesheet as `/assets/delve-ui.css?v=<UI_CSS_VERSION>` (ca
 import { htmlDocument, icon, themeSwitch } from '@delve/ui';
 
 const html = htmlDocument({
-  title: 'Library',            // becomes "Library · Delve"
+  title: 'Library',            // becomes "Library · Quillwarren"
   body: `<header class="topbar">…${themeSwitch()}…</header><main class="page">…</main>`,
   extra: '<style>/* only this page's layout, from the tokens */</style>',
 });
@@ -83,4 +83,4 @@ The editor's layout sizes are tokens too: `--bar-h` 48, `--rail-w` 52, `--panel-
 ## Where the pages stand
 
 - Built on `@delve/ui`: the login, setup, recovery-code, account and admin pages (`apps/server/src/accounts/pages.ts`) and the style guide (`/ui`, `apps/server/src/ui-guide.ts`).
-- Also on it since stage 2: the map editor and viewer (`editor-page.ts`, `apps/web/src/shell.ts`, `dom.ts`), the start page and library, the 3D view, the handout, tracing, the players' screen, and Delve Table's lobby, join and Discord pages (`table/html.ts`). And since stage 2c the Delve Table 2D and 3D pages (`table/page.ts`, `page3d.ts`, `table/table-css.ts`, `notes-css.ts`).
+- Also on it since stage 2: the map editor and viewer (`editor-page.ts`, `apps/web/src/shell.ts`, `dom.ts`), the start page and library, the 3D view, the handout, tracing, the players' screen, and Quillwarren Table's lobby, join and Discord pages (`table/html.ts`). And since stage 2c the Quillwarren Table 2D and 3D pages (`table/page.ts`, `page3d.ts`, `table/table-css.ts`, `notes-css.ts`).

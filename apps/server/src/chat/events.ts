@@ -1,6 +1,6 @@
 // Chat events: what the browser's chat panel receives, one JSON object per
 // line. The bridge turns Claude Code's stream-json output into these, and the
-// Delve server passes them through.
+// Quillwarren server passes them through.
 import { parsePartialJson } from './partial-json.ts';
 
 /** A step of Claude's plan (the MCP tool `plan`, see mcp.ts). */
@@ -17,7 +17,7 @@ export type ChatEvent =
   | { type: 'start'; session: string; model?: string }
   /** A piece of Claude's reply; append it to the current message. */
   | { type: 'text'; text: string }
-  /** Claude called a Delve tool. name has no "mcp__delve__" prefix. Calls of `plan` come as plan events instead. */
+  /** Claude called a Quillwarren tool. name has no "mcp__delve__" prefix. Calls of `plan` come as plan events instead. */
   | { type: 'tool'; id: string; name: string; input: unknown }
   | { type: 'tool_done'; id: string; ok: boolean; text: string }
   /**
@@ -111,7 +111,7 @@ const OBJECT_KINDS: Record<string, ActivityKind> = {
   label: 'labels', marker: 'labels', inscription: 'labels',
 };
 
-/** What a Delve tool call is doing (name without the mcp__delve__ prefix). apply_ops counts by what it adds most. */
+/** What a Quillwarren tool call is doing (name without the mcp__delve__ prefix). apply_ops counts by what it adds most. */
 export function activityKind(name: string, input: unknown): ActivityKind {
   const a = (input && typeof input === 'object' ? input : {}) as Json;
   if (name === 'update' && a.set && typeof a.set === 'object' && 'notes' in (a.set as Json)) return 'labels';
@@ -233,7 +233,7 @@ export class StreamTranslator {
     const servers = Array.isArray(m.mcp_servers) ? (m.mcp_servers as Json[]) : [];
     const delve = servers.find((s) => s.name === 'delve');
     if (!delve || delve.status !== 'connected') {
-      out.push({ type: 'error', error: `Claude couldn't reach Delve's map tools (${delve ? String(delve.status) : 'not loaded'}).`, code: 'bridge' });
+      out.push({ type: 'error', error: `Claude couldn't reach Quillwarren's map tools (${delve ? String(delve.status) : 'not loaded'}).`, code: 'bridge' });
     }
     return out;
   }

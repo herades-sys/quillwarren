@@ -98,11 +98,11 @@ describe('icons', () => {
 describe('head and theme', () => {
   it('puts the theme script before the stylesheet', () => {
     const h = head({ title: 'Log in' });
-    expect(h).toContain('<title>Log in · Delve</title>');
+    expect(h).toContain('<title>Log in · Quillwarren</title>');
     expect(h.indexOf('<script>')).toBeLessThan(h.indexOf('rel="stylesheet"'));
     expect(h).toContain(`href="/assets/delve-ui.css?v=${UI_CSS_VERSION}"`);
-    expect(head({ title: 'Join · Delve Table' })).toContain('<title>Join · Delve Table</title>');
-    expect(head({ title: '<b>' })).toContain('<title>&lt;b&gt; · Delve</title>');
+    expect(head({ title: 'Join · Quillwarren Table' })).toContain('<title>Join · Quillwarren Table</title>');
+    expect(head({ title: '<b>' })).toContain('<title>&lt;b&gt; · Quillwarren</title>');
   });
 
   it('builds a whole document', () => {

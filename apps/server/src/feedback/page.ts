@@ -58,11 +58,11 @@ export interface Who {
 
 function page(body: string, who: Who | null, player: boolean): string {
   const avatar = who?.name ? `<span class="req-who" title="${esc(who.label)}"><span class="avatar">${esc(initials(who.name))}</span><span class="req-who-name">${esc(who.name)}</span></span>` : '';
-  const crumbs = player ? [{ href: '/play', text: 'Delve Table' }] : [{ href: '/', text: 'Library' }];
+  const crumbs = player ? [{ href: '/play', text: 'Quillwarren Table' }] : [{ href: '/', text: 'Library' }];
   return htmlDocument({ title: 'Request a feature', body: `${topBar({ crumbs, title: 'Request a feature', end: `${themeSwitch()}${avatar}` })}${body}`, extra: CSS });
 }
 
-const head = `<div class="req-head"><span class="kicker">Delve · ideas and problems</span><h1 class="display-lg">Request a feature</h1>
+const head = `<div class="req-head"><span class="kicker">Quillwarren · ideas and problems</span><h1 class="display-lg">Request a feature</h1>
 <p class="lead">Missing something, or did something not work? Tell the admin here. Every request is kept, and they read them all.</p></div>`;
 
 export function feedbackPage(o: { who: Who; values: FormValues; from: string; sent?: boolean; error?: string }): string {
@@ -79,7 +79,7 @@ ${sent}${error}
 <form class="panel req-form" method="post" action="/feedback"><input type="hidden" name="from" value="${esc(o.from)}">
 <fieldset class="req-kind"><legend>What is it?</legend><div class="seg" role="radiogroup">${kinds}</div></fieldset>
 <div class="field"><label for="req-title">Title</label><input id="req-title" class="input input-lg" type="text" name="title" value="${esc(v.title)}" maxlength="${MAX.title}" required placeholder="e.g. A legend on the 3D view"${o.error ? '' : ' autofocus'}></div>
-<div class="field"><label for="req-desc">What should Delve do?</label><textarea id="req-desc" class="input input-lg" name="description" maxlength="${MAX.description}" required rows="8" aria-describedby="req-desc-hint" placeholder="What you want to do, what happens now, and what would help.">${esc(v.description)}</textarea>
+<div class="field"><label for="req-desc">What should Quillwarren do?</label><textarea id="req-desc" class="input input-lg" name="description" maxlength="${MAX.description}" required rows="8" aria-describedby="req-desc-hint" placeholder="What you want to do, what happens now, and what would help.">${esc(v.description)}</textarea>
 <span class="field-hint" id="req-desc-hint">For a problem: what you did, what you expected, and what happened instead. <span class="req-count" data-count>${v.description.length} / ${MAX.description}</span></span></div>
 <div class="req-two">
 <div class="field"><label for="req-about">About which map or page <span class="text-faint">(optional)</span></label><input id="req-about" class="input input-lg" type="text" name="about" value="${esc(v.about)}" maxlength="${MAX.about}" placeholder="e.g. /maps/… or the table"></div>
@@ -107,13 +107,13 @@ export function loginNotePage(o: { loginHref: string | null; discordHref: string
     o.discordHref ? `<a class="btn btn-secondary" href="${esc(o.discordHref)}">Log in with Discord</a>` : '',
   ].join('');
   const discord = o.discordName
-    ? `<p class="text-muted">You're logged in with Discord as <strong>${esc(o.discordName)}</strong>, but you have no seat at a Delve Table yet. Join a game from your GM's invite link first.</p>`
+    ? `<p class="text-muted">You're logged in with Discord as <strong>${esc(o.discordName)}</strong>, but you have no seat at a Quillwarren Table yet. Join a game from your GM's invite link first.</p>`
     : `<p class="text-muted">Players: open your game from your GM's invite link${o.discordHref ? ' or log in with Discord' : ''}, then come back here.</p>`;
   return page(
     `<main class="page req-page">
 ${head}
 <section class="panel req-note"><h2 class="panel-title">Log in to send a request</h2>
-<p>Only people with a Delve login can send requests: GMs and admins, and players at a Delve Table.</p>
+<p>Only people with a Quillwarren login can send requests: GMs and admins, and players at a Quillwarren Table.</p>
 ${discord}
 ${links ? `<p class="row">${links}</p>` : ''}</section>
 </main>`,
@@ -139,7 +139,7 @@ function entry(e: Entry): string {
 export function requestsSection(s: Summary): string {
   const list = s.count
     ? `<ol class="req-entries">${s.latest.map(entry).join('')}</ol>`
-    : `<p class="text-muted">No requests yet. Logged-in GMs and admins, and Delve Table players, send them from <a href="/feedback">Request a feature</a>.</p>`;
+    : `<p class="text-muted">No requests yet. Logged-in GMs and admins, and Quillwarren Table players, send them from <a href="/feedback">Request a feature</a>.</p>`;
   return `<section class="panel" id="feature-requests"><style>
   .req-entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   .req-entry { padding: 10px 0; box-shadow: inset 0 -1px 0 var(--color-border); display: flex; flex-direction: column; gap: 4px; min-width: 0; }

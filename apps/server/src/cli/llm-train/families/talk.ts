@@ -1,6 +1,6 @@
 // Conversation families: questions answered from the map without changing
 // it, follow-ups in a second message ("make it bigger", "move it north",
-// "undo that"), recovery when Delve refuses something for a real reason (the
+// "undo that"), recovery when Quillwarren refuses something for a real reason (the
 // wall already has a door, there is no free spot) followed by the corrected
 // call, and finding and fixing layout problems with check_map.
 import { assetInfo, checkMap, compassWord, doorCentre, doorLeadsTo, mapBox, pointInShape, propBounds, shapeBounds, type DelveMap } from '@delve/core';
@@ -358,7 +358,7 @@ export const multiTurn: Family = {
 
 export const recovery: Family = {
   id: 'recovery',
-  title: 'Delve refuses a reasonable call for a real reason (the wall has no free stretch, no free spot, a prop on a tree); the model reads why and makes the corrected call',
+  title: 'Quillwarren refuses a reasonable call for a real reason (the wall has no free stretch, no free spot, a prop on a tree); the model reads why and makes the corrected call',
   weight: 5,
   start: (rng) => ({ kind: rng.weighted<'dungeon' | 'outdoor'>([['dungeon', 7], ['outdoor', 3]]), furnished: rng.chance(0.5) }),
   async run({ rng, convo }) {
@@ -454,7 +454,7 @@ export const recovery: Family = {
           return { variant: 'prop-other-wall', check: (final, start) => (ofType(final, 'prop').length === ofType(start, 'prop').length + 1 ? [] : ['no prop']) };
         }
       } else {
-        // a prop put on a tree or boulder at a given spot: Delve warns and names the nearest free spot
+        // a prop put on a tree or boulder at a given spot: Quillwarren warns and names the nearest free spot
         const blockers = ofType(m, 'prop').filter((p) => /tree|oak|pine|birch|beech|fir|spruce|maple|boulder/.test(p.asset) && !ofType(m, 'room').some((r) => pointInShape(r.shape, p.at)));
         for (const t of rng.shuffle(blockers).slice(0, 6)) {
           const asset = rng.pick(['tent', 'campfire', 'boulder', 'stump', 'log']);

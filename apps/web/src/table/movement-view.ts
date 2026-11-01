@@ -1,6 +1,6 @@
-// "Where you can go" on the 2D board, for the GM (Delve pages, the GM's own view):
+// "Where you can go" on the 2D board, for the GM (Quillwarren pages, the GM's own view):
 // the same overlay as the editor's Shift K (movement-overlay.ts), drawn from the
-// page's Delve map (gm-map.ts) in an SVG over the board. K or the "Heights"
+// page's Quillwarren map (gm-map.ts) in an SVG over the board. K or the "Heights"
 // button in the top bar turns it on and off; it is remembered per browser like
 // the editor's. Players never get it (they never get the map).
 import { walkableMap, type DelveMap, type Walkable } from '@delve/core';
@@ -16,7 +16,7 @@ export interface MovementView {
   toggle(): void;
   /** The page, the GM's view or the map changed. */
   update(): void;
-  /** Is there anything to show on this page (a Delve map with height areas)? */
+  /** Is there anything to show on this page (a Quillwarren map with height areas)? */
   available(): boolean;
 }
 

@@ -1,14 +1,14 @@
 // The app's menu bar as data: main.ts builds it with Electron's Menu and says
 // what each item does. Pure (no Electron at run time), so it is tested on its
 // own (apps/desktop/test/desktop-app.test.ts). The app is one person's editor:
-// it has no Delve Table and no players' screen, so neither has a menu item
+// it has no Quillwarren Table and no players' screen, so neither has a menu item
 // (docs/DESKTOP.md, "What the Windows app leaves out"). The Help menu has the
 // assistants: the chat's models and Claude Desktop (docs/DESKTOP.md, "Claude
 // Desktop").
 import type { MenuItemConstructorOptions } from 'electron';
 
 export interface MenuActions {
-  /** Load one of Delve's own pages in the window ("/", "/import/image", "/models"). */
+  /** Load one of Quillwarren's own pages in the window ("/", "/import/image", "/models"). */
   go(path: string): void;
   openDataFolder(): void;
   quit(): void;
@@ -65,7 +65,7 @@ export function menuTemplate(a: MenuActions, state: MenuState = { claudeDesktop:
     {
       label: '&Help',
       submenu: [
-        // the assistants: a local model for the chat, or Claude in Claude Desktop working on Delve's maps
+        // the assistants: a local model for the chat, or Claude in Claude Desktop working on Quillwarren's maps
         { label: 'Models for the chat…', click: () => a.go('/models') },
         { label: state.claudeDesktop ? 'Connect to Claude Desktop again…' : 'Connect to Claude Desktop…', click: () => a.connectClaudeDesktop() },
         { label: 'Disconnect Claude Desktop', enabled: state.claudeDesktop, click: () => a.disconnectClaudeDesktop() },
@@ -75,7 +75,7 @@ export function menuTemplate(a: MenuActions, state: MenuState = { claudeDesktop:
         { label: 'Developer tools', click: () => a.toggleDevTools() },
         { type: 'separator' },
         { label: 'Third-party notices', click: () => a.openNotices() },
-        { label: 'About Delve', click: () => a.showAbout() },
+        { label: 'About Quillwarren', click: () => a.showAbout() },
       ],
     },
   ];

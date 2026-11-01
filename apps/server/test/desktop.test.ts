@@ -3,7 +3,7 @@
 // without a login, the web-only pages, the chat settings, the configuration
 // from the environment and where the data goes, and the real entry point
 // (desktop/main.ts) as the app starts it: IPC "ready", the data folder, a clean
-// shutdown. And what the app leaves out (`multiplayer: false`): Delve Table, the
+// shutdown. And what the app leaves out (`multiplayer: false`): Quillwarren Table, the
 // players' screen, Discord login, and the links to them and to accounts.
 import { fork } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -155,6 +155,7 @@ describe('desktop mode', () => {
     const fb = await app.inject({ method: 'GET', url: '/feedback', headers: ok });
     expect(fb.statusCode).toBe(200);
     expect(fb.body).toContain('Copy logs');
+    expect(fb.body).toContain('href="https://github.com/herades-sys/quillwarren/issues"');
   });
 
   it('lets the library’s New map form through: its pages must not make browsers send "Origin: null" on form posts', async () => {
@@ -203,7 +204,7 @@ describe('desktop mode', () => {
     for (const f of ['accounts.db', 'chat-settings.json']) expect(existsSync(join(dir, f)), f).toBe(true);
   });
 
-  it('has no Delve Table, players’ screen or Discord login: nothing registered, so 404s', async () => {
+  it('has no Quillwarren Table, players’ screen or Discord login: nothing registered, so 404s', async () => {
     const gets = [
       '/play',
       '/play/g_abcdefgh',
@@ -238,7 +239,7 @@ describe('desktop mode', () => {
     }
   });
 
-  it('makes no Delve Table files in the data folder', () => {
+  it('makes no Quillwarren Table files in the data folder', () => {
     for (const f of ['table.db', 'table-assets']) expect(existsSync(join(dir, f)), f).toBe(false);
   });
 
@@ -246,7 +247,7 @@ describe('desktop mode', () => {
     const res = await app.inject({ method: 'GET', url: '/', headers: ok });
     expect(res.statusCode).toBe(200);
     const shown = withoutStyles(res.body);
-    for (const gone of ['href="/play"', 'Delve Table', 'href="/admin"', 'href="/account', 'action="/logout"', 'Log out', 'Log in', 'class="notice notice-warning lib-secure"', 'Create your admin account', 'Discord']) {
+    for (const gone of ['href="/play"', 'Quillwarren Table', 'href="/admin"', 'href="/account', 'action="/logout"', 'Log out', 'Log in', 'class="notice notice-warning lib-secure"', 'Create your admin account', 'Discord']) {
       expect(shown, gone).not.toContain(gone);
     }
     // "Request a feature" stays and leads to the desktop app's own page
@@ -260,7 +261,7 @@ describe('desktop mode', () => {
     expect(shown).not.toContain('id="screen-link"');
     expect(shown).not.toContain('/screen');
     expect(shown).not.toMatch(/players’ screen|players' screen/i);
-    expect(shown).not.toContain('Delve Table');
+    expect(shown).not.toContain('Quillwarren Table');
     // the GM / players view toggle (top bar and phone), the exports (players' too) and the parchment handout
     expect(page).toContain('name="view" value="players"');
     expect(page).toContain('name="view-phone" value="players"');
@@ -287,7 +288,7 @@ describe('desktop mode', () => {
   });
 });
 
-describe('desktop mode leaves Delve Table’s files alone', () => {
+describe('desktop mode leaves Quillwarren Table’s files alone', () => {
   it('never opens or deletes a table.db or table-assets already in the data folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'delve-desktop-old-'));
     try {
@@ -307,7 +308,7 @@ describe('desktop mode leaves Delve Table’s files alone', () => {
 });
 
 describe('multiplayer: false without the desktop gate', () => {
-  it('still takes feature requests: the form works without Delve Table behind it', async () => {
+  it('still takes feature requests: the form works without Quillwarren Table behind it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'delve-noplay-'));
     const app = buildApp({ version: 'test', started: 'now' }, { multiplayer: false, openEdit: true, dataDir: dir });
     try {
@@ -315,7 +316,7 @@ describe('multiplayer: false without the desktop gate', () => {
       const form = await app.inject({ method: 'GET', url: '/feedback?from=%2Fmaps%2Fx' });
       expect(form.statusCode).toBe(200);
       expect(form.body).toContain('name="title"');
-      expect(form.body).not.toContain('Delve Table');
+      expect(form.body).not.toContain('Quillwarren Table');
       const sent = await app.inject({
         method: 'POST',
         url: '/feedback',
@@ -389,7 +390,7 @@ describe('desktop mode over a real socket (WebSocket upgrades too)', () => {
 });
 
 describe('desktopConfig', () => {
-  const base = { DELVE_DESKTOP_SECRET: SECRET, DELVE_DATA: '/home/u/AppData/Roaming/Delve/data' };
+  const base = { DELVE_DESKTOP_SECRET: SECRET, DELVE_DATA: '/home/u/AppData/Roaming/Quillwarren/data' };
 
   it('needs the secret and an absolute data folder, and never falls back to the web server’s', () => {
     expect(() => desktopConfig({})).toThrow(/DELVE_DESKTOP_SECRET/);
@@ -433,8 +434,8 @@ describe('the desktop server as the app starts it (desktop/main.ts)', () => {
   it('starts on 127.0.0.1, keeps its data where the app says, and stops cleanly when asked', async () => {
     const root = mkdtempSync(join(tmpdir(), 'delve-desk-main-'));
     dirs.push(root);
-    const data = join(root, 'Roaming', 'Delve', 'data');
-    const s = start({ DELVE_DESKTOP_SECRET: SECRET, DELVE_DATA: data, DELVE_MODELS_DIR: join(root, 'Local', 'Delve', 'models'), DELVE_VERSION: '0.1.0-test', OLLAMA_MODELS: join(root, 'no-ollama') });
+    const data = join(root, 'Roaming', 'Quillwarren', 'data');
+    const s = start({ DELVE_DESKTOP_SECRET: SECRET, DELVE_DATA: data, DELVE_MODELS_DIR: join(root, 'Local', 'Quillwarren', 'models'), DELVE_VERSION: '0.1.0-test', OLLAMA_MODELS: join(root, 'no-ollama') });
     const port = await s.ready;
     expect(port).toBeGreaterThan(0);
     const h = { [DESKTOP_HEADER]: SECRET };
@@ -445,8 +446,8 @@ describe('the desktop server as the app starts it (desktop/main.ts)', () => {
     expect(made.status).toBe(201);
     const rt = (await (await fetch(`http://127.0.0.1:${port}/api/v1/runtime`, { headers: h })).json()) as { runtime: { state: string; bundled: boolean }; folder: string };
     expect(rt.runtime).toMatchObject({ state: 'unavailable', bundled: false });
-    expect(rt.folder).toBe(join(root, 'Local', 'Delve', 'models'));
-    // no players here: the entry turns Delve Table, the players' screen and Discord off
+    expect(rt.folder).toBe(join(root, 'Local', 'Quillwarren', 'models'));
+    // no players here: the entry turns Quillwarren Table, the players' screen and Discord off
     for (const url of ['/play', '/api/v1/games', '/maps/map_x/screen', '/auth/discord']) expect((await fetch(`http://127.0.0.1:${port}${url}`, { headers: h })).status, url).toBe(404);
     // the server listens on loopback only
     expect(s.output()).toContain('127.0.0.1');
@@ -455,7 +456,7 @@ describe('the desktop server as the app starts it (desktop/main.ts)', () => {
     expect(existsSync(join(data, 'delve.db'))).toBe(true);
     expect(existsSync(join(data, 'table.db'))).toBe(false);
     expect(existsSync(join(data, 'table-assets'))).toBe(false);
-    expect(existsSync(join(root, 'Roaming', 'Delve', 'logs'))).toBe(true);
+    expect(existsSync(join(root, 'Roaming', 'Quillwarren', 'logs'))).toBe(true);
     // the map is in the database file, so it survives a restart
     const again = start({ DELVE_DESKTOP_SECRET: SECRET, DELVE_DATA: data, OLLAMA_MODELS: join(root, 'no-ollama') });
     const port2 = await again.ready;

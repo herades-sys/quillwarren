@@ -184,7 +184,7 @@ describe('sending', () => {
     const { cookie, gameId } = await player('Alice', 'Crypt night');
     const page = await get(`/feedback?from=${encodeURIComponent(`/play/${gameId}`)}`, cookie);
     expect(page.body).toContain('Sent as <strong>Alice · player in Crypt night</strong>');
-    expect(page.body).toContain('href="/play">Delve Table</a>');
+    expect(page.body).toContain('href="/play">Quillwarren Table</a>');
     expect((await send(cookie, { about: '', from: `/play/${gameId}` })).statusCode).toBe(303);
     expect(text()).toMatch(/^==== #1 · [^\n]+ · Feature idea · from "Alice" \(player in "Crypt night", invite link\)\n/);
     // the same through the tunnel
@@ -197,7 +197,7 @@ describe('sending', () => {
   });
 
   it('takes requests from the shared editor login, recorded as such', async () => {
-    // a Delve without accounts yet
+    // a Quillwarren without accounts yet
     await app.close();
     rmSync(dir, { recursive: true, force: true });
     dir = mkdtempSync(join(tmpdir(), 'delve-feedback-'));

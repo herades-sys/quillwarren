@@ -3,7 +3,7 @@
 // shape: the map's floor (rooms and corridors) and its terrain. Where areas
 // overlap the last one wins, so a hill can carry a higher crest. Everything here
 // is pure: the renderer draws the plan (render/heights.ts), the walkable map says
-// which edges block movement (Delve Table's "Respect heights"), and the 3D views
+// which edges block movement (Quillwarren Table's "Respect heights"), and the 3D views
 // drape the floor over the ground's real shape (heightScene, from surface.ts:
 // hills rounded, slopes as ramps).
 import { differenceD, FillRule, intersectD, unionD, type PathsD } from 'clipper2-ts';
@@ -425,7 +425,7 @@ export function walkableMap(map: DelveMap, opts: WalkableOptions = {}): Walkable
   return { bands, blocked, crossings, walls };
 }
 
-/** The cliff edges that block a move, for a Delve Table page: GM only, in cells, with the drop in the map's units. Hidden areas aren't enforced. */
+/** The cliff edges that block a move, for a Quillwarren Table page: GM only, in cells, with the drop in the map's units. Hidden areas aren't enforced. */
 export function blockingEdges(map: DelveMap): { a: [number, number]; b: [number, number]; drop: number }[] {
   if (!hasHeights(map, 'players')) return [];
   const r = (v: number) => Math.round(v * 1000) / 1000 + 0;

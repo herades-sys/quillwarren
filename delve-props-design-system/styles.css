@@ -1,6 +1,6 @@
-/* Delve Props tokens (from tokens.json) as CSS custom properties.
+/* Quillwarren Props tokens (from tokens.json) as CSS custom properties.
    Prop SVGs never use these: they write the literal inks #000000, #FFFFFF and #999999,
-   which the Delve renderer swaps per map style. These are for cards and other design work. */
+   which the Quillwarren renderer swaps per map style. These are for cards and other design work. */
 @import url("https://fonts.googleapis.com/css2?family=IM+Fell+English&display=swap");
 
 :root {

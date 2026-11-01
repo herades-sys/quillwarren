@@ -116,7 +116,7 @@ describe('camera', () => {
 });
 
 describe('pages', () => {
-  it('builds the Delve background URL (players or GM, fogged, in the page frame) and its box', () => {
+  it('builds the Quillwarren background URL (players or GM, fogged, in the page frame) and its box', () => {
     expect(backgroundUrl(page)).toBe(`/api/v1/maps/m%201/render.png?view=players&ppg=70&fog=1&grid=0&frame=${page.origin[0]},${page.origin[1]},${page.origin[0] + page.width},${page.origin[1] + page.height}`);
     expect(backgroundUrl(page, 0, 'gm')).toContain('/render.png?view=gm&');
     expect(backgroundUrl(page, 5, 'players', 'g1')).toBe(`/api/v1/games/g1/pages/${page.id}/background.png?view=players&v=5`);
@@ -346,7 +346,7 @@ describe('chat and rolls', () => {
     expect(messageView(msg({ kind: 'gmroll', hiddenResult: true }), members)).toMatchObject({ label: 'GM roll', secret: true });
     expect(messageView(msg({ kind: 'ooc' }), members).label).toBe('OOC');
     expect(messageView(msg({ kind: 'desc', from: 'gm' }), members)).toMatchObject({ showSpeaker: false, color: null });
-    expect(messageView(msg({ kind: 'system', from: 'system', speaker: 'Delve' }), members).showSpeaker).toBe(false);
+    expect(messageView(msg({ kind: 'system', from: 'system', speaker: 'Quillwarren' }), members).showSpeaker).toBe(false);
     expect(messageView(msg({ from: 'gm', speaker: 'The Innkeeper' }), members)).toMatchObject({ speaker: 'The Innkeeper', color: '#d4a017' });
   });
 

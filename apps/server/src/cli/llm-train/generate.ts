@@ -5,7 +5,7 @@
 import type { DelveMap } from '@delve/core';
 import type { AgentMessage, ToolDef } from '../../chat/local-agent.ts';
 import { Convo } from './convo.ts';
-import { Delve } from './delve.ts';
+import { Quillwarren } from './delve.ts';
 import { FAMILIES } from './families/index.ts';
 import { Skip, type Family } from './families/common.ts';
 import { HARNESS_HOOKS, type HarnessHooks } from './harness-hooks.ts';
@@ -92,12 +92,12 @@ function reasonOf(errs: readonly string[]): string {
 
 interface Built {
   convo: Convo;
-  delve: Delve;
+  delve: Quillwarren;
   startMap: DelveMap;
 }
 
 async function build(spec: StartSpec, convSeed: number, hooks: HarnessHooks): Promise<Built & { start: Awaited<ReturnType<typeof buildStart>> }> {
-  const delve = await Delve.open();
+  const delve = await Quillwarren.open();
   try {
     const start = await buildStart(delve, spec);
     const startMap = structuredClone(delve.get(start.mapId).map);
@@ -156,7 +156,7 @@ export async function generate(o: GenOptions): Promise<GenResult> {
         // the harness's final check (afterAnswer hook): every kept conversation passes it, or answers what it said
         if (convo.unanswered) errs.push(`final check: ${convo.turns.find((t) => t.finalCheck)?.finalCheck?.slice(0, 120)}`);
         for (const t of convo.turns) if (t.finalCheck && f.id !== 'recovery') errs.push(`final check: ${t.finalCheck.slice(0, 120)}`);
-        // held-back calls (batch hook) only where Delve refused something for a real reason
+        // held-back calls (batch hook) only where Quillwarren refused something for a real reason
         if (convo.allSteps().some((s) => s.notRun) && f.id !== 'recovery') errs.push('held-back calls outside the recovery family');
         errs.push(...callErrors(convo.messages, convo.setup.tools).map((e) => `schema: ${e}`));
         const errorIds = new Set(convo.allSteps().filter((s) => s.run.isError).map((s) => s.id));

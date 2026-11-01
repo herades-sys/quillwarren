@@ -1,4 +1,4 @@
-// Delve Table: the game state and every message between client and server.
+// Quillwarren Table: the game state and every message between client and server.
 // This file is the contract between packages/table, apps/server/src/table and
 // apps/web/src/table (see docs/TABLE.md). Add optional fields freely; rename or
 // remove only together with all three.
@@ -28,7 +28,7 @@ export interface Token {
   id: string;
   pageId: string;
   layer: Layer;
-  /** Top-left corner in cells, page coordinates (the Delve map's own grid for Delve pages). */
+  /** Top-left corner in cells, page coordinates (the Quillwarren map's own grid for Quillwarren pages). */
   x: number;
   y: number;
   /** Size in cells. */
@@ -38,7 +38,7 @@ export interface Token {
   rotation?: number;
   name?: string;
   showName?: boolean;
-  /** An image URL: an uploaded asset (/api/v1/games/:id/assets/…) or a Delve prop (/assets/props/<id>.svg). */
+  /** An image URL: an uploaded asset (/api/v1/games/:id/assets/…) or a Quillwarren prop (/assets/props/<id>.svg). */
   image: string;
   /** Member ids, or "all". Empty: only the GM. */
   controlledBy: string[];
@@ -73,14 +73,14 @@ export type VisionMode = 'off' | 'dynamic';
 /** bright: everything is lit; dim: lit but dimmed; dark: only lights and darkvision show anything. */
 export type Ambient = 'dark' | 'dim' | 'bright';
 
-/** off (the default): the Delve map's own room fog, as before. dynamic: line of sight decides. */
+/** off (the default): the Quillwarren map's own room fog, as before. dynamic: line of sight decides. */
 export interface PageVision {
   mode: VisionMode;
   /** Default: dark. */
   ambient?: Ambient;
 }
 
-/** One door of the Delve map behind a page, as a sight blocker. GM only: never sent to players. */
+/** One door of the Quillwarren map behind a page, as a sight blocker. GM only: never sent to players. */
 export interface PageDoor {
   id: string;
   a: [number, number];
@@ -91,7 +91,7 @@ export interface PageDoor {
   open?: boolean;
 }
 
-/** A light from the Delve map (a torch sconce, a brazier…), in cells. GM only: never sent to players. */
+/** A light from the Quillwarren map (a torch sconce, a brazier…), in cells. GM only: never sent to players. */
 export interface PageLight {
   /** The prop's id on the map. */
   id: string;
@@ -130,33 +130,33 @@ export type Background = { kind: 'delve'; mapId: string } | { kind: 'image'; url
 export interface Page {
   id: string;
   name: string;
-  /** Size in cells, and the cell at the top-left of the background (Delve render bounds). */
+  /** Size in cells, and the cell at the top-left of the background (Quillwarren render bounds). */
   width: number;
   height: number;
   origin: [number, number];
-  /** Pixels per cell the background is drawn at (Delve renders at 70). */
+  /** Pixels per cell the background is drawn at (Quillwarren renders at 70). */
   cellPx: number;
   /** The label on the grid, e.g. "5 ft". */
   cellUnit: string;
   showGrid: boolean;
   background: Background;
-  /** Wall segments in cells, from the Delve map, secret doors shut (they block sight in dynamic vision). GM only: never sent to players. */
+  /** Wall segments in cells, from the Quillwarren map, secret doors shut (they block sight in dynamic vision). GM only: never sent to players. */
   walls?: [[number, number], [number, number]][];
   /** Dynamic vision (line of sight, light, explored fog). Unset: off. */
   vision?: PageVision;
-  /** The Delve map's doors (they follow the map). GM only. */
+  /** The Quillwarren map's doors (they follow the map). GM only. */
   doors?: PageDoor[];
   /** The table's door state, by door id: true open, false shut. Wins over the map's. GM only. */
   doorState?: Record<string, boolean>;
-  /** Lights from the Delve map's props (they follow the map). GM only. */
+  /** Lights from the Quillwarren map's props (they follow the map). GM only. */
   lights?: PageLight[];
-  /** The Delve map's cliff edges that no stairs or ladder cross (core blockingEdges; they follow the map). GM only. */
+  /** The Quillwarren map's cliff edges that no stairs or ladder cross (core blockingEdges; they follow the map). GM only. */
   cliffs?: PageCliff[];
   /** Respect heights: a player's move can't cross a cliff edge without stairs or a ladder, nor a wall or a shut door (movement.ts). Unset: off. */
   respectHeights?: boolean;
 }
 
-/** A cliff edge of a page's Delve map, in cells; `drop` is the height difference in the map's units (10 for a 10 ft ledge). GM only. */
+/** A cliff edge of a page's Quillwarren map, in cells; `drop` is the height difference in the map's units (10 for a 10 ft ledge). GM only. */
 export interface PageCliff {
   a: [number, number];
   b: [number, number];
@@ -295,7 +295,7 @@ export type Intent =
   | { type: 'member.remove'; id: string }
   | { type: 'member.rename'; id: string; name: string }
   | { type: 'game.rename'; name: string }
-  /** GM: open or shut a door of a page's Delve map, for this table only (the map stays as it is). */
+  /** GM: open or shut a door of a page's Quillwarren map, for this table only (the map stays as it is). */
   | { type: 'door.set'; pageId: string; id: string; open: boolean }
   /** GM: the explored fog of a dynamic-vision page. reset: forget it (what the party sees now stays); reveal: all of the page; hide: nothing, until the party next looks. */
   | { type: 'vision.explored'; pageId: string; action: 'reset' | 'reveal' | 'hide' };
@@ -357,7 +357,7 @@ export type ServerMessage =
   | { type: 'ping'; from: string; color: string; pageId: string; x: number; y: number }
   /** Dynamic vision of the page you look at, after a hello and whenever it changes; null: the page has no dynamic vision. */
   | { type: 'vision'; pageId: string; vision: VisionView | null }
-  /** GM only: the notes on this Delve map changed and nothing else did (no picture changed, so pages aren't sent again): fetch the map for its notes. */
+  /** GM only: the notes on this Quillwarren map changed and nothing else did (no picture changed, so pages aren't sent again): fetch the map for its notes. */
   | { type: 'map.notes'; mapId: string }
   /** GM only: a notebook entry was saved (`entry`) or deleted (`removed`), in any of the GM's tabs. */
   | { type: 'notebook'; entry?: NotebookEntry; removed?: string }

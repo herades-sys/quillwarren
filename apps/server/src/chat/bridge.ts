@@ -1,8 +1,8 @@
 // The chat bridge: a small HTTP service on 127.0.0.1 that runs Claude Code
 // (`claude -p`) as the user who is logged in to it (dev on the dev container), so the
-// chat panel uses the user's Claude subscription. Each run gets Delve's MCP
+// chat panel uses the user's Claude subscription. Each run gets Quillwarren's MCP
 // tools and nothing else: no shell or file tools, no other MCP servers, and no
-// user or project settings (so no hooks or CLAUDE.md). The Delve server calls
+// user or project settings (so no hooks or CLAUDE.md). The Quillwarren server calls
 // it; it never sees the live API token, only a short-lived chat token.
 import { execFile, spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';

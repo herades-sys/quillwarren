@@ -106,7 +106,7 @@ export async function downloadWithResume(url: string, dest: string, o: DownloadO
   const part = `${dest}.part`;
   const doFetch = o.fetch ?? fetch;
   let have = await sizeOf(part);
-  const headers: Record<string, string> = { 'user-agent': o.userAgent ?? 'Delve-desktop' };
+  const headers: Record<string, string> = { 'user-agent': o.userAgent ?? 'Quillwarren-desktop' };
   if (have > 0) headers.range = `bytes=${have}-`;
   const res = await doFetch(url, { headers, redirect: 'follow', ...(o.signal ? { signal: o.signal } : {}) });
 

@@ -187,7 +187,7 @@ describe('the API', () => {
       expect((await pub.inject({ method: 'POST', url: '/api/v1/props', headers: { ...tunnel, ...auth }, payload: { name: 'Box', w: 1, h: 1, svg: CRATE } })).statusCode).toBe(403);
       expect((await pub.inject({ method: 'DELETE', url: '/api/v1/props/my-box', headers: tunnel })).statusCode).toBe(401);
       expect((await pub.inject({ method: 'POST', url: '/mcp', headers: { ...tunnel, ...auth }, payload: {} })).statusCode).toBe(404);
-      // Delve Table players may see one dropped on the board as a picture
+      // Quillwarren Table players may see one dropped on the board as a picture
       expect((await pub.inject({ url: '/assets/props/my-box.svg', headers: tunnel })).statusCode).toBe(200);
       // at home, reading is open as for maps
       expect((await pub.inject({ url: '/api/v1/props' })).statusCode).toBe(200);
@@ -284,6 +284,6 @@ describe('the chat', () => {
   it('lists the custom props in the context block', () => {
     const map = { format: 'delve.map', version: 1, id: 'map_chat0000001', name: 'X', grid: { type: 'square' }, objects: [] } as unknown as DelveMap;
     const text = chatContext({ map, rev: 1 });
-    expect(text).toMatch(/Custom props on this Delve \(place them like catalog props\): .*my-iron-crate 1×1 \(Iron Crate\)/);
+    expect(text).toMatch(/Custom props on this Quillwarren \(place them like catalog props\): .*my-iron-crate 1×1 \(Iron Crate\)/);
   });
 });

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Bundle the browser code (apps/web) into <outdir>: viewer.js (viewer + editor) and
 # stack.js (the 3D view, with three.js), screen.js (the players' screen), trace.js +
-# trace-worker.js (the picture tracer), table.js (Delve Table), table-dice.js (its
+# trace-worker.js (the picture tracer), table.js (Quillwarren Table), table-dice.js (its
 # 3D dice, with three.js and cannon-es, loaded on the first roll) and table3d.js (the
 # 3D table view at /play/:id/3d, with three.js). Default outdir: apps/web/dist.
 set -eu

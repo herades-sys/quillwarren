@@ -1,4 +1,4 @@
-// The picture tracer's benchmark: Delve maps rendered to PNG with the server's
+// The picture tracer's benchmark: Quillwarren maps rendered to PNG with the server's
 // own renderer (so the right answer is known), traced back, and scored.
 // Used by `npm run trace-bench` (cli/trace-bench.ts) and apps/server/test/trace-bench.test.ts.
 import { readFileSync } from 'node:fs';

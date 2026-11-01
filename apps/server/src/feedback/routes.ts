@@ -1,9 +1,9 @@
 // "Request a feature": GET/POST /feedback for anyone logged in (admin and GM
-// accounts, the shared editor login while it still counts, Delve Table players
+// accounts, the shared editor login while it still counts, Quillwarren Table players
 // with their player cookie or Discord seat, co-GMs), and the whole file for
 // admins at /admin/feature-requests.txt. Who sent a request comes from the
 // login, never from the name typed into the form alone. Posts must come from
-// Delve's own origin, carry an empty honeypot field, and stay within the limits
+// Quillwarren's own origin, carry an empty honeypot field, and stay within the limits
 // in log.ts (SendLimits: 5 per person an hour, 50 a day from everyone).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { sameOrigin } from '../auth.ts';
@@ -20,7 +20,7 @@ export interface FeedbackDeps {
   auth: EditorAuth;
   log: FeedbackLog;
   limits: SendLimits;
-  /** Who a request is at Delve Table. Without it (the desktop app has no table) there are no players and no Discord. */
+  /** Who a request is at Quillwarren Table. Without it (the desktop app has no table) there are no players and no Discord. */
   table?: TableIdentity;
 }
 
@@ -144,7 +144,7 @@ export function registerFeedback(app: FastifyInstance, deps: FeedbackDeps): void
 
     const refused = limits.check(sender.key);
     if (refused === 'person') return again(`You sent ${limits.perPerson} requests within the last hour. Please wait a while, then send this one.`, 429);
-    if (refused === 'day') return again('Delve has taken all the requests it takes in one day. Please send this one tomorrow.', 429);
+    if (refused === 'day') return again('Quillwarren has taken all the requests it takes in one day. Please send this one tomorrow.', 429);
     const n = log.append({ kind: values.kind, title: values.title, description: values.description, about: values.about, from: senderLabel(sender, values.name), at: Date.now() });
     limits.note(sender.key);
     req.log.info({ request: n }, 'feature request saved');
@@ -155,11 +155,11 @@ export function registerFeedback(app: FastifyInstance, deps: FeedbackDeps): void
   app.get(`/admin/${FILE_NAME}`, async (req, reply) => {
     const cur = currentAccount(auth, req);
     if (!cur) {
-      if (isLoggedIn(auth, req)) return sendPage(reply, 403, messagePage('Admins only', ['Only admins can read the feature requests. Create your admin account first.'], [{ href: '/', text: 'Back to Delve' }]));
+      if (isLoggedIn(auth, req)) return sendPage(reply, 403, messagePage('Admins only', ['Only admins can read the feature requests. Create your admin account first.'], [{ href: '/', text: 'Back to Quillwarren' }]));
       return reply.redirect(`/login?next=${encodeURIComponent(`/admin/${FILE_NAME}`)}`, 303);
     }
     if (cur.user.role !== 'admin') {
-      return sendPage(reply, 403, messagePage('Admins only', ['Only admins can read the feature requests.'], [{ href: '/feedback', text: 'Request a feature' }, { href: '/', text: 'Back to Delve' }]));
+      return sendPage(reply, 403, messagePage('Admins only', ['Only admins can read the feature requests.'], [{ href: '/feedback', text: 'Request a feature' }, { href: '/', text: 'Back to Quillwarren' }]));
     }
     const download = (req.query as { download?: unknown }).download === '1';
     return reply

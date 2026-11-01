@@ -1,11 +1,11 @@
 {
   "name": "delve-desktop",
-  "productName": "Delve",
+  "productName": "Quillwarren",
   "version": "0.1.0",
   "private": true,
-  "description": "Delve, the dungeon map editor, as a Windows desktop app",
+  "description": "Quillwarren, the dungeon map editor, as a Windows desktop app",
   "license": "Apache-2.0",
-  "author": "Delve",
+  "author": "Quillwarren",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "sh scripts/build.sh",

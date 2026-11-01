@@ -1,5 +1,5 @@
 // Raised and sunken ground as three.js meshes, for the editor's 3D view
-// (stack.ts) and Delve Table's (table/view3d.ts): the floor picture draped over
+// (stack.ts) and Quillwarren Table's (table/view3d.ts): the floor picture draped over
 // the ground (core heightScene's pieces: flat ones as they are, hills and ramps
 // cut along the height lattice so every post sits at its height), and sheer
 // faces of rock where a piece stands above the ground beside it. The math is

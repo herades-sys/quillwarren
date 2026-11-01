@@ -56,7 +56,7 @@ const CANVAS: [string, string, string][] = [
 /** [token, spec, font, size, tracking, sample, use]. */
 const TYPE: [string, string, string, string, string, string, string][] = [
   ['--display-xl', 'IM Fell English · 46 / 1.0', 'var(--font-display)', '46px', '0', 'The Sunken Abbey', 'Page titles, library header'],
-  ['--display-lg', 'IM Fell English · 34 / 1.1', 'var(--font-display)', '34px', '0', 'Delve Table · Session 12', 'Screen titles'],
+  ['--display-lg', 'IM Fell English · 34 / 1.1', 'var(--font-display)', '34px', '0', 'Quillwarren Table · Session 12', 'Screen titles'],
   ['--display-md', 'IM Fell English · 26 / 1.15', 'var(--font-display)', '26px', '0', 'Delete storey −1?', 'Dialogs, sheet titles'],
   ['--display-sm', 'IM Fell English · 20 / 1.15', 'var(--font-display)', '20px', '0', 'Chapter house', 'Inspector, cards, panels'],
   ['--font-numeral', 'Marcellus SC · 17–32', 'var(--font-numeral)', '30px', '.02em', '3 · 12 · −1 · 0 · 2 · 23', 'Rooms, storeys, dice totals'],
@@ -285,7 +285,7 @@ function messages(): string {
 }
 
 function chat(): string {
-  return pair('Chat lines and roll cards', 'Delve Table sidebar · dice notation in mono · totals in Marcellus SC', (t) => `<div class="sg-chat">
+  return pair('Chat lines and roll cards', 'Quillwarren Table sidebar · dice notation in mono · totals in Marcellus SC', (t) => `<div class="sg-chat">
 <div class="chat"><div class="chat-head"><span class="chat-head-title">Chat</span><span class="text-muted" style="font-size:12px">3D dice</span><button class="switch" role="switch" aria-checked="${t === 'dark'}" aria-label="3D dice"></button></div>
 <div class="chat-log"><span class="chat-sys">Isolde joined the table · 20:14</span>
 <div class="chat-msg"><span class="avatar avatar-sm avatar-ink">BR</span><div class="chat-msg-body"><span class="chat-meta"><b>Brannoc</b> · 20:16</span><span>I check the altar for traps before I touch it.</span></div></div>
@@ -420,15 +420,15 @@ const GUIDE_JS = `<script>
 </script>`;
 
 export function uiGuidePage(o: { version: string }): string {
-  const body = `<header class="topbar sg-page-top"><a class="topbar-brand" href="/">Delve</a><span class="vsep"></span><a class="crumb" href="/">Library</a>${icon('chevron-right', { size: 14, className: 'crumb-sep' })}<span class="crumb-title">Style guide</span>
+  const body = `<header class="topbar sg-page-top"><a class="topbar-brand" href="/">Quillwarren</a><span class="vsep"></span><a class="crumb" href="/">Library</a>${icon('chevron-right', { size: 14, className: 'crumb-sep' })}<span class="crumb-title">Style guide</span>
 <div class="topbar-end"><span class="text-muted mono" style="font-size:12px; padding:0 8px">${esc(o.version)}</span>${themeSwitch()}</div></header>
 <main class="sg">
 <header class="sg-head">
-<span class="kicker">Delve · design system v1 · built on Nocturne</span>
+<span class="kicker">Quillwarren · design system v1 · built on Nocturne</span>
 <h1 class="sg-title">Ink, stone &amp; parchment</h1>
 <p class="lead">A quiet toolkit for the cartographer's desk. The map is always the hero, so the chrome stays low-chroma stone in both themes. One violet ink accent marks focus, selection and the active tool. Red, amber and blue only appear for status and the three GM markers.</p>
 <div class="sg-principles"><div><b>The map leads</b><span>The canvas is parchment in both themes. Panels never float more than a third over it, and nothing around it is saturated.</span></div><div><b>Keys first, thumbs welcome</b><span>Every GM tool shows its letter. On phones every target is at least 44 px, and sheets replace panels.</span></div><div><b>Lines, not floods</b><span>From Nocturne: outlined primary buttons, 8 px radii, a 2 px focus ring, and elevation made of an edge plus soft shade.</span></div></div>
-<div class="row"><a class="btn btn-primary" href="/">${i('room', 16)}Open Delve</a><span class="btn btn-secondary mono" style="cursor:default; font-size:12.5px">/assets/delve-ui.css</span><span class="btn btn-secondary mono" style="cursor:default; font-size:12.5px">@delve/ui</span><span class="btn btn-secondary mono" style="cursor:default; font-size:12.5px">docs/UI.md</span></div>
+<div class="row"><a class="btn btn-primary" href="/">${i('room', 16)}Open Quillwarren</a><span class="btn btn-secondary mono" style="cursor:default; font-size:12.5px">/assets/delve-ui.css</span><span class="btn btn-secondary mono" style="cursor:default; font-size:12.5px">@delve/ui</span><span class="btn btn-secondary mono" style="cursor:default; font-size:12.5px">docs/UI.md</span></div>
 </header>
 ${colours()}
 ${type()}

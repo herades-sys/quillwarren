@@ -9,7 +9,7 @@
 //
 // The 3D view's revealedRegion(page, map, member) can call revealedRegion()
 // below: 'all' for the GM, the explored polygons for a player on a dynamic
-// page, null when the page has no dynamic vision (then the Delve map's room
+// page, null when the page has no dynamic vision (then the Quillwarren map's room
 // fog applies, as before).
 import {
   computeWalls,
@@ -268,7 +268,7 @@ export class TableVision {
  * whole page); for a player, or the GM looking as the players, the explored
  * fog in cells (what the party has seen, walls at its edge included; [] for a
  * page that isn't the player's own). null: the page has no dynamic vision, so
- * the caller keeps its own rule (the Delve map's room fog). Pass hub.vision.
+ * the caller keeps its own rule (the Quillwarren map's room fog). Pass hub.vision.
  */
 export function exploredRegion(
   vision: TableVision,
@@ -288,7 +288,7 @@ export function exploredRegion(
   return vision.revealedRegion(state, page, memberId);
 }
 
-// ---------- page data from a Delve map ----------
+// ---------- page data from a Quillwarren map ----------
 
 const isDoor = (o: DelveMap['objects'][number]): o is Door => o.type === 'door';
 const isProp = (o: DelveMap['objects'][number]): o is Prop => o.type === 'prop';
@@ -306,7 +306,7 @@ function onFloor(floor: readonly Polygon[], at: [number, number]): [number, numb
 }
 
 /**
- * What a page needs from its Delve map for vision: the walls as the players
+ * What a page needs from its Quillwarren map for vision: the walls as the players
  * see them (secret doors shut: they open no gap and close their opening, so
  * the page data never gives one away; rough edges as drawn), the doors, and
  * the lights of its light props (PROP_LIGHTS).

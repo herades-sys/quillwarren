@@ -1,7 +1,7 @@
 // A map's own background colour over MCP and HTTP: set_map background (hex or
 // "reset"), and the pictures that show it: renders (also cropped and, with
 // background=0, transparent), the viewer and editor page, the players' screen,
-// Delve Table pages and the Dungeon Scrawl export. The handout keeps its paper.
+// Quillwarren Table pages and the Dungeon Scrawl export. The handout keeps its paper.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -110,7 +110,7 @@ describe("a map's background colour", () => {
     expect((await getMap(id)).map.style?.overrides).toEqual({ background: '#4A525C' });
   });
 
-  it('is the colour of Delve Table pages drawn from the map', async () => {
+  it('is the colour of Quillwarren Table pages drawn from the map', async () => {
     const mapId = await newMapId();
     const { id: gameId } = (await app.inject({ method: 'POST', url: '/api/v1/games', headers: auth, payload: { name: 'Crypt night' } })).json() as { id: string };
     const { page } = (await app.inject({ method: 'POST', url: `/api/v1/games/${gameId}/pages/from-map`, headers: auth, payload: { mapId } })).json();

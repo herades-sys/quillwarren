@@ -3,7 +3,7 @@
 import { TableError } from './errors.ts';
 import type { GameState, Invite, Member, Page } from './protocol.ts';
 
-/** Member colours, readable on Delve's dark and light themes. The GM gets the first. */
+/** Member colours, readable on Quillwarren's dark and light themes. The GM gets the first. */
 export const PALETTE = [
   '#d4a017',
   '#e05252',

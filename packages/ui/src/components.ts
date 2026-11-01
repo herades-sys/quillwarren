@@ -1,4 +1,4 @@
-// Delve's component layer on top of Nocturne: everything the design shows in
+// Quillwarren's component layer on top of Nocturne: everything the design shows in
 // "Components and their states" (docs/design/ui-v1/Delve Design System.dc.html),
 // as classes. Values come from the tokens; the few raw numbers are the design's
 // own (a 38 × 36 tool button, a 34 × 20 switch).
@@ -43,14 +43,19 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 /* ---------- top bar ---------- */
 .topbar { height: var(--bar-h); flex: none; display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-3) 0 var(--space-5); background: var(--color-surface); box-shadow: inset 0 -1px 0 var(--color-border); position: relative; z-index: 20; font-size: var(--text-md); }
-.topbar-brand { font-family: var(--font-display); font-size: 24px; line-height: 1; padding-top: 2px; color: var(--color-text); text-decoration: none; }
+.topbar-brand { flex: none; font-family: var(--font-display); font-size: 24px; line-height: 1; padding-top: 2px; color: var(--color-text); text-decoration: none; }
 .topbar-brand:hover { color: var(--color-text); }
-.topbar .vsep { margin: 0 2px; }
+.topbar .vsep { flex: none; margin: 0 2px; }
 .crumb { color: var(--color-text-muted); text-decoration: none; white-space: nowrap; }
 .crumb:hover { color: var(--color-text); }
+/* a map's name in the breadcrumb: when room runs out it is cut short, and the page's title after it stays whole */
+.topbar > .crumb { flex: none; }
+.topbar > .crumb-sep { flex: none; }
+.topbar > .crumb-name { flex: 0 1 auto; min-width: 48px; overflow: hidden; text-overflow: ellipsis; }
+.crumb-name + .crumb-sep + .crumb-title { flex: none; }
 .crumb-title { font-family: var(--font-display); font-size: 18px; line-height: 1; white-space: nowrap; padding-top: 2px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .crumb-sep { color: var(--color-text-faint); }
-.topbar-end { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.topbar-end { flex: none; margin-left: auto; display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
 .topbar-end > * { flex: none; }
 .avatar { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--tint-accent-bg); color: var(--tint-accent-fg); font-size: var(--text-xs); font-weight: 600; letter-spacing: .02em; }
 .avatar-sm { width: 24px; height: 24px; font-size: var(--text-2xs); }
@@ -263,7 +268,7 @@ textarea.input { min-height: 72px; line-height: var(--leading-ui); }
 .note-line .box { margin-top: 2px; }
 .note-line.is-done > span:last-child, .note-line:has(input:checked) > span:last-child {color: var(--color-text-muted); text-decoration: line-through; text-decoration-color: var(--color-text-faint); }
 
-/* ---------- chat and roll cards (Delve Table) ---------- */
+/* ---------- chat and roll cards (Quillwarren Table) ---------- */
 .chat { background: var(--color-surface); border-radius: 10px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-width: 0; }
 .chat-head { display: flex; align-items: center; gap: var(--space-3); height: 40px; padding: 0 12px; box-shadow: inset 0 -1px 0 var(--color-border); }
 .chat-head-title { flex: 1; font-weight: 500; }
@@ -329,5 +334,9 @@ textarea.input { min-height: 72px; line-height: var(--leading-ui); }
   .btn-sm, .btn-icon, .toast .btn { min-height: 0; }
   .topbar { padding-left: var(--space-4); }
   .topbar .crumb, .topbar .crumb-sep { display: none; }
+}
+/* the narrowest phones: the mark instead of the long wordmark (the word stays for screen readers) */
+@media (max-width: 400px) {
+  .topbar-brand { width: 28px; height: 28px; padding: 0; font-size: 0; background: url(/favicon.svg) center / contain no-repeat; }
 }
 `;

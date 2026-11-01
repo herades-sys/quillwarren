@@ -1,5 +1,5 @@
-// The desktop app's log files (%APPDATA%\Delve\logs): main.log (this
-// process), server.log (the Delve server's output) and llama-server.log (the
+// The desktop app's log files (%APPDATA%\Quillwarren\logs): main.log (this
+// process), server.log (the Quillwarren server's output) and llama-server.log (the
 // built-in model runtime, written by the server). Each is moved to .1 when it
 // passes 5 MB, so the folder stays small. "Copy logs" in the Help menu puts
 // the end of each, with the versions, on the clipboard for the user to paste
@@ -78,7 +78,7 @@ export function collectLogs(dir: string, about: Record<string, string>, secrets:
   const head = Object.entries(about)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
-  const parts = [`Delve desktop logs, copied ${new Date().toISOString()}\n${head}`];
+  const parts = [`Quillwarren desktop logs, copied ${new Date().toISOString()}\n${head}`];
   for (const name of LOG_FILES) {
     const f = join(dir, name);
     if (!existsSync(f)) {

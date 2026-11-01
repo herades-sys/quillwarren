@@ -1,4 +1,4 @@
-// @delve/ui: Delve's look, shared by the server's pages and the web bundles.
+// @delve/ui: Quillwarren's look, shared by the server's pages and the web bundles.
 // See docs/UI.md for how to use it, and /ui for every component in both themes.
 export { UI_CSS, UI_CSS_PATH, UI_CSS_VERSION, hash } from './css.ts';
 export { DARK_TOKENS, FONT_FACES, LIGHT_TOKENS, ROOT_TOKENS, TOKENS_CSS } from './tokens.ts';

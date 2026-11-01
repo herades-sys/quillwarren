@@ -78,7 +78,7 @@ import { labelStairs, labelStairsSummary } from './stair-labels.ts';
 
 const BY = 'claude';
 
-const INSTRUCTIONS = `Delve is a dungeon map editor for tabletop games. You build maps with these tools while the user watches them change live in their browser.
+const INSTRUCTIONS = `Quillwarren is a dungeon map editor for tabletop games. You build maps with these tools while the user watches them change live in their browser.
 Coordinates are grid squares (1 square = 5 ft unless the map says otherwise): x grows to the right, y grows downward, the origin is top-left, and positions use whole or half squares.
 Typical flow: create_map, then add_room (rect [x, y, width, height]) for each room, connect rooms (auto-routed corridors, optional doors at the ends), add_cutout for pillars or pits, add_door / add_stairs / add_label for details.
 Place things by meaning and let the tools do the geometry: add_room beside "r2" side "north" (connect true, door "normal"); add_door room "r3" wall "east"; add_prop in "r2" place "north wall" / "ne corner" / "center" / "around i1" (count 4); add_terrain, add_height, add_props_along and add_label take a region ({"edge": "north"}, {"corner": "sw", "size": 8}, {"in": "r5"}, {"around": "r3"}, a path {"from": "east", "to": "h1"}); lengths and heights take units ("5 m", "10 ft"). North is always up (small y).
@@ -99,10 +99,10 @@ Background colour: set_map background "#1A2540" (night blue, forest green #2F4A3
 Heights within one map: add_height raises or sinks the ground under a shape (height in the map's units: +10 a ledge, -10 a sunken arena), over rooms or outdoors over terrain; cliff and rock-face edges are crossed only where stairs or a ladder lie across them, slopes and steps are walked over; profile hill rounds an area into a natural hill or ridge, plateau keeps it flat (the default unless the edge is a slope). describe_map lists the heights and how each is reached.
 GM markers (add_marker): a clickable note for the GM, "discover" (?), "interact" (!) or "trap" (skull); GM view only, and update {"done": true} strikes one through.
 Handout notes (add_inscription): handwritten text on the players' parchment handout ("Here be dragons"), in an old italic hand and a brown, black, faded or red ink; on_map writes it on the normal map too. Players see them; update and delete change them like any object.
-GM notes: rooms, corridors and terrain carry notes (a description, monsters, loot) for the GM: add_room notes, or update {"notes": "..."} on any of them. They are never drawn or exported; the GM reads them in the editor and on Delve Table, and describe_map lists them.
+GM notes: rooms, corridors and terrain carry notes (a description, monsters, loot) for the GM: add_room notes, or update {"notes": "..."} on any of them. They are never drawn or exported; the GM reads them in the editor and on Quillwarren Table, and describe_map lists them.
 Segments: save_segment saves part of a map under a name (rooms 1–5 as "Temple of Efferd", a patch of trees and grass as "Mixed forest"); place_segment adds a renumbered copy anywhere, turned if asked; fill_with_segment tiles one over the land around the rooms, keeping the floor clear. list_segments shows what is saved.
 The user's own pictures (uploaded in the editor): list_images gives their src, and add_image places one by src (a table in the middle of room 3, a rug, a mosaic on the floor).
-New props: when the GM wants a prop the catalog doesn't have, draw it: prop_rules (how), then create_prop (an SVG in Delve's ink style; it returns a preview picture to check), update_prop to fix it. Custom props (ids my-…) are shared by every GM on this Delve and work like built-in ones.`;
+New props: when the GM wants a prop the catalog doesn't have, draw it: prop_rules (how), then create_prop (an SVG in Quillwarren's ink style; it returns a preview picture to check), update_prop to fix it. Custom props (ids my-…) are shared by every GM on this Quillwarren and work like built-in ones.`;
 
 const presetNames = Object.keys(PRESETS) as [string, ...string[]];
 
@@ -149,7 +149,7 @@ export function assetLine(a: AssetInfo): string {
   if (a.kind === 'terrain') return `${a.id} — ${a.name} (terrain${a.palette === 'colour' ? `, colour texture ${a.w}×${a.h}${a.group ? `, group ${a.group}` : ''}` : ''}${a.difficult ? ', difficult' : ''})`;
   const blocks = a.blocks === 'none' ? 'walk over' : a.blocks === 'movement' ? 'blocks movement' : 'blocks sight';
   const colour = a.palette === 'colour' ? `, colour${a.layer === 'floor' ? ', on the floor' : ''}${a.group ? `, group ${a.group}` : ''}${a.modular ? ', modular' : ''}` : '';
-  return `${a.id} — ${a.name}, ${a.w}×${a.h}, ${blocks}, ${a.category}${colour}${a.hidden ? ', hidden from players' : ''}${a.custom ? ', custom (drawn for this Delve)' : ''}`;
+  return `${a.id} — ${a.name}, ${a.w}×${a.h}, ${blocks}, ${a.category}${colour}${a.hidden ? ', hidden from players' : ''}${a.custom ? ', custom (drawn for this Quillwarren)' : ''}`;
 }
 
 /** The colour props in a few lines: each category with its count and first ids, for when they aren't listed one by one. */
@@ -235,7 +235,7 @@ export function connectAvoiding(map: Parameters<typeof connectOps>[0], from: str
 const pathLen = (path: readonly Point[]) => Math.round(path.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0) * 100) / 100;
 
 export function buildMcpServer(service: MapService, base: string, version: string, images?: ImageLibrary, props?: PropLibrary, opts: { note?: string } = {}): McpServer {
-  const server = new McpServer({ name: 'delve', title: 'Delve map editor', version }, { instructions: opts.note ? `${INSTRUCTIONS}\n${opts.note}` : INSTRUCTIONS });
+  const server = new McpServer({ name: 'quillwarren', title: 'Quillwarren map editor', version }, { instructions: opts.note ? `${INSTRUCTIONS}\n${opts.note}` : INSTRUCTIONS });
   const { store } = service;
   const viewer = (id: string) => `${base}/maps/${encodeURIComponent(id)}`;
   const change = (id: string, ops: Op[], summary: string, baseRev?: number) => {
@@ -630,8 +630,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     {
       title: 'List props and terrain',
       description:
-        'The props (furniture, statues, trees, GM symbols…) and terrain tiles you can place, with ids, footprints and what they block, including the custom props drawn for this Delve (ids my-…). ' +
-        'Without filters: the ink props and terrain, plus a summary of the colour props (ids c-…, in the Delve palette); list those by palette "colour" with a category or search.',
+        'The props (furniture, statues, trees, GM symbols…) and terrain tiles you can place, with ids, footprints and what they block, including the custom props drawn for this Quillwarren (ids my-…). ' +
+        'Without filters: the ink props and terrain, plus a summary of the colour props (ids c-…, in the Quillwarren palette); list those by palette "colour" with a category or search.',
       inputSchema: {
         category: z.string().optional().describe(`One of ${CATEGORIES.map((c) => c.id).join(', ')}; colour props: ${COLOUR_CATEGORIES.map((c) => c.id).join(', ')}; or custom (every custom prop)`),
         palette: z.enum(['ink', 'colour', 'all']).optional().describe('ink (black-and-white props, the default without category or search), colour (colour props, ids c-…) or all'),
@@ -1136,7 +1136,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
           .string()
           .max(20)
           .optional()
-          .describe('The colour the map is drawn on, around and between the rooms: "#RRGGBB" (e.g. "#1A2540" night blue, "#2F4A33" forest green, "#4A525C" slate), or "reset" for the style\'s own. Shows in the editor, the exports, the players\' screen and Delve Table; the parchment handout keeps its paper'),
+          .describe('The colour the map is drawn on, around and between the rooms: "#RRGGBB" (e.g. "#1A2540" night blue, "#2F4A33" forest green, "#4A525C" slate), or "reset" for the style\'s own. Shows in the editor, the exports, the players\' screen and Quillwarren Table; the parchment handout keeps its paper'),
         overrides: z.record(z.string(), z.unknown()).nullable().optional(),
         seed: z.number().int().optional().describe('Changes the hatching and wall wobble'),
         roughness: z.number().int().min(1).max(10).nullable().optional().describe('Wall roughness for the whole map: 1 smooth, 10 extremely rough (caves); null resets'),
@@ -1308,8 +1308,8 @@ export function buildMcpServer(service: MapService, base: string, version: strin
   // The panel shows it as a checklist with a progress bar and a time estimate.
   // The chat bridge reads the plan from this call's input while it streams in
   // (chat/events.ts turns it into `plan` events); the tool itself only says
-  // "ok" and touches no map. Why a Delve tool and not Claude Code's TodoWrite:
-  // the bridge runs Claude with Delve's MCP tools only (`--tools ''`,
+  // "ok" and touches no map. Why a Quillwarren tool and not Claude Code's TodoWrite:
+  // the bridge runs Claude with Quillwarren's MCP tools only (`--tools ''`,
   // `--allowedTools mcp__delve`), and that list should stay that tight.
   // Statuses: keep in step with PLAN_STATUSES in chat/events.ts.
   server.registerTool(
@@ -1343,7 +1343,7 @@ export function buildMcpServer(service: MapService, base: string, version: strin
     'apply_ops',
     {
       title: 'Apply raw ops',
-      description: 'Apply delve ops (add, update, move, delete, update_map, batch) as one undoable step. For anything the other tools don\'t cover.',
+      description: 'Apply Quillwarren ops (add, update, move, delete, update_map, batch) as one undoable step. For anything the other tools don\'t cover.',
       inputSchema: { map: mapId, ops: z.array(z.unknown()).min(1), base_rev: z.number().int().optional() },
     },
     (a) =>

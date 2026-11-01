@@ -8,7 +8,7 @@
 // Draws, through the server's own code: the handout strip that killed the
 // server (a sheet fitted to a 37 × 2 crop far off the map), fitted and paper
 // sheets cut to thin strips on and off the map, the render route's thin frames,
-// Delve Table pages one or two squares thin (vision-render.ts) as the GM and as
+// Quillwarren Table pages one or two squares thin (vision-render.ts) as the GM and as
 // players, and all of these hugging a tree 18 squares across and a faded picture
 // 30 × 20 (what the page shows is cut to it, but such things reach far past it).
 // Prints one line per picture before drawing it, so a crash names its case;

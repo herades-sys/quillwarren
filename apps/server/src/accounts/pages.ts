@@ -97,7 +97,7 @@ export function loginPage(o: { next: string; error?: string; name?: string }): s
   const f = formKit();
   return shell(
     'Log in',
-    authPage(`<div class="stack" style="gap:6px"><h1 class="auth-brand">Delve</h1><p class="text-muted">Log in to edit maps.</p></div>${errorLine(o.error)}
+    authPage(`<div class="stack" style="gap:6px"><h1 class="auth-brand">Quillwarren</h1><p class="text-muted">Log in to edit maps.</p></div>${errorLine(o.error)}
 <form class="form" method="post" action="/login"><input type="hidden" name="next" value="${esc(o.next)}">
 ${f.field('Name', `type="text" name="name" value="${esc(o.name ?? '')}" autocomplete="username" autocapitalize="none" spellcheck="false" required${o.name ? '' : ' autofocus'}`)}
 ${f.field('Password', `type="password" name="password" autocomplete="current-password" required${o.name ? ' autofocus' : ''}`)}
@@ -111,14 +111,14 @@ export function legacyLoginPage(o: { next: string; error?: string }): string {
   const f = formKit();
   return shell(
     'Log in',
-    authPage(`<div class="stack" style="gap:6px"><h1 class="auth-brand">Delve</h1><p class="text-muted">Log in to edit maps.</p></div>${errorLine(o.error)}
+    authPage(`<div class="stack" style="gap:6px"><h1 class="auth-brand">Quillwarren</h1><p class="text-muted">Log in to edit maps.</p></div>${errorLine(o.error)}
 <form class="form" method="post" action="/login"><input type="hidden" name="next" value="${esc(o.next)}">
 ${f.field('Editor password', 'type="password" name="password" autocomplete="current-password" required autofocus')}
 <button class="btn btn-primary btn-lg" type="submit">Log in</button></form>`),
   );
 }
 
-export function messagePage(title: string, lines: string[], links: { href: string; text: string }[] = [{ href: '/', text: 'Back to Delve' }]): string {
+export function messagePage(title: string, lines: string[], links: { href: string; text: string }[] = [{ href: '/', text: 'Back to Quillwarren' }]): string {
   return shell(
     title,
     authPage(`<h1 class="auth-title">${esc(title)}</h1>${lines.map((l) => `<p>${esc(l)}</p>`).join('')}
@@ -156,7 +156,7 @@ export function setupPasswordPage(o: { token: string; name: string; reset: boole
       : 'Choose a password, then set up an authenticator app on your phone.';
   return shell(
     'Set up your account',
-    authPage(`<h1 class="auth-title">${o.reset ? 'Set up your login again' : 'Welcome to Delve'}</h1>
+    authPage(`<h1 class="auth-title">${o.reset ? 'Set up your login again' : 'Welcome to Quillwarren'}</h1>
 <p>Your account name is <strong>${esc(o.name)}</strong>. ${next}</p>
 ${errorLine(o.error)}
 <form class="form" method="post" action="/account/setup"><input type="hidden" name="token" value="${esc(o.token)}"><input type="hidden" name="step" value="password">
@@ -197,15 +197,15 @@ ${o.authenticatorOnly ? '' : remember}
 export function recoveryCodesPage(o: { codes: string[]; next: string; first: boolean; replaced?: boolean }): string {
   const replaced = o.replaced ?? !o.first;
   const text = o.codes.join('\n');
-  const file = `data:text/plain;charset=utf-8,${encodeURIComponent(`Delve recovery codes. Each one works once.\n\n${text}\n`)}`;
+  const file = `data:text/plain;charset=utf-8,${encodeURIComponent(`Quillwarren recovery codes. Each one works once.\n\n${text}\n`)}`;
   return shell(
     'Your recovery codes',
     authPage(`<h1 class="auth-title">Your recovery codes</h1>
 ${o.first ? noticeLine('Your account is ready and you are logged in.') : ''}
 <p>If you lose your phone, each of these codes lets you log in once in place of a code from the app. Save them somewhere safe now, for example in a password manager or on paper.</p>
-<p><strong>Delve shows them only this once.</strong>${replaced ? ' Your old recovery codes no longer work.' : ''}</p>
+<p><strong>Quillwarren shows them only this once.</strong>${replaced ? ' Your old recovery codes no longer work.' : ''}</p>
 <pre class="codes" id="codes">${esc(text)}</pre>
-<p class="row"><button class="btn btn-secondary" type="button" id="copy">${icon('copy', { size: 15 })}Copy</button><a class="btn btn-secondary" href="${esc(file)}" download="delve-recovery-codes.txt">${icon('download', { size: 15 })}Download as a text file</a></p>
+<p class="row"><button class="btn btn-secondary" type="button" id="copy">${icon('copy', { size: 15 })}Copy</button><a class="btn btn-secondary" href="${esc(file)}" download="quillwarren-recovery-codes.txt">${icon('download', { size: 15 })}Download as a text file</a></p>
 <a class="btn btn-primary btn-lg btn-block" href="${esc(o.next)}">I saved them, continue</a>`) +
       `<script>
   document.getElementById('copy').addEventListener('click', async (e) => {
@@ -219,13 +219,13 @@ ${o.first ? noticeLine('Your account is ready and you are logged in.') : ''}
 
 // ---------- the account and admin pages ----------
 
-/** The app's top bar: Delve › Library › this page, then the theme, links, who you are and Log out. */
+/** The app's top bar: Quillwarren › Library › this page, then the theme, links, who you are and Log out. */
 function topBar(page: string, user: User, links: { href: string; text: string; icon: 'admin' | 'users' }[]): string {
   // On phones only the icons show; the text stays for screen readers.
   const nav = links
     .map((l) => `<a class="btn btn-plain" href="${esc(l.href)}" title="${esc(l.text)}">${icon(l.icon, { size: 16 })}<span class="btn-label">${esc(l.text)}</span></a>`)
     .join('');
-  return `<header class="topbar"><a class="topbar-brand" href="/">Delve</a><span class="vsep"></span><a class="crumb" href="/">Library</a>${icon('chevron-right', { size: 14, className: 'crumb-sep' })}<span class="crumb-title">${esc(page)}</span>
+  return `<header class="topbar"><a class="topbar-brand" href="/">Quillwarren</a><span class="vsep"></span><a class="crumb" href="/">Library</a>${icon('chevron-right', { size: 14, className: 'crumb-sep' })}<span class="crumb-title">${esc(page)}</span>
 <div class="topbar-end">${themeSwitch()}<span class="vsep" style="margin:0 4px"></span>${nav}<span class="avatar" title="${esc(user.name)} · ${user.role === 'admin' ? 'Admin' : 'GM'}" style="margin:0 4px">${esc(initials(user.name))}</span><form class="inline" method="post" action="/logout"><button class="btn btn-ghost" type="submit">Log out</button></form></div></header>`;
 }
 
@@ -339,7 +339,7 @@ export function adminPage(o: { me: User; session: Session; users: User[]; sessio
     ? `<section class="panel"><h2 class="panel-title">Setup link for ${esc(o.newLink.name)}</h2>
 <p>Send this link to ${esc(o.newLink.name)}, for example in a private message. It works once, until ${esc(when(o.newLink.expires))}. With it they choose their own password${o.newLink.passwordOnly ? '' : ' and set up their authenticator app'}.${o.newLink.reset ? ' Their old login no longer works.' : ''}</p>
 <input class="input input-lg link-input" type="text" readonly value="${esc(o.newLink.url)}" onfocus="this.select()" aria-label="Setup link">
-<p class="row"><button type="button" class="btn btn-primary" id="copy-link">${icon('copy', { size: 15 })}Copy link</button><span class="text-muted">Delve shows this link only now. If it gets lost, make a new one.</span></p>
+<p class="row"><button type="button" class="btn btn-primary" id="copy-link">${icon('copy', { size: 15 })}Copy link</button><span class="text-muted">Quillwarren shows this link only now. If it gets lost, make a new one.</span></p>
 <script>document.getElementById('copy-link').addEventListener('click', async (e) => { const b = e.currentTarget; try { await navigator.clipboard.writeText(${jsonForScript(o.newLink.url)}); b.textContent = 'Copied'; } catch { b.textContent = 'Select the link and copy it'; } });</script></section>`
     : '';
   return shell(

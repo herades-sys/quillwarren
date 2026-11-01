@@ -263,11 +263,11 @@ function sight(v: unknown): Sight {
   return out;
 }
 
-/** Delve map ids (doors, props), as page doors and lights carry them. */
+/** Quillwarren map ids (doors, props), as page doors and lights carry them. */
 const MAP_ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
 function mapId(v: unknown, what: string): string {
-  if (typeof v !== 'string' || !MAP_ID.test(v)) fail(`${what} must be a Delve map id`);
+  if (typeof v !== 'string' || !MAP_ID.test(v)) fail(`${what} must be a Quillwarren map id`);
   return v;
 }
 
@@ -389,7 +389,7 @@ function background(v: unknown): Background {
       return { kind: 'none' };
     case 'delve': {
       const mapId = v.mapId;
-      if (typeof mapId !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(mapId)) fail('Background mapId must be a Delve map id');
+      if (typeof mapId !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(mapId)) fail('Background mapId must be a Quillwarren map id');
       return { kind: 'delve', mapId };
     }
     case 'image':
@@ -501,7 +501,7 @@ function turnPatch(state: GameState, set: Obj): Patch<TurnEntry> {
 /** Dynamic vision can't hide anything of an uploaded picture: players load the image itself. */
 function visionFits(page: Page): Page {
   if (page.vision?.mode === 'dynamic' && page.background.kind === 'image') {
-    fail('Dynamic vision needs a page drawn from a Delve map (or a blank one): a picture page’s image goes to the players whole');
+    fail('Dynamic vision needs a page drawn from a Quillwarren map (or a blank one): a picture page’s image goes to the players whole');
   }
   return page;
 }

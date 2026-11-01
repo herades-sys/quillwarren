@@ -1,4 +1,4 @@
-// The Delve server as a child process of the desktop app, run by the bundled
+// The Quillwarren server as a child process of the desktop app, run by the bundled
 // Node.js (resources\node\node.exe, Node 24 like the server's tests) rather
 // than by Electron's own Node: see docs/DESKTOP.md, "Why a separate Node". It
 // talks over Node's IPC channel: the server sends {type: "ready", port} once
@@ -25,7 +25,7 @@ export interface ServerLaunch {
 
 /**
  * The server's environment: the user's own (PATH, SystemRoot, TEMP, USERPROFILE…)
- * without anything that could change how Node runs it or leak into it, plus Delve's settings.
+ * without anything that could change how Node runs it or leak into it, plus Quillwarren's settings.
  */
 export function serverEnv(base: NodeJS.ProcessEnv, o: Omit<ServerLaunch, 'node' | 'entry'>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
@@ -78,7 +78,7 @@ export class ServerProcess {
   start(timeoutMs = 45_000): Promise<number> {
     const l = this.launch;
     if (!existsSync(l.node)) return Promise.reject(new Error(`the bundled Node.js is missing: ${l.node}`));
-    if (!existsSync(l.entry)) return Promise.reject(new Error(`the Delve server is missing: ${l.entry}`));
+    if (!existsSync(l.entry)) return Promise.reject(new Error(`the Quillwarren server is missing: ${l.entry}`));
     this.stopping = false;
     const child = spawn(l.node, [l.entry], {
       env: serverEnv(process.env, l),
@@ -99,7 +99,7 @@ export class ServerProcess {
       let ready = false;
       const timer = setTimeout(() => {
         if (ready) return;
-        reject(new Error(`the Delve server didn't start within ${Math.round(timeoutMs / 1000)} s:\n${recent.trim().slice(-1500)}`));
+        reject(new Error(`the Quillwarren server didn't start within ${Math.round(timeoutMs / 1000)} s:\n${recent.trim().slice(-1500)}`));
         child.kill();
       }, timeoutMs);
       child.on('message', (m: unknown) => {
@@ -113,12 +113,12 @@ export class ServerProcess {
       });
       child.on('error', (e) => {
         clearTimeout(timer);
-        if (!ready) reject(new Error(`couldn't start the Delve server: ${e.message}`));
+        if (!ready) reject(new Error(`couldn't start the Quillwarren server: ${e.message}`));
       });
       child.on('exit', (code, signal) => {
         clearTimeout(timer);
         if (this.child === child) this.child = null;
-        if (!ready) reject(new Error(`the Delve server stopped while starting (${code ?? signal}):\n${recent.trim().slice(-1500)}`));
+        if (!ready) reject(new Error(`the Quillwarren server stopped while starting (${code ?? signal}):\n${recent.trim().slice(-1500)}`));
         else if (!this.stopping) this.events.crashed(code, signal);
       });
     });

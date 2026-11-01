@@ -48,7 +48,7 @@ export function registerLogin(app: FastifyInstance, auth: EditorAuth, o: { admin
     const next = safeNext((req.query as { next?: string }).next);
     if (auth.sessions.legacyOff) return sendPage(reply, 200, loginPage({ next }));
     if (!auth.passwordHash) {
-      return sendPage(reply, 200, messagePage('Delve', ['No editor password is set yet. On the container, as root, run: delve-passwd'], [{ href: next, text: 'Back' }]));
+      return sendPage(reply, 200, messagePage('Quillwarren', ['No editor password is set yet. On the container, as root, run: delve-passwd'], [{ href: next, text: 'Back' }]));
     }
     return sendPage(reply, 200, legacyLoginPage({ next }));
   });
@@ -95,9 +95,9 @@ export function registerLogin(app: FastifyInstance, auth: EditorAuth, o: { admin
     return reply.header('set-cookie', auth.sessions.cookie(auth.sessions.issue(), isHttps(req))).redirect(next, 303);
   });
 
-  // Ends the session on the server too, so a copied cookie stops working. From Delve's own pages only, like every cookie write.
+  // Ends the session on the server too, so a copied cookie stops working. From Quillwarren's own pages only, like every cookie write.
   app.post('/logout', async (req, reply) => {
-    if (!sameOrigin(req.headers.origin, req.headers.host)) return sendPage(reply, 403, messagePage('Not allowed', ['Log out from Delve’s own pages.'], [{ href: '/', text: 'Back' }]));
+    if (!sameOrigin(req.headers.origin, req.headers.host)) return sendPage(reply, 403, messagePage('Not allowed', ['Log out from Quillwarren’s own pages.'], [{ href: '/', text: 'Back' }]));
     auth.accounts?.endSession(readCookie(req.headers.cookie, SESSION_COOKIE));
     return reply.header('set-cookie', Sessions.clearCookie()).redirect('/', 303);
   });

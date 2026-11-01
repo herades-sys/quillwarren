@@ -507,10 +507,10 @@ const GRADE_TEXT: Record<Grade, string> = { pass: '**pass**', partial: 'partial'
 /** The Markdown report for one or more runs (paths relative to the report). */
 export function renderReport(runs: readonly RunResult[], now = new Date()): string {
   const lines: string[] = [];
-  lines.push('# Local models on the Delve map chat', '');
+  lines.push('# Local models on the Quillwarren map chat', '');
   lines.push(`Generated ${now.toISOString().slice(0, 16).replace('T', ' ')} UTC by \`npm run llm-bench\`. Each task starts from a fresh map (the test dungeon or an empty map) and is checked automatically afterwards.`, '');
   lines.push('- **pass**: every check holds. **partial**: at least one core check holds. **FAIL**: no core check holds.');
-  lines.push('- **calls**: tool calls the model made; **err**: calls that came back as errors (Delve refused them, unknown tool, unreadable arguments); **malf.**: malformed calls (arguments that needed repair or were not JSON, calls written as text, unknown tool names).');
+  lines.push('- **calls**: tool calls the model made; **err**: calls that came back as errors (Quillwarren refused them, unknown tool, unreadable arguments); **malf.**: malformed calls (arguments that needed repair or were not JSON, calls written as text, unknown tool names).');
   lines.push('- **tok/s**: generated tokens per second (server-side generation time when the server reports it). Thinking counts as generated text; **think** is its share of all generated characters.');
   lines.push('- **prompt tok/s**: prompt tokens per second of prompt time, an effective rate: Ollama reuses the cached start of the conversation, so it is high when most of a prompt was cached. **prompt**: the largest prompt of the run, in tokens (compare with num_ctx).');
   lines.push('');
@@ -546,7 +546,7 @@ export function renderReport(runs: readonly RunResult[], now = new Date()): stri
       `${r.api === 'ollama' ? `Ollama ${r.serverVersion ?? ''} native API` : 'OpenAI-compatible API'} at ${r.baseUrl}${r.numCtx ? `, num_ctx ${r.numCtx}` : ''}${r.think ? `, think ${r.think}` : ''}. ` +
         `${r.toolCount} tools; system prompt ${kTok(sz.system)} characters, tool definitions ${kTok(sz.tools)}, first message ${kTok(sz.user)}. ` +
         (r.steps ? `Helping steps: ${r.steps}. ` : '') +
-        `Delve ${r.delveVersion}; ${r.started.slice(0, 16).replace('T', ' ')} to ${r.finished.slice(11, 16)} UTC${r.warmupMs ? `; loading the model took ${secs(r.warmupMs)} (not counted)` : ''}.`,
+        `Quillwarren ${r.delveVersion}; ${r.started.slice(0, 16).replace('T', ' ')} to ${r.finished.slice(11, 16)} UTC${r.warmupMs ? `; loading the model took ${secs(r.warmupMs)} (not counted)` : ''}.`,
       '',
     );
     lines.push('| # | Task | Result | Checks | Calls | Err | Malf. | Time | tok/s | Stop | Answer |');

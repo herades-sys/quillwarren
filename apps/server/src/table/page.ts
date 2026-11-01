@@ -29,9 +29,9 @@ export function tablePage(o: TablePageOptions): string {
     : '';
   const tab = (id: string, ic: IconName, label: string, selected = false) =>
     `<button type="button" role="tab" id="tab-${id}" data-tab="${id}" aria-controls="panel-${id}" aria-selected="${selected}">${icon(ic, { size: 15 })}${label}</button>`;
-  const crumb = gm ? `<a class="crumb tbl-desk" href="/play" title="All games">Delve Table</a>` : `<span class="crumb tbl-desk">Delve Table</span>`;
+  const crumb = gm ? `<a class="crumb tbl-desk" href="/play" title="Quillwarren Table: all games">Table</a>` : `<span class="crumb tbl-desk" title="Quillwarren Table">Table</span>`;
   const body = `<header class="topbar tbl-top">
-  ${gm ? `<a class="topbar-brand" href="/" title="Delve">Delve</a>` : `<span class="topbar-brand">Delve</span>`}<span class="vsep tbl-desk"></span>
+  ${gm ? `<a class="topbar-brand" href="/" title="Quillwarren">Quillwarren</a>` : `<span class="topbar-brand">Quillwarren</span>`}<span class="vsep tbl-desk"></span>
   ${crumb}${icon('chevron-right', { size: 14, className: 'crumb-sep tbl-desk' })}
   ${gm ? `<button type="button" id="game-name" title="Rename the game">${esc(o.gameName)}</button>` : `<span id="game-name">${esc(o.gameName)}</span>`}
   <span class="conn" title="Connection"><span id="conn-dot" data-state="connecting"></span><span id="conn-text">Connecting…</span></span>
@@ -79,7 +79,7 @@ export function tablePage(o: TablePageOptions): string {
 <script id="table-initial" type="application/json">${initial}</script>
 <script type="module" src="/assets/table.js?v=${encodeURIComponent(o.version)}"></script>`;
   return htmlDocument({
-    title: `${o.gameName} · Delve Table`,
+    title: `${o.gameName} · Quillwarren Table`,
     body,
     bodyClass: gm ? 'role-gm' : 'role-player',
     // players' "Request a feature" link: just its icon where the bar gets tight, and gone where it's tighter

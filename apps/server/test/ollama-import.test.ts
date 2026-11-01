@@ -18,7 +18,7 @@ let models: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'delve-ollama-'));
   ollama = join(root, '.ollama', 'models');
-  models = join(root, 'Delve', 'models');
+  models = join(root, 'Quillwarren', 'models');
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -77,7 +77,7 @@ describe('reading Ollama’s store', () => {
     expect(weightsLayer({ layers: [two] })).toEqual({ layer: two, hasProjector: false });
   });
 
-  it('lists every model, with what is wrong with the ones Delve can’t use', async () => {
+  it('lists every model, with what is wrong with the ones Quillwarren can’t use', async () => {
     fakeStore();
     const list = await listOllamaModels(ollama);
     const by = Object.fromEntries(list.map((m) => [m.name, m]));
@@ -181,7 +181,8 @@ describe('the model manager API', () => {
     ]);
 
     const imp = await app.inject({ method: 'POST', url: '/api/v1/runtime/import', payload: { name: 'qwen3:8b' } });
-    expect(imp.json()).toMatchObject({ imported: 'qwen3:8b', file: 'qwen3-8b.gguf', method: 'link' });
+    expect(imp.json()).toMatchObject({ imported: 'qwen3:8b', file: 'qwen3-8b.gguf', method: 'link', selected: true });
+    expect(settings.get().model).toBe('qwen3-8b.gguf');
     expect((await app.inject({ method: 'POST', url: '/api/v1/runtime/import', payload: { name: 'nope:1b' } })).statusCode).toBe(404);
     expect((await app.inject({ method: 'PUT', url: '/api/v1/runtime/settings', payload: { model: 'missing.gguf' } })).statusCode).toBe(400);
     expect((await app.inject({ method: 'PUT', url: '/api/v1/runtime/settings', payload: { model: 'qwen3-8b.gguf' } })).json()).toEqual({ settings: { model: 'qwen3-8b.gguf', gpu: 'auto', ctxSize: 16384 } });
@@ -197,6 +198,31 @@ describe('the model manager API', () => {
     const page = await app.inject({ method: 'GET', url: '/models' });
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain('Import from Ollama');
+    await app.close();
+  });
+
+  it('selects an imported model when none is chosen, so Start right after an import runs it', async () => {
+    fakeStore();
+    const app = Fastify();
+    const settings = new RuntimeSettingsStore(undefined);
+    registerModelManager(app, { models: new ModelLibrary(models), settings, runtime: new LlamaRuntime({}), ollamaDir: ollama });
+    await app.ready();
+    // nothing chosen: Start has nothing to run
+    const before = await app.inject({ method: 'POST', url: '/api/v1/runtime/start' });
+    expect(before.statusCode).toBe(400);
+    expect(before.json().error).toBe('choose a model first');
+    expect((await app.inject({ method: 'POST', url: '/api/v1/runtime/import', payload: { name: 'qwen3:8b' } })).json()).toMatchObject({ file: 'qwen3-8b.gguf', selected: true });
+    // this build has no runtime binary, so Start now fails for that reason, not for want of a model
+    const start = await app.inject({ method: 'POST', url: '/api/v1/runtime/start' });
+    expect(start.statusCode).toBe(503);
+    expect(start.json().error).toMatch(/no built-in model runtime/);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/runtime' })).json().settings.model).toBe('qwen3-8b.gguf');
+    // a model chosen on purpose stays chosen, whatever is imported next
+    writeFileSync(join(models, 'mine.gguf'), gguf(4000));
+    expect((await app.inject({ method: 'PUT', url: '/api/v1/runtime/settings', payload: { model: 'mine.gguf' } })).statusCode).toBe(200);
+    const again = await app.inject({ method: 'POST', url: '/api/v1/runtime/import', payload: { name: 'hf.co/bartowski/Qwen3-4B-GGUF:Q4_K_M' } });
+    expect(again.json().selected).toBe(false);
+    expect(settings.get().model).toBe('mine.gguf');
     await app.close();
   });
 });

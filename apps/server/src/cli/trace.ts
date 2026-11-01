@@ -1,4 +1,4 @@
-// Trace a map picture (a dungeon or battle map, a city plan, painted or flat) into a Delve map file.
+// Trace a map picture (a dungeon or battle map, a city plan, painted or flat) into a Quillwarren map file.
 // npm run trace -- <picture.png> <out.delve.json> [--mode dungeon|city] [--painted | --flat] [--unit "5 ft"]
 //   [--px-per-square N | --ppm N (picture pixels per metre, from a scale bar) | --width N (picture width in the unit's ft or m) | --width-ft N]
 //   [--colours 8] [--roles ignore,building,...] [--min wall=0.5,water=1] [--join] [--max 2000] [--render out.png] [--name "Old Town"]

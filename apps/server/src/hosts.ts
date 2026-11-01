@@ -11,7 +11,7 @@ import { fromLoopback } from './public.ts';
 /** Name endings that only a home network resolves (mDNS, routers, RFC 8375 and ICANN's private-use name, the FRITZ!Box). */
 const HOME_SUFFIXES = ['.local', '.lan', '.home.arpa', '.internal', '.fritz.box', '.localhost'];
 
-/** DELVE_ALLOWED_HOSTS: names separated by commas ("delve.example.org, *.example.net"), lower case; "*." also allows the names under it. */
+/** DELVE_ALLOWED_HOSTS: names separated by commas ("quillwarren.example.org, *.example.net"), lower case; "*." also allows the names under it. */
 export function parseAllowedHosts(v: string | undefined): string[] {
   return (v ?? '')
     .split(',')
@@ -56,6 +56,6 @@ export function registerHostCheck(app: FastifyInstance, rule: HostRule): void {
       .code(403)
       .type('text/plain; charset=utf-8')
       .header('x-content-type-options', 'nosniff')
-      .send('This Delve server does not answer to that host name. Open it by its IP address or its own name, or add the name to DELVE_ALLOWED_HOSTS.\n');
+      .send('This Quillwarren server does not answer to that host name. Open it by its IP address or its own name, or add the name to DELVE_ALLOWED_HOSTS.\n');
   });
 }

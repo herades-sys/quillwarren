@@ -1,7 +1,7 @@
 // The local-model harness (chat/local-agent.ts, chat/local-setup.ts) without a
 // real model: the repair helpers, the schema conversion, and whole runs
 // against a fake OpenAI-compatible server (and a fake Ollama), with a fake
-// tool executor and with Delve's real MCP endpoint.
+// tool executor and with Quillwarren's real MCP endpoint.
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -144,6 +144,7 @@ describe('argument types', () => {
     expect(resolveToolName('add_room', known)).toBe('add_room');
     expect(resolveToolName('functions.add_room', known)).toBe('add_room');
     expect(resolveToolName('mcp__delve__describe_map', known)).toBe('describe_map');
+    expect(resolveToolName('quillwarren.add_room', known)).toBe('add_room');
     expect(resolveToolName('Add-Room', known)).toBe('add_room');
     expect(resolveToolName('add_rooms', known)).toBeUndefined();
   });
@@ -269,9 +270,9 @@ describe('helping steps', () => {
     const line = nextIdsLine(m);
     expect(line).toBe('Next new ids: room r7 (number 7), corridor c6, door d7, prop i1, terrain t1, height area h1, label l1; several props take the next ids in a row. The calls in one reply run in order, so a later call can use an id that an earlier one makes.');
     const ctx = leanContext({ map: m, rev: 1 }, { ids: true });
-    expect(ctx.split('\n').slice(-2)).toEqual([line, '[End of Delve context]']);
+    expect(ctx.split('\n').slice(-2)).toEqual([line, '[End of Quillwarren context]']);
     expect(leanContext({ map: m, rev: 1 })).not.toContain('Next new ids');
-    expect(leanUser({ map: m, rev: 1 }, ' Add a room. ', { plan: true })).toMatch(/\[End of Delve context\]\n\nAdd a room\.\n\nFirst write a short numbered plan/);
+    expect(leanUser({ map: m, rev: 1 }, ' Add a room. ', { plan: true })).toMatch(/\[End of Quillwarren context\]\n\nAdd a room\.\n\nFirst write a short numbered plan/);
     expect(planLine()).toBe('First write a short numbered plan: one line for each part of this request (at most 6). Then make the calls for it.');
   });
 
@@ -637,9 +638,9 @@ describe("Ollama's own API", () => {
   });
 });
 
-// ---------- with Delve's real MCP endpoint ----------
+// ---------- with Quillwarren's real MCP endpoint ----------
 
-describe('lean and full setups on a real Delve', () => {
+describe('lean and full setups on a real Quillwarren', () => {
   const TOKEN = 'local-llm-test-token';
   let app: ReturnType<typeof buildApp>;
   let base: string;
@@ -707,7 +708,7 @@ describe('lean and full setups on a real Delve', () => {
       call('add_room', { rect: [16, 26, 6, 4], name: 'Guard post' }),
       call('connect', '{"from": "r1", "to": "r7", "doors": "to"}'),
       call('update', { id: 'r3', set: '{"name": "Armoury"}' }), // set as a string: brought to an object
-      call('add_door', { at: [4, 14], along: 'sideways', width: 1 }), // Delve refuses this
+      call('add_door', { at: [4, 14], along: 'sideways', width: 1 }), // Quillwarren refuses this
       call('describe_map', {}),
       say('Added r7 east of room 1 with corridor c6 and door d7; renamed r3.'),
     ]);

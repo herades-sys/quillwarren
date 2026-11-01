@@ -2,13 +2,13 @@
 // shape and room count (some rooms furnished, some with pillars, stairs,
 // water or a floor texture), outdoor maps (ground, water, roads, hills,
 // cliffs, forests, a few buildings), small maps of one to three rooms, and
-// empty maps, in feet and in metres. They are built with Delve's own tools
+// empty maps, in feet and in metres. They are built with Quillwarren's own tools
 // (tools.ts `setup`, never shown to the model) and kept only when check_map
 // finds nothing wrong, so every conversation starts from a clean map.
 // The llm-bench "test-dungeon" template is never used.
 import { checkMap, doorCentre as doorCentreOf, PRESETS, type DelveMap } from '@delve/core';
 import type { Json } from '../../chat/local-agent.ts';
-import { Delve, type ToolRun } from './delve.ts';
+import { Quillwarren, type ToolRun } from './delve.ts';
 import { boxGap, ofType, toBounds, type Rect } from './kit.ts';
 import { hashSeed, Rng } from './rng.ts';
 import { THEME_OF_KIND, THEMES } from './themes.ts';
@@ -56,7 +56,7 @@ export interface StartMap {
  * doorway), as raw ops: the fix_problems family has the model find them with
  * check_map and fix them. Each one is kept only if check_map then lists it.
  */
-function injectProblems(delve: Delve, mapId: string, rng: Rng, count: number): NonNullable<StartMap['injected']> {
+function injectProblems(delve: Quillwarren, mapId: string, rng: Rng, count: number): NonNullable<StartMap['injected']> {
   const out: NonNullable<StartMap['injected']> = [];
   const kinds = rng.shuffle(['outside', 'overlap', 'door', 'doorway'] as const);
   for (const kind of kinds) {
@@ -126,7 +126,7 @@ function pickStyle(rng: Rng): string {
   return rng.weighted(want.filter(([s]) => styles.includes(s)));
 }
 
-/** A map id from the seed: map_ and 12 hex digits, like Delve's own. */
+/** A map id from the seed: map_ and 12 hex digits, like Quillwarren's own. */
 export function mapIdFor(seed: number): string {
   const a = hashSeed(seed, 'id-a').toString(16).padStart(8, '0');
   const b = hashSeed(seed, 'id-b').toString(16).padStart(8, '0');
@@ -135,10 +135,10 @@ export function mapIdFor(seed: number): string {
 
 /** Applies setup calls to the map, undoing any that fails, warns or leaves a layout problem. */
 class Builder {
-  readonly delve: Delve;
+  readonly delve: Quillwarren;
   readonly mapId: string;
   calls = 0;
-  constructor(delve: Delve, mapId: string) {
+  constructor(delve: Quillwarren, mapId: string) {
     this.delve = delve;
     this.mapId = mapId;
   }
@@ -399,14 +399,14 @@ async function buildOutdoor(b: Builder, rng: Rng, out: StartMap): Promise<void> 
 }
 
 /**
- * Build the starting map for a spec on a scratch Delve (failed tries are
+ * Build the starting map for a spec on a scratch Quillwarren (failed tries are
  * undone there), then put the finished map into `delve` as a new map whose
  * history starts at a rev between 1 and about 60, like a map that has been
  * worked on. The same spec always gives the same map (id, objects, rev), which
  * the replay check relies on. A spec whose map comes out with a layout problem
  * is built again from a derived seed.
  */
-export async function buildStart(delve: Delve, spec: StartSpec): Promise<StartMap> {
+export async function buildStart(delve: Quillwarren, spec: StartSpec): Promise<StartMap> {
   for (let attempt = 0; attempt < 8; attempt++) {
     const rng = new Rng(hashSeed(spec.seed, 'map', attempt));
     const kind = spec.kind;
@@ -415,7 +415,7 @@ export async function buildStart(delve: Delve, spec: StartSpec): Promise<StartMa
     const name = kind === 'outdoor' ? rng.pick(OUTDOOR_NAMES) : kind === 'empty' ? rng.pick(EMPTY_NAMES) : rng.pick(DUNGEON_NAMES);
     const mapId = mapIdFor(hashSeed(spec.seed, attempt));
     const seed = rng.int(1, 2 ** 31 - 1);
-    const scratch = await Delve.open();
+    const scratch = await Quillwarren.open();
     try {
       scratch.createMap({ id: mapId, name, unit, style, seed });
       const b = new Builder(scratch, mapId);

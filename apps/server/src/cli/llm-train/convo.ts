@@ -1,13 +1,13 @@
 // One training conversation, assembled by the program: the system prompt and
 // tools from buildSetup (lean), each user message framed with the context
 // block exactly as the local harness frames it, every tool call run through
-// Delve's real MCP tools (in process), the results trimmed as the harness
+// Quillwarren's real MCP tools (in process), the results trimmed as the harness
 // trims them, and the harness hooks (harness-hooks.ts) at the places the
 // harness would add its own messages.
 import type { DelveMap } from '@delve/core';
 import { trimText, type AgentMessage, type Json } from '../../chat/local-agent.ts';
 import { buildSetup, type Setup } from '../../chat/local-setup.ts';
-import { Delve, type ToolRun } from './delve.ts';
+import { Quillwarren, type ToolRun } from './delve.ts';
 import { DEFAULT_REPEAT_NOTE, HARNESS_HOOKS, type HarnessHooks, type HookCall, type HookContext } from './harness-hooks.ts';
 import { hashSeed } from './rng.ts';
 import { hiddenArgs, ordered, type Call } from './tools.ts';
@@ -44,7 +44,7 @@ export interface Turn {
 }
 
 export class Convo {
-  readonly delve: Delve;
+  readonly delve: Quillwarren;
   readonly mapId: string;
   readonly setup: Setup;
   readonly seed: number;
@@ -55,7 +55,7 @@ export class Convo {
   private lastKey = '';
   private repeats = 0;
 
-  constructor(delve: Delve, mapId: string, seed: number, hooks: HarnessHooks = HARNESS_HOOKS) {
+  constructor(delve: Quillwarren, mapId: string, seed: number, hooks: HarnessHooks = HARNESS_HOOKS) {
     this.delve = delve;
     this.mapId = mapId;
     this.seed = seed;
@@ -198,7 +198,7 @@ export class Convo {
   /**
    * Try calls on a copy of the map without touching the conversation: the
    * generator uses it to pick requests the straightforward call can do (or,
-   * for the recovery family, ones Delve refuses for a real reason).
+   * for the recovery family, ones Quillwarren refuses for a real reason).
    */
   async probe(...calls: Call[]): Promise<ToolRun[]> {
     const box = await Sandbox.of(this.map, this.seed);
@@ -226,20 +226,20 @@ export function hiddenSeed(convSeed: number, c: Call): number {
   return (hashSeed(convSeed, c.name, JSON.stringify(ordered(c).args)) % 2_000_000_000) + 1;
 }
 
-/** A throwaway copy of a map in its own Delve. */
+/** A throwaway copy of a map in its own Quillwarren. */
 export class Sandbox {
-  private readonly d: Delve;
+  private readonly d: Quillwarren;
   readonly mapId: string;
   private readonly seed: number;
 
-  private constructor(d: Delve, mapId: string, seed: number) {
+  private constructor(d: Quillwarren, mapId: string, seed: number) {
     this.d = d;
     this.mapId = mapId;
     this.seed = seed;
   }
 
   static async of(map: DelveMap, convSeed: number): Promise<Sandbox> {
-    const d = await Delve.open();
+    const d = await Quillwarren.open();
     d.createMap({ id: map.id, name: map.name, unit: map.grid.unit ?? '5 ft', style: map.style?.preset ?? 'classic-hatching', seed: map.seed ?? 1, objects: structuredClone(map.objects) });
     return new Sandbox(d, map.id, convSeed);
   }

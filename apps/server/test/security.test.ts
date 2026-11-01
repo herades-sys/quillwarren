@@ -1,8 +1,8 @@
-// Fixes from the security review before Delve went open source: JSON in pages
+// Fixes from the security review before Quillwarren went open source: JSON in pages
 // can't end its <script>, a map's style can't put markup into its pictures,
 // unknown host names get 403, secrets in URLs stay out of the log, big
 // WebSocket messages and uploads are refused before anything is read, and
-// logging out only works from Delve's own pages.
+// logging out only works from Quillwarren's own pages.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -241,7 +241,7 @@ describe('big uploads check the login first', () => {
 });
 
 describe('logging out', () => {
-  it('works only from Delve’s own pages', async () => {
+  it('works only from Quillwarren’s own pages', async () => {
     const cross = await app.inject({ method: 'POST', url: '/logout', headers: { cookie: session, host: 'delve.lan', origin: 'http://evil.example' } });
     expect(cross.statusCode).toBe(403);
     expect(cross.headers['set-cookie']).toBeUndefined();

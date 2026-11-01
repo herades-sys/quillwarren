@@ -1,11 +1,11 @@
-// Delve for Windows: the Electron main process. It starts the Delve server
+// Quillwarren for Windows: the Electron main process. It starts the Quillwarren server
 // (the same server as the web app, in desktop mode: apps/server/src/desktop/)
 // as a child process on the bundled Node.js, gives only this app's window the
 // per-launch secret the server asks for, and shows the editor in one window.
 // One instance at a time; the window remembers its size and place; quitting
 // stops the server (and with it the model runtime) cleanly. The Help menu has
 // "Copy logs" for sending problems back, and "Connect to Claude Desktop…",
-// which lets Claude in Claude Desktop work on the maps through the Delve
+// which lets Claude in Claude Desktop work on the maps through the Quillwarren
 // extension (claude-desktop.ts). The server's key vault for the chat's API
 // keys is Electron's safeStorage, answered here (vault.ts). See docs/DESKTOP.md.
 import { randomBytes } from 'node:crypto';
@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, clipboard, dialog, Menu, nativeTheme, safeStorage, screen, session, shell, type WebContents } from 'electron';
 import { CLAUDE_DOWNLOAD_URL, ClaudeDesktopLink } from './claude-desktop.ts';
 import { collectLogs, LogFile, redact } from './logs.ts';
+import { folderMoveLines, moveOldFolders } from './folder-move.ts';
 import { menuTemplate } from './menu.ts';
 import { desktopPaths, resourcePaths } from './paths.ts';
 import { ServerProcess } from './server-process.ts';
@@ -23,11 +24,14 @@ import { parseWindowState, placeWindow, MIN_SIZE, type WindowState } from './win
 
 // ---------- one instance, fixed folders ----------
 
-app.setName('Delve');
-const paths = desktopPaths({ appData: app.getPath('appData'), localAppData: process.env.LOCALAPPDATA });
+app.setName('Quillwarren');
+const roots = { appData: app.getPath('appData'), localAppData: process.env.LOCALAPPDATA };
+// the folders from when the app had its old name: before anything can open the new ones
+const folderMoves = moveOldFolders(roots);
+const paths = desktopPaths(roots);
 app.setPath('userData', paths.userData);
 // Windows groups the taskbar button and the shortcuts by this id (keep it once released).
-app.setAppUserModelId('app.delve.desktop');
+app.setAppUserModelId('app.quillwarren.desktop');
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -49,7 +53,8 @@ const secrets = () => {
   if (k) claudeKeys.add(k);
   return [secret, ...claudeKeys];
 };
-log.line(`Delve ${app.getVersion()} starting (Electron ${process.versions.electron}, ${process.platform} ${process.arch})`);
+log.line(`Quillwarren ${app.getVersion()} starting (Electron ${process.versions.electron}, ${process.platform} ${process.arch})`);
+for (const line of folderMoveLines(folderMoves)) log.line(line);
 
 let win: BrowserWindow | null = null;
 let server: ServerProcess | null = null;
@@ -179,9 +184,9 @@ async function onServerCrash(code: number | null, signal: string | null): Promis
   }
   const choice = await dialog.showMessageBox({
     type: 'error',
-    title: 'Delve',
-    message: 'Delve’s map server stopped and couldn’t be restarted.',
-    detail: 'Your maps are saved. “Copy logs” puts what Delve wrote down on the clipboard, so you can send it.',
+    title: 'Quillwarren',
+    message: 'Quillwarren’s map server stopped and couldn’t be restarted.',
+    detail: 'Your maps are saved. “Copy logs” puts what Quillwarren wrote down on the clipboard, so you can send it.',
     buttons: ['Try again', 'Copy logs', 'Quit'],
     defaultId: 0,
     cancelId: 2,
@@ -198,7 +203,7 @@ async function onServerCrash(code: number | null, signal: string | null): Promis
 // ---------- the window ----------
 
 function secureWebContents(contents: WebContents): void {
-  // links to other sites open in the user's browser; nothing navigates this window away from Delve
+  // links to other sites open in the user's browser; nothing navigates this window away from Quillwarren
   contents.on('will-navigate', (e, url) => {
     if (isOwn(url)) return;
     e.preventDefault();
@@ -206,7 +211,7 @@ function secureWebContents(contents: WebContents): void {
   });
   contents.setWindowOpenHandler(({ url }) => {
     if (isOwn(url)) {
-      // Delve's own pages in a new window (the snip's handout): same rules
+      // Quillwarren's own pages in a new window (the snip's handout): same rules
       return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, webPreferences: webPreferences() } };
     }
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
@@ -225,7 +230,7 @@ function createWindow(port: number): void {
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
     show: false,
-    title: 'Delve',
+    title: 'Quillwarren',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#17181c' : '#efeae2',
     icon: res.icon,
     webPreferences: webPreferences(),
@@ -249,7 +254,7 @@ function go(path: string): void {
 
 function about(): Record<string, string> {
   return {
-    Delve: app.getVersion(),
+    Quillwarren: app.getVersion(),
     Electron: process.versions.electron ?? '',
     Chromium: process.versions.chrome ?? '',
     'Node (Electron)': process.versions.node ?? '',
@@ -265,7 +270,7 @@ function copyLogs(quiet = false): void {
   const text = collectLogs(paths.logs, about(), secrets());
   clipboard.writeText(text);
   if (quiet) return;
-  void dialog.showMessageBox({ type: 'info', title: 'Delve', message: 'The logs are on the clipboard.', detail: `${Math.round(text.length / 1024)} KB. Paste them into a message. The full files are in ${paths.logs}.`, buttons: ['OK', 'Open the logs folder'] }).then((r) => {
+  void dialog.showMessageBox({ type: 'info', title: 'Quillwarren', message: 'The logs are on the clipboard.', detail: `${Math.round(text.length / 1024)} KB. Paste them into a message. The full files are in ${paths.logs}.`, buttons: ['OK', 'Open the logs folder'] }).then((r) => {
     if (r.response === 1) void shell.openPath(paths.logs);
   });
 }
@@ -275,7 +280,7 @@ function buildMenu(): void {
     const wc = BrowserWindow.getFocusedWindow()?.webContents;
     if (wc) wc.setZoomLevel(d === 0 ? 0 : wc.getZoomLevel() + d);
   };
-  // the items themselves are in menu.ts (tested there): no Delve Table, no players' screen
+  // the items themselves are in menu.ts (tested there): no Quillwarren Table, no players' screen
   const template = menuTemplate({
     go,
     openDataFolder: () => void shell.openPath(paths.data),
@@ -294,8 +299,8 @@ function buildMenu(): void {
     showAbout: () =>
       void dialog.showMessageBox({
         type: 'info',
-        title: 'About Delve',
-        message: `Delve ${app.getVersion()}`,
+        title: 'About Quillwarren',
+        message: `Quillwarren ${app.getVersion()}`,
         detail: `A dungeon map editor.\n\n${Object.entries(about())
           .map(([k, v]) => `${k}: ${v}`)
           .join('\n')}`,
@@ -340,13 +345,13 @@ async function connectClaudeDesktopNow(): Promise<void> {
   const opts: Electron.MessageBoxOptions = {
     type: 'question',
     title: 'Connect to Claude Desktop',
-    message: 'Let Claude in Claude Desktop work on your Delve maps?',
+    message: 'Let Claude in Claude Desktop work on your Quillwarren maps?',
     detail: [
-      'Claude Desktop gets a Delve extension. When you chat with Claude there, Claude builds and changes your maps with Delve’s own tools, and you watch every change live in this window. Each change is one undo step here.',
+      'Claude Desktop gets a Quillwarren extension. When you chat with Claude there, Claude builds and changes your maps with Quillwarren’s own tools, and you watch every change live in this window. Each change is one undo step here.',
       '',
-      'Claude runs on your own Claude plan. Delve itself sends nothing anywhere: what Claude reads through the tools is part of your conversation with Claude.',
+      'Claude runs on your own Claude plan. Quillwarren itself sends nothing anywhere: what Claude reads through the tools is part of your conversation with Claude.',
       '',
-      'It works only while Delve is open, and only on this computer. Help → Disconnect Claude Desktop turns it off again.',
+      'It works only while Quillwarren is open, and only on this computer. Help → Disconnect Claude Desktop turns it off again.',
       '',
       'Next, Claude Desktop asks you to confirm the installation.',
     ].join('\n'),
@@ -369,14 +374,14 @@ async function connectClaudeDesktopNow(): Promise<void> {
   const fallback: Electron.MessageBoxOptions = {
     type: 'info',
     title: 'Connect to Claude Desktop',
-    message: 'Claude Desktop didn’t open the Delve extension.',
+    message: 'Claude Desktop didn’t open the Quillwarren extension.',
     detail: [
       `If you don’t have Claude Desktop yet, get it from ${CLAUDE_DOWNLOAD_URL}, then choose Help → Connect to Claude Desktop again.`,
       '',
       'Or install the extension by hand: in Claude Desktop open Settings → Desktop app and choose Manage beside Extensions (older versions: Settings → Extensions), then Advanced settings, and under Extension Developer choose “Install Extension…” and pick this file:',
       res.mcpb,
       '',
-      'Delve stays connected: once the extension is installed, Claude can use it while Delve is open.',
+      'Quillwarren stays connected: once the extension is installed, Claude can use it while Quillwarren is open.',
     ].join('\n'),
     buttons: ['Get Claude Desktop', 'Show the extension file', 'OK'],
     defaultId: 2,
@@ -395,7 +400,7 @@ async function disconnectClaudeDesktop(): Promise<void> {
     type: 'question',
     title: 'Disconnect Claude Desktop',
     message: 'Stop Claude Desktop from working on your maps?',
-    detail: 'Claude in Claude Desktop can’t reach Delve any more. The Delve extension stays in Claude Desktop until you remove it there (Settings → Extensions); connecting again later makes a new key.',
+    detail: 'Claude in Claude Desktop can’t reach Quillwarren any more. The Quillwarren extension stays in Claude Desktop until you remove it there (Settings → Extensions); connecting again later makes a new key.',
     buttons: ['Disconnect', 'Cancel'],
     defaultId: 0,
     cancelId: 1,
@@ -448,7 +453,7 @@ app.whenReady().then(async () => {
     void setUpUpdates({ packaged: app.isPackaged, log });
   } catch (e) {
     log.line(`couldn't start: ${(e as Error).message}`);
-    const r = await dialog.showMessageBox({ type: 'error', title: 'Delve', message: 'Delve couldn’t start its map server.', detail: (e as Error).message, buttons: ['Copy logs and quit', 'Quit'] });
+    const r = await dialog.showMessageBox({ type: 'error', title: 'Quillwarren', message: 'Quillwarren couldn’t start its map server.', detail: (e as Error).message, buttons: ['Copy logs and quit', 'Quit'] });
     if (r.response === 0) copyLogs(true);
     quitting = true;
     app.quit();

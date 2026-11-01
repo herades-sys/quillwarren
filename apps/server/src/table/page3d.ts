@@ -19,9 +19,9 @@ export function table3dPage(o: Table3dPageOptions): string {
   const gm = o.me.role === 'gm';
   const initial = jsonForScript({ gameId: o.gameId, gameName: o.gameName, me: o.me, version: o.version });
   const game = encodeURIComponent(o.gameId);
-  const crumb = gm ? `<a class="crumb tbl-desk" href="/play" title="All games">Delve Table</a>` : `<span class="crumb tbl-desk">Delve Table</span>`;
+  const crumb = gm ? `<a class="crumb tbl-desk" href="/play" title="Quillwarren Table: all games">Table</a>` : `<span class="crumb tbl-desk" title="Quillwarren Table">Table</span>`;
   const body = `<header class="topbar tbl-top">
-  ${gm ? `<a class="topbar-brand" href="/" title="Delve">Delve</a>` : `<span class="topbar-brand">Delve</span>`}<span class="vsep tbl-desk"></span>
+  ${gm ? `<a class="topbar-brand" href="/" title="Quillwarren">Quillwarren</a>` : `<span class="topbar-brand">Quillwarren</span>`}<span class="vsep tbl-desk"></span>
   ${crumb}${icon('chevron-right', { size: 14, className: 'crumb-sep tbl-desk' })}
   <span id="game-name">${esc(o.gameName)}</span>
   <span class="badge3d" title="The table in 3D">3D</span>
@@ -50,7 +50,7 @@ export function table3dPage(o: Table3dPageOptions): string {
 <script id="table3d-initial" type="application/json">${initial}</script>
 <script type="module" src="/assets/table3d.js?v=${encodeURIComponent(o.version)}"></script>`;
   return htmlDocument({
-    title: `${o.gameName} in 3D · Delve Table`,
+    title: `${o.gameName} in 3D · Quillwarren Table`,
     body,
     bodyClass: gm ? 'role-gm' : 'role-player',
     extra: `<style>${TABLE_BASE_CSS}${TABLE_3D_CSS}${gm ? NOTES_CSS : ''}</style>`,

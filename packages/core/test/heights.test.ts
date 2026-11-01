@@ -175,7 +175,7 @@ describe('where you can go', () => {
     expect(slopes.blocked.every((s) => s.owner === 'h3')).toBe(true);
   });
 
-  it('hands Delve Table the blocking edges with their drop', () => {
+  it('hands Quillwarren Table the blocking edges with their drop', () => {
     const edges = blockingEdges(hall());
     expect(edges).toEqual([
       { a: [0, 3], b: [12, 3], drop: 10 },

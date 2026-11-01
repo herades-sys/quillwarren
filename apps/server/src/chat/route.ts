@@ -1,5 +1,5 @@
 // The chat panel's endpoints. A message goes to the chat bridge, which runs
-// Claude Code with Delve's MCP tools (through a short-lived chat token), and
+// Claude Code with Quillwarren's MCP tools (through a short-lived chat token), and
 // the answer streams back as JSON lines (see events.ts). Only logged-in
 // editors (or API token holders) can chat, the same people who can edit.
 import { PassThrough, Readable } from 'node:stream';
@@ -20,7 +20,7 @@ export const HEARTBEAT_MS = 15_000;
 export interface ChatConfig {
   /** The chat bridge, e.g. http://127.0.0.1:8792 (DELVE_CHAT_URL). */
   bridgeUrl: string;
-  /** This server's port. The bridge's Claude reaches Delve's tools at http://127.0.0.1:<port>/mcp. */
+  /** This server's port. The bridge's Claude reaches Quillwarren's tools at http://127.0.0.1:<port>/mcp. */
   port: number;
   /** Default model alias (DELVE_CHAT_MODEL); the panel can pick another from CHAT_MODELS. */
   model?: string;

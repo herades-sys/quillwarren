@@ -1,7 +1,7 @@
-// The GM's markers on a Delve page: the badges are painted into the page's
+// The GM's markers on a Quillwarren page: the badges are painted into the page's
 // picture, and this makes them clickable like in the editor (apps/web/src/markers.ts):
 // a click opens the note, Shift-click strikes it through. Changes go to the
-// Delve map (gm-map.ts), and the page picture follows a moment later. GM only;
+// Quillwarren map (gm-map.ts), and the page picture follows a moment later. GM only;
 // players never get the map, and the players' preview has no markers.
 import type { DelveMap } from '@delve/core';
 import type { Page } from '@delve/table';

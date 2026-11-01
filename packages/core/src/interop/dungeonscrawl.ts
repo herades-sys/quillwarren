@@ -325,7 +325,7 @@ export interface DsImportResult {
   notes: string[];
 }
 
-/** A Delve map from a Dungeon Scrawl document (the parsed "map" entry of a .ds file). */
+/** A Quillwarren map from a Dungeon Scrawl document (the parsed "map" entry of a .ds file). */
 export function fromDungeonScrawl(input: unknown, opts: { id: string; name?: string; seed?: number }): DsImportResult {
   const doc = input as { state?: { document?: { nodes?: Record<string, Json> } }; data?: { geometry?: Record<string, DsGeometry> } };
   const nodes = doc?.state?.document?.nodes;

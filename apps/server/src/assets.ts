@@ -1,8 +1,8 @@
 // Asset files: prop and terrain SVGs (for the renderer and the editor's picker),
-// plus the editor icons and the Delve logo. They come from
+// plus the editor icons and the Quillwarren logo. They come from
 // delve-props-design-system/assets in development and release/assets in a
 // release. Every prop and tile goes through parseAssetSvg, so only whitelisted
-// shapes in the three inks (or, for colour props, the Delve palette) ever reach
+// shapes in the three inks (or, for colour props, the Quillwarren palette) ever reach
 // a page or a PNG.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -63,9 +63,9 @@ export class AssetLibrary {
 export const assets = new AssetLibrary(findAssetDir());
 
 // ---------- custom props ----------
-// This Delve's own props (custom-props.ts) aren't files in the design system:
+// This Quillwarren's own props (custom-props.ts) aren't files in the design system:
 // their library registers itself here, so every render (PNG, SVG, handout,
-// Delve Table pages) draws them through assets.body like built-in ones.
+// Quillwarren Table pages) draws them through assets.body like built-in ones.
 const customSources = new Set<(id: string) => string | undefined>();
 
 /** Let renders draw custom props (id -> cleaned body). Returns the undo. */
@@ -83,7 +83,7 @@ function customBody(id: string): string | undefined {
 }
 
 export function registerAssets(app: FastifyInstance, lib: AssetLibrary = assets): void {
-  // the built-in catalogs (ink, then colour: palette "colour"), then this Delve's custom props (custom: true, under their own category or Custom)
+  // the built-in catalogs (ink, then colour: palette "colour"), then this Quillwarren's custom props (custom: true, under their own category or Custom)
   app.get('/api/v1/assets', async () => ({
     categories: [...CATEGORIES, CUSTOM_CATEGORY, ...COLOUR_CATEGORIES.filter((c) => !CATEGORIES.some((k) => k.id === c.id))],
     assets: [...ASSETS, ...COLOUR_ASSETS, ...customAssets()].map(({ file: _file, ...a }) => ({ ...a, available: lib.body(a.id) !== undefined })),

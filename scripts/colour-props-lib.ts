@@ -4,7 +4,7 @@
 // the repo:
 //   delve-props-design-system/assets/colour/<category>/<id>.svg   the art, as drawn
 //   delve-props-design-system/assets/colour/manifest.json         every imported entry, with its batch
-//   packages/core/src/assets/catalog-colour.json                  what Delve knows about each (core catalog.ts)
+//   packages/core/src/assets/catalog-colour.json                  what Quillwarren knows about each (core catalog.ts)
 // Seamless textures (`"tile": true`) go in as colour terrain, for the Terrain
 // tool and add_terrain, not as props. Only manifest entries count: a stray SVG
 // in a batch is ignored. Any batch-00 … batch-99 folder is looked at.
@@ -46,7 +46,7 @@ interface Entry {
   layer: 'floor' | 'props';
   group?: string;
   hidden?: true;
-  /** A seamless texture: copies placed edge to edge form one surface. Delve makes it a colour terrain texture. */
+  /** A seamless texture: copies placed edge to edge form one surface. Quillwarren makes it a colour terrain texture. */
   tile?: true;
 }
 
@@ -70,9 +70,9 @@ export interface ImportResult {
   problems: string[];
 }
 
-/** The palette from Prompt 0 of the pack: every hex between "THE DELVE PALETTE" and "FILES:". */
+/** The palette from Prompt 0 of the pack: every hex between "THE QUILLWARREN PALETTE" and "FILES:". */
 export function packPalette(text: string): Set<string> {
-  const a = text.indexOf('THE DELVE PALETTE');
+  const a = text.indexOf('THE QUILLWARREN PALETTE');
   const b = text.indexOf('FILES:', a);
   if (a < 0 || b < 0) throw new Error(`no palette found in ${PACK}`);
   return new Set((text.slice(a, b).match(/#[0-9A-Fa-f]{6}\b/g) ?? []).map((h) => h.toUpperCase()));
@@ -135,7 +135,7 @@ function checkSvg(svg: string, e: Entry, colours: Set<string>): string[] {
   const vb = root === null ? null : /viewBox\s*=\s*["']\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*["']/.exec(root);
   if (!vb) out.push('viewBox must be "0 0 W H"');
   else if (Number(vb[1]) !== e.w * 100 || Number(vb[2]) !== e.h * 100) out.push(`viewBox ${vb[1]}×${vb[2]}, manifest says ${e.w}×${e.h} squares`);
-  // and what Delve's renderer makes of it: nothing may be dropped or snapped
+  // and what Quillwarren's renderer makes of it: nothing may be dropped or snapped
   for (const p of parseAssetSvg(svg, { palette: 'colour', hidden: e.hidden === true }).problems) out.push(`whitelist: ${p}`);
   return [...new Set(out)];
 }

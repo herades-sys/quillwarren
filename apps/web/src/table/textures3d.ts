@@ -1,4 +1,4 @@
-// Pictures for the 3D table view as three.js textures: the floor (a Delve page's
+// Pictures for the 3D table view as three.js textures: the floor (a Quillwarren page's
 // background.png, or an uploaded picture) and the minis' token images. As on the
 // 2D board, SVGs are rasterised big enough to stay sharp and pictures larger than
 // the GPU takes are shrunk first. Same-origin, so the member's cookie goes along.

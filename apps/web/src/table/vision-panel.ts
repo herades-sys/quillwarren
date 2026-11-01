@@ -21,8 +21,8 @@ export function visionControls(ctx: TableCtx, p: Page): HTMLElement | null {
     class: 'btn small',
     'aria-pressed': String(on),
     title: on
-      ? 'Players see what their characters see: walls and shut doors block, lights and darkvision show. Click to go back to the Delve map’s own room fog.'
-      : 'Players see the Delve map’s revealed rooms. Click for line of sight: what their characters see is revealed and stays explored.',
+      ? 'Players see what their characters see: walls and shut doors block, lights and darkvision show. Click to go back to the Quillwarren map’s own room fog.'
+      : 'Players see the Quillwarren map’s revealed rooms. Click for line of sight: what their characters see is revealed and stays explored.',
   });
   const box = h('div', { class: 'vision-tools', style: 'display: grid; gap: 6px' }, h('div', { class: 'row' }, toggle));
   if (!on) return box;

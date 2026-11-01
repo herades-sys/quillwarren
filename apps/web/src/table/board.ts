@@ -49,9 +49,9 @@ export interface BoardHost {
   open(id: string): void;
   /** The pointer was held still: ping here (world cells). */
   ping(x: number, y: number): void;
-  /** Which picture of a Delve page to draw: the GM's (everything, fog dimmed) or the players'. */
+  /** Which picture of a Quillwarren page to draw: the GM's (everything, fog dimmed) or the players'. */
   backgroundView?(): 'gm' | 'players';
-  /** The game, so Delve page pictures come through it (membership checked). */
+  /** The game, so Quillwarren page pictures come through it (membership checked). */
   gameId?(): string;
   /** Dynamic vision: what the party sees (the last vision message), or null. */
   vision?(): BoardVision | null;
@@ -359,7 +359,7 @@ export async function createBoard(stage: HTMLElement, host: BoardHost): Promise<
       const sy = Math.round(toScreen(cam, 0, y)[1]) + 0.5;
       gridG.moveTo(Math.max(px0, 0), sy).lineTo(Math.min(px1, vw()), sy);
     }
-    // pictures (Delve maps are parchment) get dark ink; a blank page follows the theme
+    // pictures (Quillwarren maps are parchment) get dark ink; a blank page follows the theme
     const blank = page.background.kind === 'none';
     gridG.stroke({ width: 1, color: blank ? colors.grid : '#1B1F24', alpha: (step === 1 ? 0.18 : 0.28) * (blank ? 1.2 : 1) });
   }

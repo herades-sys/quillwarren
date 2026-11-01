@@ -78,8 +78,8 @@ export function matchTotp(key: Uint8Array, code: string, nowMs: number, lastStep
 /** A new 160-bit secret, as base32. */
 export const newTotpSecret = (): string => base32Encode(randomBytes(20));
 
-/** What the authenticator app scans: otpauth://totp/Delve:<name>?secret=…&issuer=Delve */
-export function otpauthUri(accountName: string, secret: string, issuer = 'Delve'): string {
+/** What the authenticator app scans: otpauth://totp/Quillwarren:<name>?secret=…&issuer=Quillwarren */
+export function otpauthUri(accountName: string, secret: string, issuer = 'Quillwarren'): string {
   const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(accountName)}`;
   const q = new URLSearchParams({ secret, issuer, algorithm: 'SHA1', digits: '6', period: String(TOTP_STEP_S) });
   return `otpauth://totp/${label}?${q.toString()}`;

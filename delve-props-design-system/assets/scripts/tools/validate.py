@@ -1,4 +1,4 @@
-"""Delve prop validator — checks every rule the map renderer depends on.
+"""Quillwarren prop validator — checks every rule the map renderer depends on.
 
 usage: python3 validate.py <library-root>     (the folder holding manifest.json)
 """

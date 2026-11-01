@@ -1,4 +1,4 @@
-// Delve props — furniture batch generator (JS port of tools/ink.py). Run with run-style helpers: saveFile, log.
+// Quillwarren props — furniture batch generator (JS port of tools/ink.py). Run with run-style helpers: saveFile, log.
 const INK='#000000',PAPER='#FFFFFF',SHADE='#999999',NONE='none',OUT=4,DET=2,TEX=1.5;
 const fmt=v=>{let s=v.toFixed(1);if(s.endsWith('.0'))s=s.slice(0,-2);if(s==='-0')s='0';return s;};
 function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}

@@ -1,6 +1,6 @@
 // The agent loop for the desktop app's cloud models (Claude through the
 // Anthropic API, OpenAI): ask the model, run the tools it calls through
-// Delve's MCP server in this process, send the results back, until it answers
+// Quillwarren's MCP server in this process, send the results back, until it answers
 // without a tool call or a limit is reached. These are strong models, so there
 // is none of the small-model help of local-agent.ts runAgent (repaired JSON,
 // tool calls read from text, held-back batches, final checks): every call of a
@@ -22,7 +22,7 @@ import { trimText } from './local-agent.ts';
 
 const TOOL_PREFIX = 'mcp__delve__';
 const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
-/** Claude Code's name for a tool: Delve's with the MCP prefix, the task list's as they are (StreamTranslator tells them apart by that). */
+/** Claude Code's name for a tool: Quillwarren's with the MCP prefix, the task list's as they are (StreamTranslator tells them apart by that). */
 const streamName = (name: string) => (TASK_TOOLS.has(name) ? name : `${TOOL_PREFIX}${name}`);
 
 /** Writes a run as Claude Code's stream-json and turns it into chat events. */
@@ -96,7 +96,7 @@ export interface ApiRun {
   ms: number;
 }
 
-/** How a tool is run: Delve's MCP tools in this process. */
+/** How a tool is run: Quillwarren's MCP tools in this process. */
 export type ToolRunner = (name: string, args: Json) => Promise<{ text: string; isError: boolean; pictures: Picture[] }>;
 
 export interface ApiLoopOptions {

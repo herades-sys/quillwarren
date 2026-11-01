@@ -1,12 +1,12 @@
 """
-Fine-tune Qwen3 on the Delve training data with Unsloth (LoRA on a 4-bit base: QLoRA).
+Fine-tune Qwen3 on the Quillwarren training data with Unsloth (LoRA on a 4-bit base: QLoRA).
 
 Written for you and NOT run by the generator: installing Python packages and
 downloading the base model are your steps (see README.md, "Your steps").
 
     python train_unsloth.py --dry-run                 # render + count tokens only, no GPU training
     python train_unsloth.py --model unsloth/Qwen3-4B  # train (defaults fit an 8 GB card, see README)
-    python train_unsloth.py --export-gguf q4_k_m --adapter delve-qwen3-lora   # afterwards: GGUF for Ollama
+    python train_unsloth.py --export-gguf q4_k_m --adapter quillwarren-qwen3-lora   # afterwards: GGUF for Ollama
 
 Everything that matters for memory and quality is a flag; the defaults are
 the plan for the RTX 5060 (8 GB): Qwen3-4B, 4-bit, LoRA rank 16, sequences up
@@ -21,12 +21,12 @@ import statistics
 import sys
 import time
 
-p = argparse.ArgumentParser(description="Fine-tune Qwen3 on the Delve data (Unsloth).")
+p = argparse.ArgumentParser(description="Fine-tune Qwen3 on the Quillwarren data (Unsloth).")
 p.add_argument("--model", default="unsloth/Qwen3-4B",
                help="base model: unsloth/Qwen3-4B (fits 8 GB), unsloth/Qwen3-8B (rent a 24 GB GPU), "
                     "or a local folder. The bench baseline was qwen3:8b; train the size you will run.")
 p.add_argument("--data", default=".", help="folder with train.jsonl and valid.jsonl")
-p.add_argument("--out", default="delve-qwen3-lora", help="where the LoRA adapter goes")
+p.add_argument("--out", default="quillwarren-qwen3-lora", help="where the LoRA adapter goes")
 p.add_argument("--max-seq-len", type=int, default=8192,
                help="longest example kept, in real tokens (longer ones are dropped and counted). "
                     "8192 keeps nearly all; on an 8 GB card this is the setting most likely to run out of memory.")

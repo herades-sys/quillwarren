@@ -45,7 +45,7 @@ export interface RegionViewer {
 /**
  * What a viewer may see of a page: 'all', or the polygons (cells) they have seen.
  * - The GM's own view: everything.
- * - Players (and the GM looking as them) on a Delve page with fog of war on:
+ * - Players (and the GM looking as them) on a Quillwarren page with fog of war on:
  *   the map's revealed rooms and corridors, plus `show` minus `hide` areas,
  *   the same area the players' 2D picture is drawn from.
  * - Otherwise everything: without fog the players' picture shows the whole map.
@@ -90,7 +90,7 @@ const polyBounds = (polys: readonly Polygon[]): SceneBox | null => {
 };
 
 /**
- * A Delve map's walls, doors and stairs for one view, cut to `region`. Built the
+ * A Quillwarren map's walls, doors and stairs for one view, cut to `region`. Built the
  * way the 2D picture is (core buildScene): the same rough floor, door gaps, and
  * for players secret doors shut (wall across, no door), so the 3D walls stand
  * exactly on the drawn ones.
@@ -122,13 +122,13 @@ export function delveGeometry(map: DelveMap, view: 'gm' | 'players', region: Pol
   return { walls, doors: sceneDoors, stairs };
 }
 
-/** Wall segments (a non-Delve page's own `walls`) cut to the region. */
+/** Wall segments (a non-Quillwarren page's own `walls`) cut to the region. */
 function clipWalls(walls: readonly [[number, number], [number, number]][], region: Polygon[] | 'all'): [ScenePoint, ScenePoint][] {
   const lines = walls.map(([a, b]): Polyline => ({ points: [a, b], closed: false }));
   return (region === 'all' ? lines : clipPolylines(lines, region)).flatMap(segmentsOf);
 }
 
-/** The whole scene of one page for one view. `map` is the Delve map behind a Delve page (null otherwise). */
+/** The whole scene of one page for one view. `map` is the Quillwarren map behind a Quillwarren page (null otherwise). */
 export function scene3d(gameId: string, page: Page, map: DelveMap | null, view: 'gm' | 'players', region: Polygon[] | 'all'): Scene3D {
   const [x0, y0] = page.origin;
   const bounds: SceneBox = { x0, y0, x1: x0 + page.width, y1: y0 + page.height };
@@ -175,7 +175,7 @@ export function registerTable3d(t: FastifyInstance, deps: Table3dDeps): void {
   t.get('/play/:id/3d', async (req, reply) => {
     const { id } = req.params as { id: string };
     const state = GAME_ID.test(id) ? store.get(id) : undefined;
-    if (!state) return html(reply, 404, messagePage('No such game', ['This game does not exist (any more).'], [{ href: '/play', text: 'Delve Table' }]));
+    if (!state) return html(reply, 404, messagePage('No such game', ['This game does not exist (any more).'], [{ href: '/play', text: 'Quillwarren Table' }]));
     const me = memberOf(access, req, state);
     const account = deps.accountOf(req);
     if (!me) {
@@ -210,7 +210,7 @@ export function registerTable3d(t: FastifyInstance, deps: Table3dDeps): void {
         // with the doors as the table has them (the GM opens and shuts them during play), like the 2D picture
         map = withTableDoors(deps.maps.get(page.background.mapId).map, page, view);
       } catch (e) {
-        if (e instanceof NotFoundError) return reply.code(404).send({ error: 'the Delve map behind this page is gone' });
+        if (e instanceof NotFoundError) return reply.code(404).send({ error: 'the Quillwarren map behind this page is gone' });
         throw e;
       }
     }

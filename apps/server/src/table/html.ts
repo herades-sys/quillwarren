@@ -45,7 +45,7 @@ const CSS = `<style>
 </style>`;
 
 export function shell(title: string, body: string): string {
-  return htmlDocument({ title, body: `${topBar({ title: 'Delve Table', end: themeSwitch() })}${body}`, extra: CSS });
+  return htmlDocument({ title, body: `${topBar({ title: 'Quillwarren Table', end: themeSwitch() })}${body}`, extra: CSS });
 }
 
 /** An inline "Log out" button (a POST, so another site can't log anyone out). */
@@ -62,7 +62,7 @@ const discordButton = (href: string): string => `<a class="button discord" href=
 export function messagePage(title: string, lines: string[], links: { href: string; text: string }[] = []): string {
   const ps = lines.map((l) => `<p>${esc(l)}</p>`).join('\n');
   const as = links.map((l) => `<a class="button" href="${esc(l.href)}">${esc(l.text)}</a>`).join(' ');
-  return shell(`${title} · Delve Table`, `<main class="page narrow"><h1>${esc(title)}</h1><div class="card">${ps}${as ? `<p class="links">${as}</p>` : ''}</div></main>`);
+  return shell(`${title} · Quillwarren Table`, `<main class="page narrow"><h1>${esc(title)}</h1><div class="card">${ps}${as ? `<p class="links">${as}</p>` : ''}</div></main>`);
 }
 
 export function lobbyPage(games: GameSummary[], account?: { name: string }): string {
@@ -83,9 +83,9 @@ export function lobbyPage(games: GameSummary[], account?: { name: string }): str
 <tbody>${rows}</tbody></table></div>`
     : `<p class="note">No games yet.</p>`;
   return shell(
-    'Delve Table',
+    'Quillwarren Table',
     `<main class="page">
-  <div class="top"><h1>Delve Table</h1><span class="spacer"></span><a class="button" href="/feedback?from=%2Fplay">Request a feature</a><a class="button" href="/">Delve maps</a></div>
+  <div class="top"><h1>Quillwarren Table</h1><span class="spacer"></span><a class="button" href="/feedback?from=%2Fplay">Request a feature</a><a class="button" href="/">Quillwarren maps</a></div>
   ${account ? accountLine(account.name, '/play') : ''}
   <form method="post" action="/play/new" class="row card">
     <label>Name <input name="name" required maxlength="80" placeholder="e.g. Curse of the Crypt"></label>
@@ -124,8 +124,8 @@ export function notGmPage(yours: { id: string; name: string }[], canLogIn: boole
       ? `<p class="links">${discordButton(discord.loginUrl)}</p><p class="note">Log in to see your games on any device.</p>`
       : '';
   return shell(
-    'Delve Table',
-    `<main class="page narrow"><h1>Delve Table</h1><div class="card">${who}${list}<p>To join a game, ask your GM for an invite link.</p>${login}</div></main>`,
+    'Quillwarren Table',
+    `<main class="page narrow"><h1>Quillwarren Table</h1><div class="card">${who}${list}<p>To join a game, ask your GM for an invite link.</p>${login}</div></main>`,
   );
 }
 
@@ -174,5 +174,5 @@ export function joinPage(o: JoinOptions): string {
   ${nameForm(o.name ?? '', 'card-part')}
 </div>`;
   }
-  return shell(`Join ${o.gameName} · Delve Table`, `<main class="page narrow"><h1>Join the table</h1>\n${body}</main>`);
+  return shell(`Join ${o.gameName} · Quillwarren Table`, `<main class="page narrow"><h1>Join the table</h1>\n${body}</main>`);
 }

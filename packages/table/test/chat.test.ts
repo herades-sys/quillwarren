@@ -153,7 +153,7 @@ describe('parseChat', () => {
 
   it('system messages without `to` reach everyone', () => {
     const s = game();
-    const m: ChatMessage = { id: 'm9', seq: 9, at: 0, from: 'system', speaker: 'Delve', kind: 'system', text: 'Ann joined' };
+    const m: ChatMessage = { id: 'm9', seq: 9, at: 0, from: 'system', speaker: 'Quillwarren', kind: 'system', text: 'Ann joined' };
     expect(who(s, m)).toEqual(s.members.map((x) => x.id));
   });
 });

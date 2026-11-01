@@ -49,7 +49,7 @@ export interface HookContext {
   messages: readonly AgentMessage[];
   /** This turn's tool calls so far, as the harness records them: ok = !isError, result as the model saw it, notRun for held-back calls. */
   records: readonly HookCall[];
-  /** Run a Delve tool on this map, as the harness would (e.g. its own check_map pass). */
+  /** Run a Quillwarren tool on this map, as the harness would (e.g. its own check_map pass). */
   exec(name: string, args: Json): Promise<{ text: string; isError: boolean }>;
 }
 

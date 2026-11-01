@@ -373,7 +373,7 @@ describe('dynamic vision: explored fog and the picture', () => {
   });
 });
 
-describe('page data from the Delve map', () => {
+describe('page data from the Quillwarren map', () => {
   const fixture = (): DelveMap => JSON.parse(readFileSync(new URL('../../../fixtures/test-map-4p.delve.json', import.meta.url), 'utf8')) as DelveMap;
   const pageOf = (map: DelveMap, over: Partial<Page> = {}): Page => ({
     id: 'pg',
@@ -503,7 +503,7 @@ describe('page data from the Delve map', () => {
 });
 
 describe('dynamic vision in the 3D view and the players’ page data', () => {
-  it('cuts the players’ 3D scene to the explored fog, and never names the Delve map', async () => {
+  it('cuts the players’ 3D scene to the explored fog, and never names the Quillwarren map', async () => {
     const { gameId, pageId, cookie, hello } = await setup();
     // the players' page has no map id, so the map's own API can't be asked for the whole map
     expect(hello.view.pages[0].background).toEqual({ kind: 'delve', mapId: '' });

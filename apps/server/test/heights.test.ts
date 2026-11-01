@@ -1,5 +1,5 @@
 // Height areas on the server: MCP add_height (and describe_map, update, delete),
-// the Delve Table page drawn from a map with heights (its GM-only cliffs, and a
+// the Quillwarren Table page drawn from a map with heights (its GM-only cliffs, and a
 // player refused across one with "Respect heights" on), and the 3D scene's heights.
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -76,7 +76,7 @@ describe('MCP add_height', () => {
   });
 });
 
-describe('Delve Table pages from a map with heights', () => {
+describe('Quillwarren Table pages from a map with heights', () => {
   it('carry the blocking cliff edges (GM only), and with Respect heights the server refuses a player across one', () => {
     const page = pageFromMap(hall());
     expect(page.cliffs).toEqual([

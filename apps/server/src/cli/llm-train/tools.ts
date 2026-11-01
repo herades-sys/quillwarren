@@ -135,7 +135,7 @@ export const call = {
 /**
  * Arguments the harness adds to every call and the model never writes: the
  * map id (local-setup.ts `fixed`), and here also add_props_along's seed, so
- * the generator's runs repeat (the model's calls leave it out and Delve picks
+ * the generator's runs repeat (the model's calls leave it out and Quillwarren picks
  * one at random).
  */
 export function hiddenArgs(name: string, mapId: string, seed: number): Json {
@@ -174,7 +174,7 @@ export const setup = {
   rawOps: (ops: unknown[]): Call => ({ name: 'apply_ops', args: { ops } }),
 };
 
-// ---------- recognising Delve's refusals (the recovery family) ----------
+// ---------- recognising Quillwarren's refusals (the recovery family) ----------
 
 export const refusal = {
   /** add_door: the wall has no free stretch (corridor mouths, other doors). */
@@ -202,7 +202,7 @@ export const refusal = {
 /** A result that warns about something the model should fix before answering. */
 export const warns = (text: string): boolean => /Check: WARNING|Warning:/.test(text);
 
-// ---------- recognising what Delve says (the families read these, nothing else of the wording) ----------
+// ---------- recognising what Quillwarren says (the families read these, nothing else of the wording) ----------
 
 export const said = {
   /** check_map found nothing. */

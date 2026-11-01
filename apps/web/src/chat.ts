@@ -428,7 +428,7 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
       else if (!body.ok) setStatus(`${TheAi} isn’t reachable: ${body.error ?? 'unknown problem'}`, 'bad');
       else if (!busy) setStatus('');
     } catch {
-      setStatus('Couldn’t reach Delve to check the chat.', 'bad');
+      setStatus('Couldn’t reach Quillwarren to check the chat.', 'bad');
     }
   }
 
@@ -826,9 +826,9 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
               const res = await fetch(cd.connect, { method: 'POST' });
               const body = (await res.json().catch(() => ({}))) as { error?: string };
               if (!res.ok) say(body.error ?? `the server answered ${res.status}`, 'bad');
-              else say('Delve asks in its own window: answer there.');
+              else say('Quillwarren asks in its own window: answer there.');
             } catch (e) {
-              say(`Couldn’t ask Delve: ${(e as Error).message}`, 'bad');
+              say(`Couldn’t ask Quillwarren: ${(e as Error).message}`, 'bad');
             } finally {
               connectBtn!.disabled = false;
             }
@@ -840,7 +840,7 @@ export function initChat(host: ChatHost, opts: { model: string; backend?: string
           'div',
           { class: 'ed-cs-local', 'data-claude-desktop': cd.connected ? 'connected' : 'off' },
           h('p', { class: 'ed-cs-title' }, 'Or chat in Claude Desktop'),
-          h('p', { class: 'field-hint' }, cd.connected ? 'Connected. Chat with Claude in Claude Desktop on your own Claude plan, and watch it change your maps here. Help → Disconnect Claude Desktop turns it off.' : 'Chat with Claude in Claude Desktop on your own Claude plan, and watch it change your maps here. Delve adds an extension to Claude Desktop.'),
+          h('p', { class: 'field-hint' }, cd.connected ? 'Connected. Chat with Claude in Claude Desktop on your own Claude plan, and watch it change your maps here. Help → Disconnect Claude Desktop turns it off.' : 'Chat with Claude in Claude Desktop on your own Claude plan, and watch it change your maps here. Quillwarren adds an extension to Claude Desktop.'),
           h('div', { class: 'ed-cs-actions' }, connectBtn!),
         )
       : null;

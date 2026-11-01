@@ -254,7 +254,7 @@ export const HEIGHT_PROFILES = ['plateau', 'hill'] as const;
  * floor itself: it changes the height where floor (rooms, corridors) or terrain
  * already is. Where areas overlap, the last one wins, so a hill can carry a
  * higher crest. `profile` makes it a rounded hill or a flat plateau. `hidden` keeps it from the players (a drop they haven't found):
- * their view shows flat floor there and Delve Table doesn't enforce it.
+ * their view shows flat floor there and Quillwarren Table doesn't enforce it.
  */
 export const HeightArea = z.strictObject({
   type: z.literal('height'),

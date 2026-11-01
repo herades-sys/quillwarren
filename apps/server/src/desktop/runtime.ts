@@ -1,4 +1,4 @@
-// The built-in model runtime: Delve starts llama.cpp's llama-server (MIT) with
+// The built-in model runtime: Quillwarren starts llama.cpp's llama-server (MIT) with
 // a GGUF model and talks to its OpenAI-compatible API (/v1/chat/completions),
 // so the desktop app's chat needs no Ollama. This is the code only: the
 // binary isn't bundled yet. When it is, apps/desktop puts it at
@@ -12,7 +12,7 @@
 // GPU offload is "all layers" with a CPU fallback: when the GPU start fails
 // (old driver, too little video memory) it starts again with no layers on the
 // GPU. A pid file lets the next launch end a llama-server the last one left
-// behind (when Delve was killed).
+// behind (when Quillwarren was killed).
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -143,7 +143,7 @@ export class LlamaRuntime {
 
   private log(msg: string): void {
     this.o.log?.(msg);
-    this.writeLog(`[delve] ${msg}\n`);
+    this.writeLog(`[quillwarren] ${msg}\n`);
   }
 
   private writeLog(text: string): void {
@@ -206,7 +206,7 @@ export class LlamaRuntime {
    * returns the running one when it already runs this model the same way.
    */
   async start(req: StartRequest): Promise<{ baseUrl: string; apiKey: string }> {
-    if (!this.o.binary) throw new Error('this build of Delve has no built-in model runtime (llama-server) yet');
+    if (!this.o.binary) throw new Error('this build of Quillwarren has no built-in model runtime (llama-server) yet');
     const same = this.current && this.current.model === req.model && this.current.gpu === req.gpu && this.current.ctxSize === req.ctxSize;
     if (same && this.state === 'ready') return this.endpoint()!;
     if (same && this.starting) return this.starting;
@@ -254,8 +254,8 @@ export class LlamaRuntime {
     this.state = 'starting';
     this.current = { ...req, port, apiKey, gpuLayers };
     this.stopping = false;
-    this.writeLog(`\n[delve] ${new Date().toISOString()} starting llama-server on port ${port}: ${req.alias}, ${gpuLayers ? 'GPU' : 'CPU'}, context ${req.ctxSize}\n`);
-    // the child gets no Delve secrets: only what it needs from the environment
+    this.writeLog(`\n[quillwarren] ${new Date().toISOString()} starting llama-server on port ${port}: ${req.alias}, ${gpuLayers ? 'GPU' : 'CPU'}, context ${req.ctxSize}\n`);
+    // the child gets no Quillwarren secrets: only what it needs from the environment
     const env = { ...process.env };
     for (const k of Object.keys(env)) if (k.startsWith('DELVE_')) delete env[k];
     const child = spawn(file, fullArgs, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env });
@@ -385,7 +385,7 @@ export class LlamaRuntime {
     return {
       status: () => {
         const s = settings.get();
-        if (!this.o.binary) return { available: false, note: 'this build of Delve has no built-in model runtime yet: use a model server (Ollama, llama-server) in the chat settings' };
+        if (!this.o.binary) return { available: false, note: 'this build of Quillwarren has no built-in model runtime yet: use a model server (Ollama, llama-server) in the chat settings' };
         if (!s.model) return { available: false, note: 'choose a model on the model page first' };
         return { available: this.state !== 'crashed', model: s.model, ...(this.lastError ? { note: this.lastError } : {}) };
       },

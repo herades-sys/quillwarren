@@ -143,7 +143,7 @@ export function parseChat(state: GameState, memberId: string, text: unknown, rng
       return say('chat', body, speaker);
     }
     case 'help':
-      return { kind: 'system', from: 'system', speaker: 'Delve', text: HELP, to: [me.id] };
+      return { kind: 'system', from: 'system', speaker: 'Quillwarren', text: HELP, to: [me.id] };
     default:
       throw new TableError(`Unknown command /${cmd.slice(0, 20)} (try /help)`);
   }

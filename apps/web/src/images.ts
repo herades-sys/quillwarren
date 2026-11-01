@@ -132,7 +132,7 @@ export function initImages(host: ImageHost): ImageTool {
   }
 
   async function forget(info: ImageInfo): Promise<void> {
-    if (!confirm(`Remove the picture "${info.name}" from Delve? Maps that use it must drop it first.`)) return;
+    if (!confirm(`Remove the picture "${info.name}" from Quillwarren? Maps that use it must drop it first.`)) return;
     const res = await fetch(`/api/v1/images/${encodeURIComponent(info.src)}`, { method: 'DELETE' });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -210,7 +210,7 @@ export function initImages(host: ImageHost): ImageTool {
         iconBtn('rotate', 'Turn right · E', () => ((rotation = degrees(rotation + 15)), host.refresh()), { size: 16 }),
       ),
       grid,
-      ...(pick ? [btn(`Remove “${pick.name}” from Delve`, { kind: 'danger', size: 'sm', icon: 'trash', title: 'Delete the uploaded file (only when no map uses it)', onclick: () => void forget(pick), attrs: { style: 'align-self:flex-start' } })] : []),
+      ...(pick ? [btn(`Remove “${pick.name}” from Quillwarren`, { kind: 'danger', size: 'sm', icon: 'trash', title: 'Delete the uploaded file (only when no map uses it)', onclick: () => void forget(pick), attrs: { style: 'align-self:flex-start' } })] : []),
     );
     // the panel takes dropped pictures too
     box.addEventListener('dragover', (e) => {

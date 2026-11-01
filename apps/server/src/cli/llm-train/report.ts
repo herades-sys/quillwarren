@@ -44,7 +44,7 @@ export interface StatsInput {
   seconds: number;
   setup: { text: string; setup: number };
   hooks: string[];
-  /** The Delve code the data came from ("1cb651e + uncommitted changes"), or unknown. */
+  /** The Quillwarren code the data came from ("1cb651e + uncommitted changes"), or unknown. */
   source: string;
 }
 
@@ -54,13 +54,13 @@ export function renderStats(s: StatsInput): string {
   const L: string[] = [];
   const setupTok = Math.round(s.setup.setup / CHARS_PER_TOKEN.setup);
   const skippedTotal = [...result.skipped.values()].reduce((a, m) => a + [...m.values()].reduce((x, y) => x + y, 0), 0);
-  L.push('# Delve training data: statistics', '');
-  L.push(`Made by \`npm run llm-train-data -- --count ${s.count} --seed ${s.seed}\` in ${Math.round(s.seconds)} s. Every conversation was assembled by the generator from Delve's lean setup and real tool results, then replayed from scratch and checked (see README.md).`, '');
+  L.push('# Quillwarren training data: statistics', '');
+  L.push(`Made by \`npm run llm-train-data -- --count ${s.count} --seed ${s.seed}\` in ${Math.round(s.seconds)} s. Every conversation was assembled by the generator from Quillwarren's lean setup and real tool results, then replayed from scratch and checked (see README.md).`, '');
   L.push(`- **Kept:** ${all.length} conversations: ${train.length} in train.jsonl, ${valid.length} in valid.jsonl (${pct(valid.length, all.length)}).`);
   L.push(`- **Dropped after generation:** ${result.dropped.length} drafts (${pct(result.dropped.length, all.length + result.dropped.length)} of all drafts) failed validation; each slot then tried a new starting map.`);
   L.push(`- **Skipped before a conversation existed:** ${skippedTotal} draws where the starting map didn't suit the family (no room big enough, nothing to fix…).`);
   L.push(`- **Slots left empty:** ${[...result.unfilled.values()].reduce((a, b) => a + b, 0)} of ${s.count}.`);
-  L.push(`- **Made from Delve:** ${s.source}. The system prompt, the tools and every tool result come from that code: after the tools or lean-prompt.md change, generate again.`);
+  L.push(`- **Made from Quillwarren:** ${s.source}. The system prompt, the tools and every tool result come from that code: after the tools or lean-prompt.md change, generate again.`);
   L.push(`- **Harness hooks wired in:** ${s.hooks.length ? s.hooks.join(', ') : 'none (conversations exactly as runAgent() sends them at 1cb651e)'}.`);
   L.push('');
 
@@ -164,11 +164,11 @@ function renderOne(e: Example, n: number): string {
   L.push(`Starting map: ${e.start.kind}, seed ${e.start.seed} · about ${e.tokens} tokens · ${e.calls} tool call${e.calls === 1 ? '' : 's'}`, '');
   for (const m of e.messages.slice(1) as AgentMessage[]) {
     if (m.role === 'user') {
-      const cut = m.content.lastIndexOf('[End of Delve context]');
+      const cut = m.content.lastIndexOf('[End of Quillwarren context]');
       if (cut >= 0) {
-        const ctx = m.content.slice(0, cut + '[End of Delve context]'.length);
+        const ctx = m.content.slice(0, cut + '[End of Quillwarren context]'.length);
         L.push('<details><summary>Context block (as the harness adds it)</summary>', '', block(ctx), '', '</details>', '');
-        L.push(`**User:** ${m.content.slice(cut + '[End of Delve context]'.length).trim()}`, '');
+        L.push(`**User:** ${m.content.slice(cut + '[End of Quillwarren context]'.length).trim()}`, '');
       } else L.push(`**User:** ${m.content}`, '');
     } else if (m.role === 'assistant') {
       if (m.toolCalls?.length) L.push(`**Assistant (tool call${m.toolCalls.length > 1 ? 's' : ''}):**`, '', block(m.toolCalls.map((c) => `${c.name} ${JSON.stringify(c.args)}`).join('\n')), '');
@@ -191,7 +191,7 @@ export function renderSamples(examples: readonly Example[], count: number, tools
     const e = ex.find((x) => x.calls >= 2 || x.userTurns > 1) ?? ex[0];
     if (e) picked.push(e);
   }
-  const L = ['# Delve training data: samples', ''];
+  const L = ['# Quillwarren training data: samples', ''];
   L.push(`${picked.length} conversations from train/valid, written out to read. Every one starts with the same system prompt (${examples[0]?.messages[0]?.content.length ?? 0} characters, in system_prompt.txt) and the same ${tools.length} tool definitions (tools.json); they are left out here. The context block in each user message is folded away. In the JSONL files the tool calls carry ids (call_1, call_2…) and the arguments as JSON strings.`, '');
   picked.forEach((e, i) => L.push(renderOne(e, i + 1)));
   return L.join('\n');

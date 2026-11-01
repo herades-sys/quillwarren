@@ -3,8 +3,8 @@
 // them next to None and Local model when desktop/main.ts passes `api`; this
 // file has their settings (the key, kept by api-keys.ts; the model, from the
 // provider's models endpoint once the key is checked), the key check, and the
-// run: the normal chat system prompt and the full Delve tool set, run by
-// api-agent.ts, with Delve's MCP tools in this process (no HTTP, no token).
+// run: the normal chat system prompt and the full Quillwarren tool set, run by
+// api-agent.ts, with Quillwarren's MCP tools in this process (no HTTP, no token).
 // Requests go to https://api.anthropic.com or https://api.openai.com only.
 // The web server never loads this file.
 import { randomUUID } from 'node:crypto';
@@ -79,7 +79,7 @@ export interface ApiChatOptions {
   log?: (msg: string) => void;
 }
 
-/** Delve's MCP tools in this process, with pictures kept (these models can look at them). */
+/** Quillwarren's MCP tools in this process, with pictures kept (these models can look at them). */
 async function toolsInProcess(ctx: AppContext, base: string): Promise<{ tools: McpToolInfo[]; run: ToolRunner; close(): Promise<void> }> {
   const server = buildMcpServer(ctx.service, base, ctx.info.version, ctx.images, ctx.props);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();

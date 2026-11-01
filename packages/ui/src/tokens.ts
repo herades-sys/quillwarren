@@ -1,4 +1,4 @@
-// Delve's design tokens, exactly as in the design's delve-tokens.css (Nocturne's
+// Quillwarren's design tokens, exactly as in the design's delve-tokens.css (Nocturne's
 // variable names, retuned for ink, stone and parchment). Two changes: the fonts
 // are our own files under /fonts instead of Google Fonts, and a page without
 // data-theme follows the system's light or dark setting.

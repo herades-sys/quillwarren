@@ -1,7 +1,7 @@
 // GM notes on rooms, corridors and terrain: the prep a GM writes into the map
 // (a description, the monsters, the loot). They travel with the map but are only
 // for the GM and Claude: never drawn, so never in a players' picture, scene or
-// export. describeMap lists them; Delve Table shows them to the GM only (a click
+// export. describeMap lists them; Quillwarren Table shows them to the GM only (a click
 // on a room's floor, see docs/TABLE.md "GM notes").
 // Every object may carry `notes` (schema `common`); these helpers are about the
 // areas a GM clicks on the table.

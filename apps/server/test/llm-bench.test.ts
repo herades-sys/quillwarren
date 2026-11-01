@@ -1,6 +1,6 @@
 // The local-model benchmark's checks (cli/llm-bench-lib.ts): for each task a
 // map built the right way passes, and typical mistakes give partial or fail.
-// The maps come from Delve's own templates and ops, no model involved.
+// The maps come from Quillwarren's own templates and ops, no model involved.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyOps, connectOps, type DelveMap, type MapObject, type Op } from '@delve/core';
 import { buildApp } from '../src/app.ts';

@@ -1,5 +1,5 @@
 // GM notes (docs/TABLE.md, "GM notes"): room, corridor and terrain notes travel
-// with the Delve map but never reach a player (pictures, 3D scenes, the live
+// with the Quillwarren map but never reach a player (pictures, 3D scenes, the live
 // channel, the players' screen, exports), and the GM's session notebook is the
 // GM's alone (REST and GM-only live messages).
 import { mkdtempSync, rmSync } from 'node:fs';

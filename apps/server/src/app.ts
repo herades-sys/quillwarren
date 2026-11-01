@@ -45,13 +45,13 @@ export interface AppOptions {
   passwordHash?: string;
   /** DELVE_INSECURE_OPEN_EDIT=1: every browser counts as logged in. Development servers only. */
   openEdit?: boolean;
-  /** DELVE_DATA: where Delve Table keeps its games and uploads. Without it they live in memory (tests). */
+  /** DELVE_DATA: where Quillwarren Table keeps its games and uploads. Without it they live in memory (tests). */
   dataDir?: string;
   /** DELVE_CHAT_URL: the chat bridge that runs Claude Code. Without it, there's no chat panel. */
   chat?: ChatConfig;
   /** DELVE_DISCORD_CLIENT_ID/SECRET (+ DELVE_PUBLIC_URL, DELVE_GM_DISCORD_IDS, DELVE_DISCORD_API): players log in with Discord. */
   discord?: DiscordConfig;
-  /** DELVE_PUBLIC_URL: the address the Cloudflare tunnel publishes, e.g. https://delve.example.com. */
+  /** DELVE_PUBLIC_URL: the address the Cloudflare tunnel publishes, e.g. https://quillwarren.example.com. */
   publicUrl?: string;
   /** DELVE_ALLOWED_HOSTS: host names the server answers to besides IP addresses, home-network names and the public one (hosts.ts). */
   allowedHosts?: string[];
@@ -59,7 +59,7 @@ export interface AppOptions {
   /** One local user: whoever gets past the desktop gate (`extend`) is logged in, with no login page. Its gate checks the Host itself, so the web server's host check is off. */
   singleUser?: boolean;
   /**
-   * false: one person's editor with no players (the desktop app). Delve Table
+   * false: one person's editor with no players (the desktop app). Quillwarren Table
    * (its routes, table.db, table-assets), the players' screen, Discord login and
    * the links to them are left out. Unset: all of them, as on the web server.
    */
@@ -128,7 +128,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
   // Uploaded map pictures: <DELVE_DATA>/images (a temp dir without one); PNG exports read them from here too.
   const images = new ImageLibrary(opts.dataDir ? join(opts.dataDir, 'images') : undefined);
   app.addHook('onClose', async () => images.close());
-  // This Delve's own props, shared by every GM: <DELVE_DATA>/props (a temp dir without one).
+  // This Quillwarren's own props, shared by every GM: <DELVE_DATA>/props (a temp dir without one).
   const props = new PropLibrary(opts.dataDir ? join(opts.dataDir, 'props') : undefined);
   app.addHook('onClose', async () => props.close());
   const auth: EditorAuth = { sessions: new Sessions(opts.token, Boolean(opts.openEdit || opts.singleUser)), passwordHash: opts.passwordHash };
@@ -164,7 +164,7 @@ export function buildApp(info: AppInfo, opts: AppOptions = {}): FastifyInstance 
 
   void app.register(websocket, { options: { maxPayload: WS_MAX_PAYLOAD } });
   const chatTokens = new ChatTokens();
-  // Delve Table, the players' screen and Discord: everywhere but the desktop app
+  // Quillwarren Table, the players' screen and Discord: everywhere but the desktop app
   const multiplayer = opts.multiplayer !== false;
   void app.register(async (scoped) => {
     registerApi(scoped, { service, token: opts.token, sessions: auth.sessions, screen: multiplayer });

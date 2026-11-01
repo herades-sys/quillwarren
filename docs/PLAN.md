@@ -1,4 +1,4 @@
-# Delve: plan and file formats
+# Quillwarren: plan and file formats
 
 This is draft 1 (2026-09-28). It mirrors https://claude.ai/artifact/X3Ep7LK6fqbYayHsRckUzd. Keep this file current as decisions change.
 
@@ -6,7 +6,7 @@ This is draft 1 (2026-09-28). It mirrors https://claude.ai/artifact/X3Ep7LK6fqbY
 
 A self-hosted dungeon map editor on a home server. Claude edits maps through an API ("add a 5×5 room west of the entrance", "move the vault one square east") while the user watches live in the browser. The user can edit the same map with the mouse, and every change shows up on every open screen at once.
 
-The key difference from Dungeon Scrawl: Delve stores rooms, corridors and doors as **named objects** and works out the floor and walls when it draws. Dungeon Scrawl only keeps the merged outline. Keeping the objects is what lets an API say "room 3" and mean it.
+The key difference from Dungeon Scrawl: Quillwarren stores rooms, corridors and doors as **named objects** and works out the floor and walls when it draws. Dungeon Scrawl only keeps the merged outline. Keeping the objects is what lets an API say "room 3" and mean it.
 
 ## Architecture
 
@@ -169,7 +169,7 @@ Sizes are rough (S, M, L) and show relative effort only.
    - **Node shapes:** Dungeon Scrawl crashes when a node lacks a field it expects (the first export missed `GRID.roughOptions`). A test now checks that every exported node type has exactly the fixture's fields.
    - **Still to do:** Universal VTT (Roll20 walls via a Pro mod), only if the user has Pro. Foundry scene JSON is dropped unless that changes.
 6b. **Chat in the editor (M), live 2026-09-29.**
-   - A Claude panel on the map page for logged-in editors. It runs Claude Code on the user's subscription through the chat bridge on the CT, with Delve's MCP tools only.
+   - A Claude panel on the map page for logged-in editors. It runs Claude Code on the user's subscription through the chat bridge on the CT, with Quillwarren's MCP tools only.
    - It streams replies with tool chips, has a model picker (Sonnet, Opus, Haiku), shows subscription usage, and keeps the conversation per map. Each message carries the map, the selection and the view.
    - See [API.md](API.md#chat-talking-to-claude-from-the-editor).
    - Props art comes from Claude Design using the prompts in [ASSETS.md](ASSETS.md).
@@ -179,7 +179,7 @@ Sizes are rough (S, M, L) and show relative effort only.
 ## Decisions
 
 - **Setup:** devbox. Claude Code runs inside the dev container, which also hosts the live app.
-- **Code:** GitHub `herades-sys/delve-app`, Apache-2.0. The dev container pushes with its own deploy key, which has access to this one repo only.
+- **Code:** GitHub `herades-sys/quillwarren`, Apache-2.0. The dev container pushes with its own deploy key, which has access to this one repo only.
 - **Virtual tabletop:** Roll20. See section 4.
 - **Geometry library:** `clipper2-ts` 2.0.1-18 (Boost licence), a TypeScript port of Clipper2 with union, difference, xor and offset. In the spike, the test dungeon's floor XORed against the Dungeon Scrawl original gave area 0 once DS's 0.01 px vertex insets were rounded off. Pinned exactly, because its npm `latest` tag carries a prerelease number. Rejected: `clipper2-js` (unmaintained since 2024), `js-angusj-clipper` (Clipper1 WASM, 2023), `polygon-clipping` (no offset).
 - **TypeScript 7** (the native compiler) works with our settings (`tsconfig.base.json`).
@@ -191,7 +191,7 @@ Sizes are rough (S, M, L) and show relative effort only.
 - **Label font:** IM FELL English (OFL) from `@expo-google-fonts/im-fell-english`, which ships TTF files. resvg loads only that file, so PNGs never depend on system fonts. The web editor will load the same file.
 - **Image bounds** cover `grid.bounds` and the floor, plus hatching reach and a 1-square margin, snapped to whole squares so a VTT grid lines up.
 - **Doors vs walls:** walls are the floor's edge. A door that lies on that edge (like d5, the entrance to outside) cuts a gap in the wall. A door across an opening (a corridor mouth, like d1–d4 and d6) doesn't change the walls. For line of sight, closed doors are portals.
-- **Still open:** LAN only (current) or public later (public needs a login first); whether the user has Roll20 Pro (for walls/doors via a mod); the final name ("Delve" is a working name).
+- **Still open:** LAN only (current) or public later (public needs a login first); whether the user has Roll20 Pro (for walls/doors via a mod).
 
 ## Notes
 

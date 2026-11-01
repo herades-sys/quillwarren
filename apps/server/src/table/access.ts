@@ -1,4 +1,4 @@
-// Who is asking, for a game: the GM (Delve's editor login, the API token, or a
+// Who is asking, for a game: the GM (Quillwarren's editor login, the API token, or a
 // Discord account listed in DELVE_GM_DISCORD_IDS), a player holding the signed
 // cookie delve_player_<gameId> = <memberId>.<hmac>, or a player whose Discord
 // account (cookie delve_account) is linked to a seat in the game.

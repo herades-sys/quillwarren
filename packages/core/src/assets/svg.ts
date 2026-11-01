@@ -1,7 +1,7 @@
 // Asset SVGs (props and terrain tiles from delve-props-design-system) end up
 // inline in map pictures, so they are rebuilt from a whitelist: plain shapes
 // only, safe attributes only, and only the three inks, which the renderer then
-// swaps per map style. Colour props may use the Delve palette's exact colours
+// swaps per map style. Colour props may use the Quillwarren palette's exact colours
 // instead (assets/colour.ts), and hidden ones a dash pattern for their GM
 // outline. Metadata, text, scripts, event handlers and links are dropped. Pure
 // string work: runs in the browser and on the server.
@@ -12,7 +12,7 @@ export const INKS = { ink: '#000000', paper: '#FFFFFF', shade: '#999999' } as co
 
 /** What the whitelist allows beyond the ink rules: the asset's catalog entry decides (assetInfo). */
 export interface ParseOptions {
-  /** 'colour': the Delve palette instead of the three inks. */
+  /** 'colour': the Quillwarren palette instead of the three inks. */
   palette?: 'colour';
   /** A hidden colour prop: stroke-dasharray is allowed (its GM outline). */
   hidden?: boolean;

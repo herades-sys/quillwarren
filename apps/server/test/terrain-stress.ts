@@ -2,7 +2,7 @@
 // process: a resvg panic aborts the whole process, so in the test runner itself
 // it would kill the run without a word). Renders terrain-heavy maps through the
 // same paths the server uses: every style in both views (players with fog),
-// cropped exports cut by cropScene, a framed Delve Table page, the parchment
+// cropped exports cut by cropScene, a framed Quillwarren Table page, the parchment
 // handout on every paper and way round (also cropped and fogged), and a big map.
 // Prints one line per picture before drawing it, so a crash names its case.
 import { buildScene, cropScene, handoutSvg, PRESETS, resolveStyle, sceneToSvg, type DelveMap, type MapObject, type Paper, type Terrain } from '@delve/core';
@@ -86,7 +86,7 @@ for (let k = 0; k < 40; k++) {
   const scene = buildScene(m, { view, assets: assets.body, frame: { x0, y0, x1: x0 + w, y1: y0 + h }, ...(view === 'players' && rand() < 0.5 ? { fog: 'hide' as const } : {}) }, resolveStyle(m));
   await png(`crop ${preset} ${view} ${x0},${y0},${x0 + w},${y0 + h}`, sceneToSvg(cropScene(scene, scene.bounds), { ppg: Math.min(70, Math.floor(700 / Math.max(w, h))) }));
 }
-// a Delve Table page: the whole map in a frame a little wider, not cut (as table/vision-render.ts draws it)
+// a Quillwarren Table page: the whole map in a frame a little wider, not cut (as table/vision-render.ts draws it)
 for (const view of ['gm', 'players'] as const) {
   const scene = buildScene(map, { view, assets: assets.body, frame: { x0: -2, y0: -2, x1: 46, y1: 30 }, reveal: [{ outer: [[10, 5], [36, 5], [36, 24], [10, 24]], holes: [] }] }, resolveStyle(map));
   await png(`table page ${view}`, sceneToSvg(scene, { ppg: 12 }));

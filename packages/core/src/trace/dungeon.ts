@@ -1,7 +1,7 @@
 // Tracing a dungeon or battle map picture: rooms drawn as light floor inside
 // dark wall lines, often on a printed grid, with hatching or a flat colour
 // outside, room numbers, doors and furniture on top. The floor becomes rooms
-// and corridors (Delve draws the walls itself from the floor's edges); the wall
+// and corridors (Quillwarren draws the walls itself from the floor's edges); the wall
 // lines, the hatching and everything outside are background.
 //
 // 1. Ink: pixels of the colours whose role is "wall". Thick ink (what survives an
@@ -414,7 +414,7 @@ export function traceDungeon(o: DungeonTraceOptions): DungeonTraceResult {
       if (!a && !b) continue;
       if (a && b) up[find(b)] = find(a);
       fills.push([d, a || b, a && b ? 0 : a ? -1 : 1]);
-      // the Delve door: on the half-square grid, as long as the gap
+      // the Quillwarren door: on the half-square grid, as long as the gap
       const [ox, oy] = o.origin;
       const len = ((d.along === 'x' ? d.x1 - d.x0 : d.y1 - d.y0) + 1) / s;
       const width = Math.max(0.5, Math.round((len + 0.12) * 2) / 2);

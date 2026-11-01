@@ -23,7 +23,7 @@ const build = async (entry, o) => {
   metas.push(r.metafile);
 };
 await build(join(root, 'apps/server/src/desktop/main.ts'), { platform: 'node', format: 'esm', external: ['@resvg/resvg-js', 'bufferutil', 'utf-8-validate'] });
-// the browser bundles the app ships: build.sh leaves out Delve Table's (table, table-dice, table3d: PixiJS,
+// the browser bundles the app ships: build.sh leaves out Quillwarren Table's (table, table-dice, table3d: PixiJS,
 // cannon-es) and the players' screen's (screen), so their packages aren't listed unless something shipped uses them too
 for (const e of ['viewer', 'stack', 'trace', 'trace-worker', 'handout']) await build(join(root, `apps/web/src/${e}.ts`), { platform: 'browser', format: 'esm' });
 await build(join(desktop, 'src/main.ts'), { platform: 'node', format: 'cjs', external: ['electron'], nodePaths: [join(desktop, 'node_modules')] });
@@ -63,15 +63,15 @@ for (const d of [...dirs].sort()) {
 }
 
 const lines = [
-  'Delve for Windows: third-party software',
+  'Quillwarren for Windows: third-party software',
   '========================================',
   '',
-  'Delve itself: Copyright 2026 herades-sys, licensed under the Apache License, Version 2.0; its text is at the end of this file.',
-  'Delve sends nothing about you anywhere: no telemetry, no crash reports, no update checks (until updates are switched on).',
+  'Quillwarren itself: Copyright 2026 herades-sys, licensed under the Apache License, Version 2.0; its text is at the end of this file.',
+  'Quillwarren sends nothing about you anywhere: no telemetry, no crash reports, no update checks (until updates are switched on).',
   '',
-  'Delve ships these programs and libraries, each under its own licence:',
+  'Quillwarren ships these programs and libraries, each under its own licence:',
   '',
-  '- Electron (MIT) and Chromium (BSD-3-Clause and others): see LICENSE.electron.txt and LICENSES.chromium.html next to Delve.exe.',
+  '- Electron (MIT) and Chromium (BSD-3-Clause and others): see LICENSE.electron.txt and LICENSES.chromium.html next to Quillwarren.exe.',
   `- Node.js (MIT and others), run as resources\\node\\node.exe${nodeLicense ? ': its licence is at the end of this file' : ''}.`,
   ...(llama ? [`- llama.cpp ${llama.build} with ggml (MIT), the built-in model runtime: resources\\llama\\llama-server.exe and its DLLs; libomp.dll there is the LLVM OpenMP runtime (Apache-2.0 WITH LLVM-exception). Both licences are at the end of this file.`] : []),
   ...entries.map((e) => `- ${e.name} ${e.version} (${e.license})`),
@@ -84,7 +84,7 @@ for (const e of entries) {
 }
 if (nodeLicense && existsSync(nodeLicense)) lines.push('', '='.repeat(72), 'Node.js', '='.repeat(72), readFileSync(nodeLicense, 'utf8').trim());
 const own = join(root, 'LICENSE');
-if (existsSync(own)) lines.push('', '='.repeat(72), 'Delve — Apache-2.0', '='.repeat(72), readFileSync(own, 'utf8').trim());
+if (existsSync(own)) lines.push('', '='.repeat(72), 'Quillwarren — Apache-2.0', '='.repeat(72), readFileSync(own, 'utf8').trim());
 if (llama) {
   lines.push('', '='.repeat(72), `llama.cpp ${llama.build} and ggml — MIT`, '='.repeat(72), readFileSync(join(llama.dir, 'LICENSE-llama.cpp'), 'utf8').trim());
   const omp = join(llama.dir, 'LICENSE-LLVM-OpenMP');

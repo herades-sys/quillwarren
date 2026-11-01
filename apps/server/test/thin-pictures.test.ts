@@ -3,7 +3,7 @@
 // server. One GET did it: a handout fitted to a 37 × 2 crop off the map
 // (/api/v1/maps/<id>/handout.png?paper=fit&orientation=landscape&dpi=50&crop=80,-1,117,1).
 // Covered here: png.ts drawing such a picture on a bigger canvas and cutting it
-// back out (the same pixels), Delve Table pages cut to their frame, and the
+// back out (the same pixels), Quillwarren Table pages cut to their frame, and the
 // stress run (thin-pictures-stress.ts) in a child process, so a panic shows up
 // as a failed test instead of silently killing the test runner.
 import { spawnSync } from 'node:child_process';
@@ -51,7 +51,7 @@ describe('resvg layer limit (png.ts roomFor)', () => {
   });
 
   it('gives a thin picture with something far off it a canvas around all of it, at the same scale', () => {
-    // 40 squares × 1 at 70 px, with a tree reaching 14 squares above it (a Delve Table page one square high)
+    // 40 squares × 1 at 70 px, with a tree reaching 14 squares above it (a Quillwarren Table page one square high)
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="2800" height="70" viewBox="20 9 40 1"><rect x="20" y="9" width="40" height="1"/></svg>';
     const room = roomFor(svg, box(19.5, -5, 41, 15))!;
     expect(room).not.toBeNull();
@@ -81,7 +81,7 @@ describe('resvg layer limit (png.ts roomFor)', () => {
       '<rect x="2.5" y="1" width="31" height="4.37" fill="#e8d5a8"/>' +
       '<circle cx="9" cy="3" r="1.7" fill="#2e1f11" fill-opacity="0.35"/>' +
       '<path d="M3 1.5 L33 4.9" stroke="#6b4520" stroke-width="0.12" opacity="0.6"/>' +
-      '<text x="20" y="4" font-size="1.4">Delve</text></svg>';
+      '<text x="20" y="4" font-size="1.4">Quillwarren</text></svg>';
     const plain = await svgToPng(scene);
     const moved = await svgToPng(scene.replace('</svg>', far('M-40 2h1v1h-1z'))); // 600 px left of a picture 433 px wide
     expect(roomFor(scene.replace('</svg>', far('M-40 2h1v1h-1z')), box(-40, 1, 73.5, 4.37))).not.toBeNull();
@@ -107,7 +107,7 @@ describe('resvg layer limit (png.ts roomFor)', () => {
   });
 });
 
-describe('Delve Table pages', () => {
+describe('Quillwarren Table pages', () => {
   it('are cut to the page before drawing (core cropScene), like the render route', () => {
     const objects: MapObject[] = [
       { id: 'r1', type: 'room', shape: { rect: [0, 0, 60, 40] } },

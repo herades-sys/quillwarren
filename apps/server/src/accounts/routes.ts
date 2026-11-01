@@ -3,7 +3,7 @@
 // recovery codes, authenticator and sessions) and /admin (accounts and
 // sessions, admins only). Setup links carry their token as ?token=, which the
 // server log masks. Forms post urlencoded bodies; cookie-authenticated posts
-// must come from Delve's own origin.
+// must come from Quillwarren's own origin.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { readCookie, sameOrigin, SESSION_COOKIE } from '../auth.ts';
 import type { EditorAuth } from '../login.ts';
@@ -72,7 +72,7 @@ export function registerAccounts(
     const token = (req.query as { token?: unknown }).token;
     if (typeof token === 'string') return showLink(reply, token);
     if (auth.sessions.legacyOff) {
-      return sendPage(reply, 200, messagePage('Delve has an admin', ['An admin account exists already. Log in, or ask your admin for a setup link.'], [{ href: '/login', text: 'Log in' }]));
+      return sendPage(reply, 200, messagePage('Quillwarren has an admin', ['An admin account exists already. Log in, or ask your admin for a setup link.'], [{ href: '/login', text: 'Log in' }]));
     }
     if (!loggedIn(req)) return reply.redirect('/login?next=%2Faccount%2Fsetup', 303);
     return sendPage(reply, 200, bootstrapPage({}));
@@ -215,7 +215,7 @@ export function registerAccounts(
   const adminView = (reply: FastifyReply, me: { user: User; session: Session }, v: { newLink?: NewLink; notice?: string; error?: string }, code = 200) =>
     sendPage(reply, code, adminPage({ me: me.user, session: me.session, users: accounts.users(), sessions: accounts.sessions(), now: Date.now(), extra: o.adminSection?.(), ...v }));
   const refuseNonAdmin = (reply: FastifyReply) =>
-    sendPage(reply, 403, messagePage('Admins only', ['Only admins can open this page.'], [{ href: '/', text: 'Back to Delve' }, { href: '/account', text: 'Your account' }]));
+    sendPage(reply, 403, messagePage('Admins only', ['Only admins can open this page.'], [{ href: '/', text: 'Back to Quillwarren' }, { href: '/account', text: 'Your account' }]));
 
   app.get('/admin', async (req, reply) => {
     const cur = currentAccount(auth, req);

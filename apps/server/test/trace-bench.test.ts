@@ -1,4 +1,4 @@
-// The picture tracer against pictures with a known answer: Delve maps rendered
+// The picture tracer against pictures with a known answer: Quillwarren maps rendered
 // by the server's own renderer (the benchmark's cases, see cli/trace-bench-lib.ts),
 // traced the way the trace page does by default. `npm run trace-bench` runs the
 // whole set and prints the table.
@@ -57,7 +57,7 @@ describe('tracing rendered dungeons (the benchmark, a fast subset)', () => {
 });
 
 describe('tracing a rendered city (city mode keeps its behaviour)', () => {
-  it('finds the buildings of the Feyvale import drawn by Delve', async () => {
+  it('finds the buildings of the Feyvale import drawn by Quillwarren', async () => {
     const feyvale = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixtures/watabou/feyvale.json', import.meta.url)), 'utf8'));
     const { map } = fromWatabou(feyvale, { id: 'map_feyvale_t', name: 'Feyvale', style: 'old-school-blue' });
     const city: DelveMap = { ...map, style: { preset: 'old-school-blue' } };
@@ -69,7 +69,7 @@ describe('tracing a rendered city (city mode keeps its behaviour)', () => {
     const a = coloursForMode(pic.rgba, pic.width, pic.height, 'city');
     expect(a.space).toBe('rgb');
     const result = traceImage({ ...pic, colours: a.colours.map((x) => x.colour), roles: a.roles, space: a.space, mode: 'city', pxPerSquare: ppg });
-    // the floor as Delve has it, against the traced buildings, both in picture pixels
+    // the floor as Quillwarren has it, against the traced buildings, both in picture pixels
     const truth = rasterize(ringsOf(computeFloor(city)).map((r) => r.map(([x, y]) => [(x - scene.bounds.x0) * ppg, (y - scene.bounds.y0) * ppg] as const)), pic.width, pic.height);
     const got = rasterize(ringsOf(computeFloor(tracedMap(result, { id: 'map_feyvale_u', name: 'F' }))).map((r) => r.map(([x, y]) => [x * ppg, y * ppg] as const)), pic.width, pic.height);
     let inter = 0;

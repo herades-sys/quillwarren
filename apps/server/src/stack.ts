@@ -30,10 +30,23 @@ const PAGE_CSS = `
   #stage { position: relative; min-width: 0; min-height: 0; background: #20242B; }
   #stage canvas { display: block; width: 100%; height: 100%; }
   #status { position: absolute; left: 12px; bottom: 12px; padding: 7px 12px; border-radius: 10px; background: var(--color-surface-2); color: var(--color-text); box-shadow: var(--shadow-lg); font-size: var(--text-md); pointer-events: none; }
+  /* the top bar's room: first the page's title goes and Reset view and Save picture become their icons */
+  @media (max-width: 960px) {
+    .topbar > .crumb-title { display: none; }
+    .btn.stk-wide { width: 36px; padding: 0; font-size: 0; gap: 0; }
+  }
+  @media (max-width: 800px) {
+    .stk-wide { display: none !important; }
+  }
   @media (max-width: 760px) {
     .stk-main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .stk-side { box-shadow: inset 0 -1px 0 var(--color-border); max-height: 40vh; }
     .stk-wide { display: none !important; }
+  }
+  /* phones: the theme switch stays on the other pages, and "2D map" is its icon */
+  @media (max-width: 480px) {
+    .topbar-end > .seg-sm { display: none; }
+    .btn.stk-2d { width: 36px; padding: 0; font-size: 0; gap: 0; }
   }
 `;
 
@@ -46,7 +59,7 @@ function page(info: AppInfo, id: string, name: string, storeys: unknown[], view:
   <span class="vsep stk-wide" style="margin:0 4px"></span>
   <button class="btn btn-plain stk-wide" type="button" id="fit3d" title="Back to the starting view">${icon('fit', { size: 16 })}Reset view</button>
   <button class="btn btn-secondary stk-wide" type="button" id="snapshot" title="Download this view as a PNG">${icon('download', { size: 16 })}Save picture</button>
-  <a class="btn btn-primary" href="/maps/${enc}">${icon('layers', { size: 16 })}2D map</a>
+  <a class="btn btn-primary stk-2d" href="/maps/${enc}" aria-label="2D map" title="Back to the 2D map">${icon('layers', { size: 16 })}2D map</a>
   ${themeSwitch()}`;
   const body = `${topBar({ crumbs: [{ href: '/', text: 'Library' }, { href: `/maps/${enc}`, text: name }], title: '3D view', end })}
 <div class="stk-main">
@@ -78,7 +91,7 @@ export function registerStack(app: FastifyInstance, info: AppInfo, store: MapSto
       return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(page(info, id, map.name, storeys, view));
     } catch (e) {
       if (!(e instanceof NotFoundError)) throw e;
-      return reply.code(404).type('text/html; charset=utf-8').send(`<!doctype html><meta charset="utf-8"><title>Not found · Delve</title><p style="font-family:system-ui;margin:3rem">No map with id <code>${esc(id)}</code>. <a href="/">Back to Delve</a></p>`);
+      return reply.code(404).type('text/html; charset=utf-8').send(`<!doctype html><meta charset="utf-8"><title>Not found · Quillwarren</title><p style="font-family:system-ui;margin:3rem">No map with id <code>${esc(id)}</code>. <a href="/">Back to Quillwarren</a></p>`);
     }
   });
 }

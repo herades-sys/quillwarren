@@ -3,7 +3,7 @@
 // secret), the bridge (apps/desktop/claude-extension/server/index.js) spawned
 // as Claude Desktop spawns it and spoken to over stdio against a desktop-mode
 // server on a free port (initialize, tools/list, add_room changing the map,
-// render returning a PNG, the refusals in words, Delve closed or not
+// render returning a PNG, the refusals in words, Quillwarren closed or not
 // connected, an event-stream answer), and the .mcpb bundle (the MCPB 0.3
 // manifest, its tool list against mcp.ts, the zip).
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -61,7 +61,7 @@ describe('the gate and the Claude Desktop key', () => {
   });
   afterAll(async () => app.close());
 
-  it('lets the key in to /mcp, and Delve’s tools answer without an API token', async () => {
+  it('lets the key in to /mcp, and Quillwarren’s tools answer without an API token', async () => {
     const res = await app.inject({ method: 'POST', url: '/mcp', headers: { ...MCP_HEADERS, host: HOST, authorization: `Bearer ${KEY}` }, payload: rpc('tools/list') });
     expect(res.statusCode).toBe(200);
     const tools = (JSON.parse(res.body) as { result: { tools: { name: string }[] } }).result.tools.map((t) => t.name);
@@ -116,7 +116,7 @@ describe('the gate and the Claude Desktop key', () => {
 
   it('tells Claude that links open only inside the app', async () => {
     const res = await app.inject({ method: 'POST', url: '/mcp', headers: { ...MCP_HEADERS, host: HOST, authorization: `Bearer ${KEY}` }, payload: rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }) });
-    expect((JSON.parse(res.body) as { result: { instructions: string } }).result.instructions).toContain('open only inside the Delve app');
+    expect((JSON.parse(res.body) as { result: { instructions: string } }).result.instructions).toContain('open only inside the Quillwarren app');
   });
 });
 
@@ -256,7 +256,7 @@ describe('Connect to Claude Desktop from the chat settings', () => {
   });
 });
 
-describe('the bridge between Claude Desktop and the Delve app', () => {
+describe('the bridge between Claude Desktop and the Quillwarren app', () => {
   let app: FastifyInstance;
   let store: MapStore;
   let port = 0;
@@ -265,13 +265,13 @@ describe('the bridge between Claude Desktop and the Delve app', () => {
   let appData: string;
   let ext: string;
   let bridge: Bridge;
-  const connFile = () => join(appData, 'Delve', 'claude-desktop.json');
-  const writeConn = (c: Record<string, unknown>) => writeFileSync(connFile(), JSON.stringify({ app: 'Delve', version: 1, ...c }));
+  const connFile = () => join(appData, 'Quillwarren', 'claude-desktop.json');
+  const writeConn = (c: Record<string, unknown>) => writeFileSync(connFile(), JSON.stringify({ app: 'Quillwarren', version: 1, ...c }));
 
   beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), 'delve-claude-desktop-'));
     appData = join(root, 'Roaming');
-    mkdirSync(join(appData, 'Delve'), { recursive: true });
+    mkdirSync(join(appData, 'Quillwarren'), { recursive: true });
     ext = join(root, 'extension');
     await writeExtensionDir(ext, { version: '0.1.0' });
     const made = desktopApp({ port: () => port, key: () => key });
@@ -288,13 +288,13 @@ describe('the bridge between Claude Desktop and the Delve app', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('initializes through Delve and lists Delve’s tools', async () => {
+  it('initializes through Quillwarren and lists Quillwarren’s tools', async () => {
     const init = await bridge.call('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'claude-ai', version: '1.0.0' } });
     const result = init.result as { protocolVersion: string; serverInfo: { name: string }; instructions: string; capabilities: { tools?: unknown } };
-    expect(result.serverInfo.name).toBe('delve');
+    expect(result.serverInfo.name).toBe('quillwarren');
     expect(result.protocolVersion).toBe('2025-06-18');
     expect(result.capabilities.tools).toBeDefined();
-    expect(result.instructions).toContain('open only inside the Delve app');
+    expect(result.instructions).toContain('open only inside the Quillwarren app');
     bridge.notify('notifications/initialized');
     const list = await bridge.call('tools/list');
     const names = (list.result as { tools: { name: string }[] }).tools.map((t) => t.name);
@@ -320,53 +320,61 @@ describe('the bridge between Claude Desktop and the Delve app', () => {
     expect(Buffer.from(img.data!, 'base64').subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   });
 
-  it('says so plainly when Delve refuses: wrong key, access turned off', async () => {
+  it('reads a connection file moved from the old folder, which still says the old name', async () => {
+    writeConn({ app: 'Delve', port, key: KEY });
+    const list = await bridge.call('tools/call', { name: 'list_maps', arguments: {} });
+    expect(list.error).toBeUndefined();
+    expect((list.result as { isError?: boolean }).isError).toBeFalsy();
+    writeConn({ port, key: KEY });
+  });
+
+  it('says so plainly when Quillwarren refuses: wrong key, access turned off', async () => {
     writeConn({ port, key: 'b'.repeat(43) });
     const wrong = await bridge.call('tools/call', { name: 'list_maps', arguments: {} });
     expect(isError(wrong)).toBe(true);
-    expect(toolText(wrong)).toBe('Delve refused the connection. In Delve, choose Help → Connect to Claude Desktop… again, then try again.');
+    expect(toolText(wrong)).toBe('Quillwarren refused the connection. In Quillwarren, choose Help → Connect to Claude Desktop… again, then try again.');
     writeConn({ port, key: KEY });
     key = null; // Help → Disconnect Claude Desktop (the server's side)
     const off = await bridge.call('tools/call', { name: 'list_maps', arguments: {} });
-    expect(toolText(off)).toMatch(/^Delve isn’t connected to Claude Desktop/);
+    expect(toolText(off)).toMatch(/^Quillwarren isn’t connected to Claude Desktop/);
     key = KEY;
     expect(isError(await bridge.call('tools/call', { name: 'list_maps', arguments: {} }))).toBe(false);
   });
 
-  it('answers by itself when the connection file is missing or Delve is closed, never crashing', async () => {
+  it('answers by itself when the connection file is missing or Quillwarren is closed, never crashing', async () => {
     rmSync(connFile());
     const missing = await bridge.call('tools/call', { name: 'list_maps', arguments: {} });
     expect(isError(missing)).toBe(true);
-    expect(toolText(missing)).toBe('Delve isn’t connected to Claude Desktop. Open Delve and choose Help → Connect to Claude Desktop…, then try again.');
+    expect(toolText(missing)).toBe('Quillwarren isn’t connected to Claude Desktop. Open Quillwarren and choose Help → Connect to Claude Desktop…, then try again.');
     // closed: the app writes port null when it quits
     writeConn({ port: null, key: KEY });
-    expect(toolText(await bridge.call('tools/call', { name: 'list_maps', arguments: {} }))).toBe('Delve isn’t running. Open Delve, then try again.');
+    expect(toolText(await bridge.call('tools/call', { name: 'list_maps', arguments: {} }))).toBe('Quillwarren isn’t running. Open Quillwarren, then try again.');
     // crashed: the old port has nobody behind it
     const gone = createServer();
     await new Promise<void>((r) => gone.listen(0, '127.0.0.1', r));
     const deadPort = (gone.address() as AddressInfo).port;
     await new Promise<void>((r) => gone.close(() => r()));
     writeConn({ port: deadPort, key: KEY });
-    expect(toolText(await bridge.call('tools/call', { name: 'list_maps', arguments: {} }))).toBe('Delve isn’t running. Open Delve, then try again.');
-    // the tools are still listed (from the bundle), so Claude knows them before Delve opens
+    expect(toolText(await bridge.call('tools/call', { name: 'list_maps', arguments: {} }))).toBe('Quillwarren isn’t running. Open Quillwarren, then try again.');
+    // the tools are still listed (from the bundle), so Claude knows them before Quillwarren opens
     const list = await bridge.call('tools/list');
     expect((list.result as { tools: { name: string; inputSchema?: unknown }[] }).tools.length).toBe((await delveTools()).tools.length);
     expect((list.result as { tools: { inputSchema?: unknown }[] }).tools[0]!.inputSchema).toBeDefined();
     expect(bridge.child.exitCode).toBe(null);
-    // Delve is back: the tool list may have changed, and calls work again
+    // Quillwarren is back: the tool list may have changed, and calls work again
     writeConn({ port, key: KEY });
     expect(isError(await bridge.call('tools/call', { name: 'list_maps', arguments: {} }))).toBe(false);
     expect(bridge.notes.some((n) => n.method === 'notifications/tools/list_changed')).toBe(true);
   });
 
-  it('starts with Delve closed: initialize and tools/list from the bundle', async () => {
+  it('starts with Quillwarren closed: initialize and tools/list from the bundle', async () => {
     const empty = mkdtempSync(join(tmpdir(), 'delve-no-appdata-'));
     const lone = new Bridge(join(ext, 'server', 'index.js'), empty);
     try {
       const init = await lone.call('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'claude-ai', version: '1' } });
       const result = init.result as { protocolVersion: string; serverInfo: { name: string }; instructions: string };
       expect(result.protocolVersion).toBe('2025-11-25');
-      expect(result.serverInfo.name).toBe('delve');
+      expect(result.serverInfo.name).toBe('quillwarren');
       expect(result.instructions).toContain('Help → Connect to Claude Desktop');
       expect(((await lone.call('tools/list')).result as { tools: unknown[] }).tools.length).toBeGreaterThan(40);
       const other = await lone.call('resources/list');
@@ -390,7 +398,7 @@ describe('the bridge with an event-stream answer', () => {
 
   beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), 'delve-bridge-sse-'));
-    mkdirSync(join(root, 'Delve'), { recursive: true });
+    mkdirSync(join(root, 'Quillwarren'), { recursive: true });
     server = createServer((req, res) => {
       let body = '';
       req.on('data', (c: Buffer) => (body += c.toString()));
@@ -412,7 +420,7 @@ describe('the bridge with an event-stream answer', () => {
       });
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-    writeFileSync(join(root, 'Delve', 'claude-desktop.json'), JSON.stringify({ app: 'Delve', version: 1, port: (server.address() as AddressInfo).port, key: KEY }));
+    writeFileSync(join(root, 'Quillwarren', 'claude-desktop.json'), JSON.stringify({ app: 'Quillwarren', version: 1, port: (server.address() as AddressInfo).port, key: KEY }));
   });
   afterAll(async () => {
     await new Promise<void>((r) => server.close(() => r()));
@@ -434,7 +442,7 @@ describe('the bridge with an event-stream answer', () => {
   });
 });
 
-describe('the Delve.mcpb bundle', () => {
+describe('the Quillwarren.mcpb bundle', () => {
   it('lists exactly mcp.ts’s tools, with a sentence each', async () => {
     const { tools, instructions } = await delveTools('0.1.0');
     expect(tools.length).toBeGreaterThan(40);
@@ -454,8 +462,8 @@ describe('the Delve.mcpb bundle', () => {
     for (const k of Object.keys(m)) expect(allowed, k).toContain(k);
     expect(m.manifest_version).toBe(MANIFEST_VERSION);
     expect(m).toMatchObject({
-      name: 'delve',
-      display_name: 'Delve',
+      name: 'quillwarren',
+      display_name: 'Quillwarren',
       version: '0.1.0',
       author: { name: 'herades-sys' },
       license: 'Apache-2.0',
@@ -471,7 +479,7 @@ describe('the Delve.mcpb bundle', () => {
   it('is a zip with the manifest, the bridge, the tool list and the icon', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'delve-mcpb-'));
     try {
-      const out = join(dir, 'Delve.mcpb');
+      const out = join(dir, 'Quillwarren.mcpb');
       const got = await buildMcpb(out, { version: '0.1.0' });
       const zip = readFileSync(out);
       expect(got.bytes).toBe(zip.length);

@@ -1,4 +1,4 @@
-// The picture tracer's benchmark: renders Delve maps (every style, several sizes,
+// The picture tracer's benchmark: renders Quillwarren maps (every style, several sizes,
 // with and without the grid, clean, noisy and blurred), traces them the way the
 // trace page does by default, and prints how close each comes to the right answer.
 // npm run trace-bench -- [--set full|quick] [--legacy [--true-scale]] [--only <text>] [--out dir] [--city feyvale.png]
@@ -132,7 +132,7 @@ export async function overlay(rgba: Uint8Array, width: number, height: number, t
   return svgToPng(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><image width="${W}" height="${H}" href="data:image/png;base64,${img}" opacity="0.55"/>${shapes.join('')}</svg>`);
 }
 
-/** The traced map as Delve draws it. */
+/** The traced map as Quillwarren draws it. */
 async function renderMap(map: DelveMap, ppg: number): Promise<Buffer> {
   const { svgToPng } = await import('../png.ts');
   const { assets } = await import('../assets.ts');

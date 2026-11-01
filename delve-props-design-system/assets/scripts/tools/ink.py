@@ -1,4 +1,4 @@
-"""Delve prop toolkit — hand-inked line generator.
+"""Quillwarren prop toolkit — hand-inked line generator.
 
 Every prop is plain SVG in three colours. Shapes are sampled from ideal
 geometry, nudged along their normals by smooth seeded noise (the "pen"),

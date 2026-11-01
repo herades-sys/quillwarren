@@ -1,10 +1,10 @@
-# Delve colour props: prompt pack (about 520 assets)
+# Quillwarren colour props: prompt pack (about 520 assets)
 
-Coloured top-down props for Delve: lots of trees, carpets and rugs, trapdoors and hidden trapdoors, plus plants, rocks, coloured furniture, market and camp, water and light. 25 batches of about 20, plus a style sheet with 6 samples to approve first.
+Coloured top-down props for Quillwarren: lots of trees, carpets and rugs, trapdoors and hidden trapdoors, plus plants, rocks, coloured furniture, market and camp, water and light. 25 batches of about 20, plus a style sheet with 6 samples to approve first.
 
 The black-and-white rules in `docs/ASSETS.md` stay for the existing ink props. These colour props are a second library next to them.
 
-## In Delve
+## In Quillwarren
 
 Colour props are a second built-in library beside the ink props (since 2026-10-03). Maps place them like any prop: `{ type: "prop", asset: "c-oak-a", at, rotation?, scale? }`.
 
@@ -15,7 +15,7 @@ Colour props are a second built-in library beside the ink props (since 2026-10-0
   - classic-hatching and clean: as drawn.
   - parchment (and the handout): the style's sepia ramp (its prop ink → shade → paper) at each colour's lightness, plus 45 % of the colour's own hue, so props sit on the paper and stay apart.
   - old-school blue and print: each colour by its lightness onto the style's ramp from ink through shade to paper, in 6 tones (`rampLevels`), monotone in lightness. Ink stays the style's ink, `#999999` lands exactly on its shade and white on its paper, so colour props match the ink props.
-  - Every picture uses this: server PNG and SVG, the editor and viewer, the players' screen, the handout, the 3D floors and Delve Table pages.
+  - Every picture uses this: server PNG and SVG, the editor and viewer, the players' screen, the handout, the 3D floors and Quillwarren Table pages.
 - **Manifest fields:**
   - `layer: "floor"` props (rugs, trapdoors, leaf piles, fields) draw in the decals layer, under the walls and the other props, so a table stands on a rug.
   - `hidden: true` props are GM-only until the GM shows them (`gmOnly: false`), like the ink pressure plates, spike traps and floor runes, which now carry `hidden` in catalog.json too (core `hiddenByDefault`).
@@ -41,7 +41,7 @@ npm run colour-props -- ~/colour-props
 ## How to run it
 
 **In Claude Design** (claude.ai/design), like the ink library:
-1. Make a project called "Delve colour props".
+1. Make a project called "Quillwarren colour props".
 2. Paste **Prompt 0**, check the 6 samples, and ask for changes until you like the look.
 3. Paste the batch prompts one at a time in the same project.
 4. Download each batch (SVGs + `manifest.json`), or give Claude the project, and they go into `assets/colour/` in the repo.
@@ -53,14 +53,14 @@ npm run colour-props -- ~/colour-props
 ## Prompt 0: colour style sheet (paste first)
 
 ```text
-I'm building a COLOUR prop library for "Delve", my own top-down dungeon and outdoor map editor for tabletop RPGs (maps are used on Roll20 at 70 px per grid square). Please set up a colour style sheet and draw 6 sample props so I can approve the look before we make about 500 of them.
+I'm building a COLOUR prop library for "Quillwarren", my own top-down dungeon and outdoor map editor for tabletop RPGs (maps are used on Roll20 at 70 px per grid square). Please set up a colour style sheet and draw 6 sample props so I can approve the look before we make about 500 of them.
 
 RULES FOR EVERY PROP (the map renderer depends on these):
 - Straight top-down view, like a floor plan or a painted fantasy map seen from directly above. No isometric, no perspective, no cast shadows (the renderer adds its own soft drop shadow).
 - One standalone SVG file per prop. 1 grid square = 100 units, so a prop covering w×h squares has viewBox="0 0 {w*100} {h*100}". Keep 4 units of margin. Sizes go from 1 to 6 squares per side.
 - Plain SVG only: path, rect, circle, ellipse, line, polyline, polygon, g, with fill / stroke / stroke-width / stroke-linecap / stroke-linejoin attributes. NO text or letters, NO images, filters, gradients, patterns, masks, clip paths, CSS, style attributes, opacity, or transforms other than translate/rotate.
 - Keep every SVG under 40 KB: build foliage, fur and weave from a moderate number of shapes, not thousands of tiny ones.
-- COLOURS: only the Delve palette below, exact hex values, nothing else. The renderer recolours them per map style, so a colour that is off by one digit breaks.
+- COLOURS: only the Quillwarren palette below, exact hex values, nothing else. The renderer recolours them per map style, so a colour that is off by one digit breaks.
 - Ink outlines like hand-inked fantasy cartography: outline stroke-width 4 in ink #000000, inner details 2, fine texture 1.5, round caps and joins, slightly uneven pen lines. Colour fills sit inside the ink lines.
 - Light comes from the north-west: use a darker palette tone on the south-east side of a shape and a lighter tone on the north-west for volume. Never a cast shadow on the ground.
 - Every surface is filled, so the grid doesn't show through, except where the item is meant to be see-through (a net, a web, a grate).
@@ -68,7 +68,7 @@ RULES FOR EVERY PROP (the map renderer depends on these):
 - Trees: the canopy as seen from above, built from clustered leaf masses in 3–4 tones of one palette family, a slightly irregular outline, the trunk hidden (or just visible at the centre for thin or bare trees). Fill the footprint loosely, not as a perfect circle.
 - Original artwork only; don't imitate existing asset packs (Dungeondraft, Forgotten Adventures, 2-Minute Tabletop, Dungeon Scrawl, etc.).
 
-THE DELVE PALETTE (name: hex):
+THE QUILLWARREN PALETTE (name: hex):
 Base: ink #000000, paper #FFFFFF, shade #999999
 Foliage: leaf-deep #24452A, leaf-dark #345F34, leaf #4F803C, leaf-light #7EA34C, leaf-pale #AFC77A, needle-dark #233D33, needle #3B5E4B, needle-light #5E8068
 Autumn and blossom: gold-leaf #D9A63A, orange-leaf #C76B2A, red-leaf #9C3626, blossom #E9A7BA, blossom-pale #F6E3EA
@@ -106,7 +106,7 @@ Every batch prompt starts with the same short reminder, so each one stands on it
 ### Batch 1: trees, summer broadleaf (22)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants of one tree must look clearly different (outline, lobes, tone balance), not rotated copies.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants of one tree must look clearly different (outline, lobes, tone balance), not rotated copies.
 
 Category "trees" (all blocks sight unless noted, layer props):
 1. oak-b 3×3: summer oak, denser and rounder than oak-a (group oak)
@@ -136,7 +136,7 @@ Category "trees" (all blocks sight unless noted, layer props):
 ### Batch 2: trees, conifers (22)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants of one tree must look clearly different, not rotated copies.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants of one tree must look clearly different, not rotated copies.
 
 Category "trees" (all blocks sight unless noted, layer props), needle tones for all:
 1. pine-b 3×3: big pine, layered radiating tufts (group pine)
@@ -166,7 +166,7 @@ Category "trees" (all blocks sight unless noted, layer props), needle tones for 
 ### Batch 3: trees, autumn (22)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Autumn means gold-leaf, orange-leaf and red-leaf mixed with a little leaf-dark; variants must look clearly different.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Autumn means gold-leaf, orange-leaf and red-leaf mixed with a little leaf-dark; variants must look clearly different.
 
 Category "trees" (blocks sight unless noted, layer props):
 1. oak-autumn-a 3×3: oak in gold and orange (group oak-autumn)
@@ -198,7 +198,7 @@ Category "nature" (layer floor, blocks none):
 ### Batch 4: trees, winter and snow (22)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Snow is snow and ice with a little water-light in the shadows; variants must look clearly different.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Snow is snow and ice with a little water-light in the shadows; variants must look clearly different.
 
 Category "trees" (blocks sight unless noted, layer props):
 1. pine-snow-a 2×2: pine with snow heaped on its tiers (group pine-snow)
@@ -230,7 +230,7 @@ Category "nature":
 ### Batch 5: trees, blossom and orchard (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
 
 Category "trees" (blocks sight unless noted, layer props):
 1. cherry-blossom-a 2×2: cherry in full blossom, blossom and blossom-pale with a little leaf-light (group cherry-blossom)
@@ -260,7 +260,7 @@ Category "nature" (layer props unless noted):
 ### Batch 6: trees, jungle, desert and coast (22)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
 
 Category "trees" (blocks sight unless noted, layer props):
 1. palm-a 2×2: palm seen from above, a star of long feathered fronds (group palm)
@@ -292,7 +292,7 @@ Category "nature" (layer props):
 ### Batch 7: trees, dead, burnt and magical (22)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
 
 Category "trees" (blocks sight unless noted, layer props):
 1. dead-a 2×2: bare dead tree, grey-brown branches from above (group dead)
@@ -322,7 +322,7 @@ Category "trees" (blocks sight unless noted, layer props):
 ### Batch 8: stumps, logs, roots and groves (22)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "nature" (layer props):
 1. stump-a 1×1: stump with rings (blocks movement, group stump)
@@ -354,7 +354,7 @@ Category "trees" (blocks sight, layer props):
 ### Batch 9: bushes and hedges (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
 
 Category "plants" (layer props; blocks movement unless noted):
 1. bush-a 1×1: round green bush (group bush)
@@ -382,7 +382,7 @@ Category "plants" (layer props; blocks movement unless noted):
 ### Batch 10: flowers and gardens (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "plants" (layer props unless noted):
 1. flowerbed-red 1×2: bed of red flowers with a wooden edging (blocks none)
@@ -410,7 +410,7 @@ Category "plants" (layer props unless noted):
 ### Batch 11: crops, farm and fungi (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "plants" (layer props unless noted):
 1. wheat-field 2×2: patch of ripe wheat, straw and gold-leaf rows (layer floor, blocks none, group field)
@@ -438,7 +438,7 @@ Category "plants" (layer props unless noted):
 ### Batch 12: rocks, stones and crystals (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Variants must look clearly different.
 
 Category "rocks" (layer props):
 1. boulder-a 1×1: grey boulder, facets (blocks movement, group boulder)
@@ -466,7 +466,7 @@ Category "rocks" (layer props):
 ### Batch 13: rugs, rectangular (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text or letters (no lettering in borders either), under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Rugs are flat: no volume shading, just the weave and pattern; ink outline 3 at the edge is fine.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text or letters (no lettering in borders either), under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Rugs are flat: no volume shading, just the weave and pattern; ink outline 3 at the edge is fine.
 
 Category "carpets" (all layer floor, blocks none):
 1. persian-red-b 2×3: red persian rug, different border and medallion from persian-red-a (group rug-persian-red)
@@ -494,7 +494,7 @@ Category "carpets" (all layer floor, blocks none):
 ### Batch 14: runners, round rugs and great carpets (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text or letters (no lettering in borders either), under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Rugs are flat: no volume shading, just the weave and pattern.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text or letters (no lettering in borders either), under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Rugs are flat: no volume shading, just the weave and pattern.
 
 Category "carpets" (all layer floor, blocks none unless noted):
 1. runner-red-4 1×4: red runner with a gold border, north–south (group runner-red)
@@ -522,7 +522,7 @@ Category "carpets" (all layer floor, blocks none unless noted):
 ### Batch 15: furs, mats and cloths (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "carpets" (all layer floor, blocks none unless noted):
 1. bearskin 2×3: brown bearskin rug with head and paws (group fur)
@@ -550,7 +550,7 @@ Category "carpets" (all layer floor, blocks none unless noted):
 ### Batch 16: trapdoors and hatches (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Open trapdoors show the lid swung up against the north edge and a dark opening (ink and bark-dark) with the top of a ladder or steps.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Open trapdoors show the lid swung up against the north edge and a dark opening (ink and bark-dark) with the top of a ladder or steps.
 
 Category "trapdoors" (all layer floor, blocks none):
 1. trapdoor-wood-open 1×1: the wooden trapdoor from the samples, open, ladder down (group trapdoor-wood)
@@ -578,7 +578,7 @@ Category "trapdoors" (all layer floor, blocks none):
 ### Batch 17: hidden trapdoors and traps (GM only) (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 These are what the GM sees of hidden things: draw the thing itself, subtle like the floor around it, plus ONE clear GM hint: a thin dashed red-light outline around the hidden part (stroke-width 2, dash pattern with stroke-dasharray is allowed here). The players never see these props.
 
@@ -608,7 +608,7 @@ Category "traps" (all hidden true, layer floor, blocks none):
 ### Batch 18: furniture, bedroom and living (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "furniture" (layer props; blocks movement unless noted):
 1. bed-single-red 1×2: single bed, red blanket, cream pillow (group bed-single)
@@ -636,7 +636,7 @@ Category "furniture" (layer props; blocks movement unless noted):
 ### Batch 19: tavern and kitchen (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "tavern" (layer props; blocks movement unless noted):
 1. bar-counter-colour 3×1: polished bar counter with tankards and a spill
@@ -666,7 +666,7 @@ Category "kitchen" (layer props; blocks movement unless noted):
 ### Batch 20: noble hall, library and study (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "hall" (layer props; blocks movement unless noted):
 1. throne-gold 2×2: gold throne with a red cushion on a dais (group throne)
@@ -696,7 +696,7 @@ Category "library" (layer props; blocks movement unless noted):
 ### Batch 21: market and town (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text (no signs with writing), fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text (no signs with writing), fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "market" (layer props; blocks movement unless noted):
 1. stall-blue 2×2: stall with a blue-and-cream striped awning (group stall)
@@ -724,7 +724,7 @@ Category "market" (layer props; blocks movement unless noted):
 ### Batch 22: camp and outdoors (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "camp" (layer props; blocks movement unless noted):
 1. tent-red 2×2: red canvas tent, ridge line, flap facing south (blocks sight, group tent)
@@ -752,7 +752,7 @@ Category "camp" (layer props; blocks movement unless noted):
 ### Batch 23: water, boats and docks (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Boats point north (bow at the top).
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Boats point north (bow at the top).
 
 Category "water" (layer props; blocks movement unless noted):
 1. rowboat-colour 1×3: rowboat, painted blue hull, oars (group boat)
@@ -780,7 +780,7 @@ Category "water" (layer props; blocks movement unless noted):
 ### Batch 24: light and fire (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Light glows are drawn as a few rings of flame-core and flame around the source, never with opacity.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text, fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card. Light glows are drawn as a few rings of flame-core and flame around the source, never with opacity.
 
 Category "light" (layer props; blocks movement unless noted):
 1. brazier-colour 1×1: iron brazier, orange flames (group brazier)
@@ -808,7 +808,7 @@ Category "light" (layer props; blocks movement unless noted):
 ### Batch 25: temple, arcane and alchemy (20)
 
 ```text
-Next batch for the Delve colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Delve palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text or letters (glyphs are abstract shapes), fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
+Next batch for the Quillwarren colour prop library. Follow the colour style sheet in this project exactly: top-down, 100 units per square, viewBox = footprint × 100, only the Quillwarren palette (exact hex values), ink outlines 4 / details 2 / texture 1.5, light from the north-west with no cast shadows, no text or letters (glyphs are abstract shapes), fronts face south, wall side on the top edge, under 40 KB per SVG, one SVG per prop in colour/<category>/<id>.svg plus manifest.json entries, plus an overview card.
 
 Category "arcane" (layer props; blocks movement unless noted):
 1. altar-cloth-red 2×1: stone altar with a red cloth, gold chalice, candles (group altar)

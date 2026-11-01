@@ -2,7 +2,7 @@
 // "Claude (your Anthropic API key)" chat backend. Plain fetch to the Messages
 // API (no SDK in the project, and none is added), streamed:
 // - API version 2026-10-21 (no sampling parameters on any request);
-// - the full Delve tool set (api-tools.ts), with eager input streaming, and
+// - the full Quillwarren tool set (api-tools.ts), with eager input streaming, and
 //   the tool inputs parsed strictly here (the MCP server validates them again);
 // - prompt caching: a breakpoint on the last tool and on the system prompt
 //   (tools + system are one stable prefix), and one on the newest message, so

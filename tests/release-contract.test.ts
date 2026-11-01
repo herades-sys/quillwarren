@@ -117,6 +117,6 @@ describe('release contract', () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { result?: { serverInfo?: { name?: string } } };
-    expect(body.result?.serverInfo?.name).toBe('delve');
+    expect(body.result?.serverInfo?.name).toBe('quillwarren');
   });
 });

@@ -1,5 +1,5 @@
 // The GM's Notes tab, on the 2D table's sidebar and in the 3D view's side panel:
-// - Rooms: the GM notes of the page's Delve map (rooms, corridors, terrain). In 3D
+// - Rooms: the GM notes of the page's Quillwarren map (rooms, corridors, terrain). In 3D
 //   the area clicked is edited here; on the 2D board it opens in the note box.
 // - Characters: the selected token's GM notes (through token.update, so the rules
 //   and the players' filter apply as for the token dialog), and every token on the
@@ -112,15 +112,15 @@ export function initNotesPanel(host: NotesHost): NotesPanel {
     }
     const usable = delve && !asPlayers && map !== null;
     roomsNote.textContent = !delve
-      ? 'Room notes live on pages made from a Delve map; this page has none. Characters and the notebook work on every page.'
+      ? 'Room notes live on pages made from a Quillwarren map; this page has none. Characters and the notebook work on every page.'
       : asPlayers
         ? 'You are looking as the players do: switch back to the GM view to see room notes.'
         : !map
           ? 'Loading the map…'
           : host.openOnBoard
-            ? 'Click a room’s note pin on the board, or turn on Notes mode and click any room, corridor or terrain to read and write its notes. They are saved in the Delve map; the editor shows them too.'
+            ? 'Click a room’s note pin on the board, or turn on Notes mode and click any room, corridor or terrain to read and write its notes. They are saved in the Quillwarren map; the editor shows them too.'
             : roomEditor?.id()
-              ? 'Saved in the Delve map; the editor and the 2D table show them too.'
+              ? 'Saved in the Quillwarren map; the editor and the 2D table show them too.'
               : 'Click the floor of a room, corridor or terrain while this tab is open (or a note pin) to read and write its notes.';
     if (roomEditor) {
       roomEditor.el.hidden = !usable || !roomEditor.id();

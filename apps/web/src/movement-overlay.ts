@@ -2,7 +2,7 @@
 // tinted by height with its height on a small tag, the cliff and rock-face edges
 // nobody can walk over as red dashes, and the crossings in green (thick for
 // stairs and ladders, thin for slopes and steps). The editor (heights.ts) and
-// Delve Table's GM board (table/movement-view.ts) both draw it. No DOM helpers
+// Quillwarren Table's GM board (table/movement-view.ts) both draw it. No DOM helpers
 // beyond createElementNS, so the table's bundle carries nothing of the editor's.
 import { heightText, labelPoint, parseSquareUnit, walkableMap, type DelveMap, type Point, type View, type Walkable } from '@delve/core';
 

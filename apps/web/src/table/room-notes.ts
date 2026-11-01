@@ -1,11 +1,11 @@
-// GM notes on the 2D board (Delve pages, the GM's own view): pins on the rooms,
+// GM notes on the 2D board (Quillwarren pages, the GM's own view): pins on the rooms,
 // corridors and terrain that have notes, and a note box like the markers' one.
 // Two ways to open an area's notes, so they never fight token selection:
 // - click its pin;
 // - "Notes" mode (the button in the top bar, or N): a click on a room's floor
 //   opens its notes. Tokens, markers and doors still take their own clicks, and
 //   dragging still pans.
-// The notes are the Delve map's (gm-map.ts): saved as map ops with the editor login.
+// The notes are the Quillwarren map's (gm-map.ts): saved as map ops with the editor login.
 import { noteAreaAt, type Point } from '@delve/core';
 import type { Member, Page, Token } from '@delve/table';
 import { createAreaNote } from './area-note.ts';
@@ -61,7 +61,7 @@ export function initRoomNotes(o: {
   const editor = createAreaNote({ gmMap: o.gmMap, close: () => close(), onOpen: (id) => pins.setActive(id) });
   const hint = document.createElement('div');
   hint.className = 'hint';
-  hint.textContent = 'Only you see these notes. They are saved in the Delve map.';
+  hint.textContent = 'Only you see these notes. They are saved in the Quillwarren map.';
   box.append(editor.el, hint);
 
   function place(): void {
@@ -141,7 +141,7 @@ export function initRoomNotes(o: {
 
   function setMode(on: boolean): void {
     if (on && o.page()?.background.kind !== 'delve') {
-      toast('Room notes live on pages made from a Delve map.', 'info');
+      toast('Room notes live on pages made from a Quillwarren map.', 'info');
       on = false;
     }
     notesMode = on;

@@ -1,4 +1,4 @@
-// Delve Table in the browser: holds this member's view of the game, applies the
+// Quillwarren Table in the browser: holds this member's view of the game, applies the
 // server's events to it, lays optimistic token moves over it, and wires the
 // board, the side panels, the header and the keyboard together.
 import type { ChatMessage, GameEvent, Intent, Layer, Member, ServerMessage, Token } from '@delve/table';
@@ -59,14 +59,14 @@ export function startTable(initial: Initial): void {
   const page = () => (state ? (state.view.pages.find((p) => p.id === state!.view.pageId) ?? null) : null);
   const tokens = (): Token[] => (state ? withOptimistic(state.view.tokens, opt) : []);
   const gm = isGm(initial.me);
-  /** The GM can look at a Delve page as the players see it. */
+  /** The GM can look at a Quillwarren page as the players see it. */
   let seeAs: 'gm' | 'players' = gm ? 'gm' : 'players';
   let tableMarkers: TableMarkers | null = null;
   let dice: ReturnType<typeof initDice> | null = null;
-  // GM notes (docs/TABLE.md, "GM notes"): the page's Delve map for its notes and markers, the board's pins and note box
+  // GM notes (docs/TABLE.md, "GM notes"): the page's Quillwarren map for its notes and markers, the board's pins and note box
   const gmMap = gm ? createGmMap() : null;
   let roomNotes: RoomNotes | null = null;
-  /** "Where you can go" over the board (GM, Delve pages with height areas): K or the top bar's Heights button. */
+  /** "Where you can go" over the board (GM, Quillwarren pages with height areas): K or the top bar's Heights button. */
   let movementView: MovementView | null = null;
   let notesPanel: ReturnType<typeof initNotesPanel> | null = null;
   const msgListeners = new Set<(m: ServerMessage) => void>();
@@ -201,7 +201,7 @@ export function startTable(initial: Initial): void {
         }
         if (changes.has('pages')) {
           board?.setPage(page(), reload);
-          // the page sent again: its Delve map (or the door state) changed, so fetch the map's notes and markers again
+          // the page sent again: its Quillwarren map (or the door state) changed, so fetch the map's notes and markers again
           gmMap?.setPage(page(), msg.events.some((ev) => ev.type === 'page.upsert' && ev.page.id === state?.view.pageId));
           tableMarkers?.pageChanged(page());
           roomNotes?.update();
@@ -251,7 +251,7 @@ export function startTable(initial: Initial): void {
     const v = state?.view;
     if (!v) return;
     ui.name.textContent = v.name;
-    document.title = `${v.name} · Delve Table`;
+    document.title = `${v.name} · Quillwarren Table`;
     ui.meName.textContent = v.you.name;
     ui.meDot.style.setProperty('--c', v.you.color);
   }

@@ -285,7 +285,7 @@ describe('Claude on the user’s own Anthropic API key', () => {
     for (const k of ['temperature', 'top_p', 'top_k']) expect(first, k).not.toHaveProperty(k);
     const system = first.system as Json[];
     expect(system[0]!.cache_control).toEqual({ type: 'ephemeral' });
-    expect(String(system[0]!.text)).toMatch(/^You are Claude, working inside Delve/);
+    expect(String(system[0]!.text)).toMatch(/^You are Claude, working inside Quillwarren/);
     const tools = first.tools as Json[];
     expect(tools.map((t) => t.name)).toContain('add_room');
     expect(tools.map((t) => t.name)).toContain('TaskCreate');
@@ -295,7 +295,7 @@ describe('Claude on the user’s own Anthropic API key', () => {
     const addRoom = tools.find((t) => t.name === 'add_room')!.input_schema as { properties: Record<string, Json> };
     expect(addRoom.properties.rect).toMatchObject({ type: 'array', items: { type: 'number' }, minItems: 4, maxItems: 4 });
     const userMsg = (first.messages as { role: string; content: Json[] }[])[0]!;
-    expect(String(userMsg.content[0]!.text)).toContain('[Delve context');
+    expect(String(userMsg.content[0]!.text)).toContain('[Quillwarren context');
     expect(userMsg.content.at(-1)!.cache_control).toEqual({ type: 'ephemeral' });
 
     // the second request: the reply came back whole (thinking with its signature, the tool call), then its result
@@ -559,7 +559,7 @@ describe('OpenAI on the user’s own API key', () => {
     expect(req.headers.authorization).toBe(`Bearer ${OPENAI_KEY}`);
     expect(posts[0]).toMatchObject({ model: 'gpt-5', stream: true, stream_options: { include_usage: true }, tool_choice: 'auto' });
     const msgs0 = posts[0]!.messages as Json[];
-    expect(String(msgs0[0]!.content)).toMatch(/^You are an AI assistant, working inside Delve/);
+    expect(String(msgs0[0]!.content)).toMatch(/^You are an AI assistant, working inside Quillwarren/);
     const tool = (posts[0]!.tools as { function: { name: string; parameters: Json } }[]).find((t) => t.function.name === 'add_room')!;
     expect(JSON.stringify(tool.function.parameters)).not.toMatch(/additionalItems|\$schema|propertyNames/);
     const msgs1 = posts[1]!.messages as Json[];

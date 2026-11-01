@@ -12,7 +12,7 @@
 // Answers carry no CORS headers, so other web pages can't read them.
 //
 // One more caller, only while the user has connected Claude Desktop (Help →
-// Connect to Claude Desktop…): the Delve extension's bridge in Claude Desktop
+// Connect to Claude Desktop…): the Quillwarren extension's bridge in Claude Desktop
 // (apps/desktop/claude-extension) reaches /mcp, and nothing else, with its own
 // per-install key as "Authorization: Bearer <key>" — never the window's secret.
 // The same Host check applies, it must send no Origin (browsers always do on
@@ -63,12 +63,12 @@ export function originAllowed(origin: string | undefined, host: string | undefin
 
 /**
  * Pages of the web server that mean nothing on one computer with one user: they go back to the library.
- * Delve Table, the players' screen and Discord login (/play, /api/v1/games, /maps/:id/screen,
+ * Quillwarren Table, the players' screen and Discord login (/play, /api/v1/games, /maps/:id/screen,
  * /auth/discord) aren't here: the desktop app never registers them (buildApp's `multiplayer: false`), so they are 404s.
  */
 const WEB_ONLY = [/^\/(login|logout)(\?|$)/, /^\/admin(\/|\?|$)/, /^\/account(\/|\?|$)/];
 
-const REFUSED = 'This is the Delve app’s own server. It only answers the Delve window.';
+const REFUSED = 'This is the Quillwarren app’s own server. It only answers the Quillwarren window.';
 
 /** Says no. A refused WebSocket upgrade also loses its connection: nothing else would close it, and it would hold the server open. */
 function refuse(req: FastifyRequest, reply: FastifyReply, code: 401 | 403): FastifyReply {
@@ -76,13 +76,16 @@ function refuse(req: FastifyRequest, reply: FastifyReply, code: 401 | 403): Fast
   return reply.code(code).header('connection', 'close').type('text/plain; charset=utf-8').send(REFUSED);
 }
 
-/** One more page for the desktop app: feature requests have no project page to go to yet. */
+/** Where ideas and problems go. */
+export const FEEDBACK_ISSUES_URL = 'https://github.com/herades-sys/quillwarren/issues';
+
+/** One more page for the desktop app: feature requests go to the project's public issue tracker (the app opens other sites in the user's browser). */
 function feedbackPage(): string {
   return htmlDocument({
     title: 'Ideas and problems',
     body: `<main class="page narrow" style="padding:48px 20px;max-width:560px;margin:0 auto"><h1>Ideas and problems</h1>
-<p>Delve on the desktop has no place to send feature requests yet. Until the project has a public page, write them down and pass them on to whoever gave you Delve.</p>
-<p>When something goes wrong, the Help menu’s <b>Copy logs</b> puts what Delve wrote down on the clipboard, ready to paste into a message.</p>
+<p>Ideas, feature requests and problems go on the project’s public page: <a href="${FEEDBACK_ISSUES_URL}">github.com/herades-sys/quillwarren/issues</a>. The link opens in your browser.</p>
+<p>When something goes wrong, the Help menu’s <b>Copy logs</b> puts what Quillwarren wrote down on the clipboard, ready to paste into a message.</p>
 <p><a class="btn btn-secondary" href="/">Back to the library</a></p></main>`,
   });
 }
@@ -102,7 +105,7 @@ export interface ClaudeDesktopAccess {
 
 /** Added to the MCP instructions in the desktop app (buildApp's `mcpNote`): links open only inside the app. */
 export const CLAUDE_DESKTOP_NOTE =
-  "This Delve is the desktop app on the user's own computer: the user watches the open map change in the Delve window. Links in tool results (viewer pages, exports) open only inside the Delve app, so don't offer them as links; use focus to show the user what you changed, and point them to Delve's Export menu for files.";
+  "This Quillwarren is the desktop app on the user's own computer: the user watches the open map change in the Quillwarren window. Links in tool results (viewer pages, exports) open only inside the Quillwarren app, so don't offer them as links; use focus to show the user what you changed, and point them to Quillwarren's Export menu for files.";
 
 /** Where the chat settings ask the app for its "Connect to Claude Desktop…" dialog. */
 export const CLAUDE_DESKTOP_CONNECT = '/api/v1/desktop/claude-desktop/connect';
@@ -116,7 +119,7 @@ export const CLAUDE_DESKTOP_CONNECT = '/api/v1/desktop/claude-desktop/connect';
  */
 export function registerClaudeDesktopConnect(app: FastifyInstance, o: { connected: () => boolean; askApp: () => boolean }): () => Record<string, unknown> {
   app.post(CLAUDE_DESKTOP_CONNECT, async (_req, reply) => {
-    if (!o.askApp()) return reply.code(503).send({ error: 'Delve couldn’t reach its window: choose Help → Connect to Claude Desktop… instead' });
+    if (!o.askApp()) return reply.code(503).send({ error: 'Quillwarren couldn’t reach its window: choose Help → Connect to Claude Desktop… instead' });
     return reply.code(202).send({ ok: true });
   });
   return () => ({ claudeDesktop: { connected: o.connected(), connect: CLAUDE_DESKTOP_CONNECT } });
@@ -136,11 +139,11 @@ function claudeDesktopRequest(req: FastifyRequest, reply: FastifyReply, access: 
     return reply.code(code).header('connection', 'close').send(rpcRefusal(message));
   };
   if (req.headers.upgrade !== undefined) return refuseMcp(403, 'not a WebSocket endpoint');
-  if (req.headers.origin !== undefined) return refuseMcp(403, 'Delve’s MCP endpoint takes no requests from web pages');
+  if (req.headers.origin !== undefined) return refuseMcp(403, 'Quillwarren’s MCP endpoint takes no requests from web pages');
   if (!MCP_METHODS.has(req.method)) return refuseMcp(405, 'MCP uses POST, GET and DELETE');
   const key = access?.key() ?? null;
-  if (!key) return refuseMcp(401, 'Delve isn’t connected to Claude Desktop: in Delve, choose Help → Connect to Claude Desktop…');
-  if (!secretMatches(key, given)) return refuseMcp(401, 'Delve refused this key: in Delve, choose Help → Connect to Claude Desktop… again');
+  if (!key) return refuseMcp(401, 'Quillwarren isn’t connected to Claude Desktop: in Quillwarren, choose Help → Connect to Claude Desktop…');
+  if (!secretMatches(key, given)) return refuseMcp(401, 'Quillwarren refused this key: in Quillwarren, choose Help → Connect to Claude Desktop… again');
   access!.grant(req);
   return undefined;
 }
@@ -171,7 +174,7 @@ export function registerDesktopGate(app: FastifyInstance, o: { secret: string; p
       return req.method === 'GET' || req.method === 'HEAD' ? reply.redirect('/', 303) : reply.code(404).send({ error: 'not in the desktop app' });
     }
     // MCP is for Claude Desktop's bridge with its own key (above), never for the window
-    if (/^\/mcp(\/|\?|$)/.test(path)) return reply.code(404).send({ error: 'MCP is for Claude Desktop: in Delve, choose Help → Connect to Claude Desktop…' });
+    if (/^\/mcp(\/|\?|$)/.test(path)) return reply.code(404).send({ error: 'MCP is for Claude Desktop: in Quillwarren, choose Help → Connect to Claude Desktop…' });
     if (/^\/feedback(\?|$)/.test(path)) {
       return req.method === 'GET' ? reply.type('text/html; charset=utf-8').send(feedbackPage()) : reply.code(404).send({ error: 'not in the desktop app' });
     }

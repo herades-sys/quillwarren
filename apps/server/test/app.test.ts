@@ -37,7 +37,7 @@ describe('server', () => {
     const res = await app.inject({ method: 'GET', url: '/' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/^text\/html/);
-    expect(res.body).toContain('Delve');
+    expect(res.body).toContain('Quillwarren');
     await app.close();
   });
 });

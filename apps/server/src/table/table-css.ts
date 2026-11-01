@@ -231,7 +231,7 @@ export const TABLE_2D_CSS = `
   .dlg-foot { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
   .dlg-foot .danger { margin-right: auto; }
 
-  /* the GM's markers on Delve pages (apps/web/src/table/gm-markers.ts), like the editor's note */
+  /* the GM's markers on Quillwarren pages (apps/web/src/table/gm-markers.ts), like the editor's note */
   #stage.on-marker:not(.dragging) { cursor: pointer !important; }
   .marker-box { position: fixed; z-index: 20; width: min(300px, calc(100vw - 16px)); display: grid; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-lg), inset 0 3px 0 var(--kind, var(--color-accent)); font: var(--text-md)/1.5 var(--font-ui); }
   .marker-box[data-kind="discover"] { --kind: var(--marker-discover); }

@@ -114,7 +114,7 @@ function parse(Resvg: ResvgClass, svg: string): InstanceType<ResvgClass> {
 // panic aborts the whole process: the server. One partly outside is cut
 // quietly. So a picture only a square or two thin with something reaching far
 // past it (stairs or a height tone a few squares off a thin crop, a big tree
-// beside a thin Delve Table page, a turned stain's filter region on a long thin
+// beside a thin Quillwarren Table page, a turned stain's filter region on a long thin
 // handout) kills the server. Such a picture is drawn on a bigger canvas that
 // holds all of it and cut back out: the same picture, none of the panic.
 

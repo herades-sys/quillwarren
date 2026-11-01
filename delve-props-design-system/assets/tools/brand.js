@@ -88,9 +88,9 @@ function markEls(fg,bg){const cx=32,cy=29,Ro=18,Ri=11;const arc=(r,y0)=>`M${cx-r
  const steps=[[50.5,55.5,21,43],[45,48.5,23.5,40.5],[40.5,43,26,38],[37,38.8,28.3,35.7]].map(([y0,y1,x0,x1])=>`<path d="M${x0} ${y1}H${x1}L${x1-0.6} ${y0}H${x0+0.6}Z" fill="${bg}"/>`).join('');
  return `<path d="${arc(Ro)}Z" fill="${bg}" stroke="${fg}" stroke-width="2.5" stroke-linejoin="round"/><path d="${arc(Ri)}Z" fill="${fg}"/>${steps}<path d="${vous}" fill="none" stroke="${fg}" stroke-width="1.75" stroke-linecap="round"/><path d="M7 56.5H57" fill="none" stroke="${fg}" stroke-width="2.5" stroke-linecap="round"/>`;}
 function faviconEls(fg,bg){return `<path d="M7 27V14.5A9 9 0 0 1 25 14.5V27Z" fill="${fg}"/><path d="M10.2 25.5H21.8L21.2 22H10.8Z" fill="${bg}"/><path d="M12.4 20H19.6L19.1 17.5H12.9Z" fill="${bg}"/><path d="M3.5 27.5H28.5" fill="none" stroke="${fg}" stroke-width="2.5" stroke-linecap="round"/>`;}
-const W=word('Delve',78,58,40,1.5);const LW=Math.ceil(78+W.w+14);
+const W=word('Quillwarren',78,58,40,1.5);const LW=Math.ceil(78+W.w+14);
 for(const[suf,fg,bg]of[['',INK,PAR],['-dark',PAR,DARK]]){
  await saveFile(`brand/mark${suf}.svg`,`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="${bg}"/>${markEls(fg,bg)}</svg>\n`);
  await saveFile(`brand/favicon${suf}.svg`,`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="${bg}"/>${faviconEls(fg,bg)}</svg>\n`);
- await saveFile(`brand/logo${suf}.svg`,`<svg xmlns="http://www.w3.org/2000/svg" width="${LW}" height="72" viewBox="0 0 ${LW} 72"><rect width="${LW}" height="72" fill="${bg}"/><g transform="translate(4 2)">${markEls(fg,bg)}</g><path d="${W.d}" fill="${fg}"/></svg>\n`);}
+ await saveFile(`brand/logo${suf}.svg`,`<svg xmlns="http://www.w3.org/2000/svg" width="${LW}" height="76" viewBox="0 0 ${LW} 76"><rect width="${LW}" height="76" fill="${bg}"/><g transform="translate(4 2)">${markEls(fg,bg)}</g><path d="${W.d}" fill="${fg}"/></svg>\n`);}
 log('icons',ORDER.length,'logo width',LW,'upm',upm);

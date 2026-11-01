@@ -1,4 +1,4 @@
-// Line-of-sight geometry for Delve Table (docs/TABLE.md, "Vision and light"):
+// Line-of-sight geometry for Quillwarren Table (docs/TABLE.md, "Vision and light"):
 // the visibility polygon from a point among wall segments, circles, and the
 // polygon algebra (union, intersection, difference via clipper2-ts) that turns
 // them into what a party sees. Pure: no Node or DOM APIs, so the server and the

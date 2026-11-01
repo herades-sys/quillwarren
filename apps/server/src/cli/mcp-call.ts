@@ -1,4 +1,4 @@
-// Call one Delve MCP tool from the command line, the way Claude Code would.
+// Call one Quillwarren MCP tool from the command line, the way Claude Code would.
 //   DELVE_URL=http://127.0.0.1:8790 DELVE_API_TOKEN=... npm run mcp -- <tool> '<json args>' [--out picture.png]
 //   npm run mcp -- --list
 import { writeFileSync } from 'node:fs';

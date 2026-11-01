@@ -1,4 +1,4 @@
-Props for Delve maps, drawn the way an old-school fantasy cartographer inks a floor plan: a bold, calm outline around each piece, a few confident lines inside it, a light scatter of texture, and nothing else. Every prop has to survive two things: the renderer swapping its three colours for a map style, and being shrunk to 70 px per square on Roll20. Design for both before anything else.
+Props for Quillwarren maps, drawn the way an old-school fantasy cartographer inks a floor plan: a bold, calm outline around each piece, a few confident lines inside it, a light scatter of texture, and nothing else. Every prop has to survive two things: the renderer swapping its three colours for a map style, and being shrunk to 70 px per square on Roll20. Design for both before anything else.
 
 ## The view
 

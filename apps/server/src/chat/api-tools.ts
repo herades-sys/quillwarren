@@ -1,4 +1,4 @@
-// Delve's MCP tools for the cloud models of the desktop app's chat (Claude
+// Quillwarren's MCP tools for the cloud models of the desktop app's chat (Claude
 // through the Anthropic API, OpenAI): the same names, descriptions and input
 // schemas as mcp.ts, converted for each API. These are strong models, so they
 // get the full schemas, not the small-model cut of local-agent.ts

@@ -56,7 +56,7 @@ export class MapService {
   private readonly listeners: ((mapId: string, change?: { notesOnly: boolean }) => void)[] = [];
 
   /**
-   * Hear about every change to any map, and deletions (Delve Table redraws the pages
+   * Hear about every change to any map, and deletions (Quillwarren Table redraws the pages
    * drawn from a map). notesOnly: the change touched nothing but notes, which are
    * never drawn (no picture changed).
    */

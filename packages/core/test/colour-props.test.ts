@@ -78,7 +78,7 @@ describe('the palette whitelist', () => {
 
   it('is the palette of the prompt pack, exactly', () => {
     const pack = readFileSync(resolve(ROOT, 'docs/ASSETS-COLOUR.md'), 'utf8');
-    const part = pack.slice(pack.indexOf('THE DELVE PALETTE'), pack.indexOf('FILES:', pack.indexOf('THE DELVE PALETTE')));
+    const part = pack.slice(pack.indexOf('THE QUILLWARREN PALETTE'), pack.indexOf('FILES:', pack.indexOf('THE QUILLWARREN PALETTE')));
     const named = Object.fromEntries([...part.matchAll(/([a-z-]+) (#[0-9A-F]{6})/g)].map((m) => [m[1], m[2]]));
     expect(named).toEqual(COLOUR_PALETTE);
     expect(COLOUR_HEX.size).toBe(55);

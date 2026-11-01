@@ -1,21 +1,21 @@
-# Delve Table: the private virtual tabletop (phase 1, "the basics")
+# Quillwarren Table: the private virtual tabletop (phase 1, "the basics")
 
 The plan this follows is the user's doc "Roll20 Feature Map & Private Build Plan"
 (claude.ai/artifact/VW21vTRu8ffAZYRiHbeVRN). Phase 1 builds what every later
 feature sits on: realtime sync, permissions, and a table you can play a session on.
 
-Delve Table lives inside the Delve monorepo and runs in the same server
-process, so a Delve map becomes a playable page directly, and it uses the same
+Quillwarren Table lives inside the Quillwarren monorepo and runs in the same server
+process, so a Quillwarren map becomes a playable page directly, and it uses the same
 login, database directory and release pipeline.
 
-It is part of the web app only. The Windows app (docs/DESKTOP.md) leaves Delve
+It is part of the web app only. The Windows app (docs/DESKTOP.md) leaves Quillwarren
 Table out, with the players' screen and Discord login: see "What the Windows app
 leaves out" there.
 
 ## Scope of phase 1
 
-- **Games** with one GM, who is Delve's editor login, and players who join through invite links. Players need no account or password; they may log in with Discord (see "Discord login").
-- **Pages** (scenes) in a game. A page's background is a Delve map (its players' view) or an uploaded image. The GM moves all the players to a page ("player banner").
+- **Games** with one GM, who is Quillwarren's editor login, and players who join through invite links. Players need no account or password; they may log in with Discord (see "Discord login").
+- **Pages** (scenes) in a game. A page's background is a Quillwarren map (its players' view) or an uploaded image. The GM moves all the players to a page ("player banner").
 - **Tokens** on three layers:
   - map (under tokens) and tokens: everyone sees these;
   - gm: never sent to players.
@@ -41,7 +41,7 @@ The message and state types are in `packages/table/src/protocol.ts`, and that fi
 
 ## Identity and access
 
-- **GM:** anyone with the Delve editor session cookie (`isLoggedIn(auth, req)` in `apps/server/src/login.ts`). The GM's member id is `gm`. In development, `DELVE_INSECURE_OPEN_EDIT=1` makes every browser the GM.
+- **GM:** anyone with the Quillwarren editor session cookie (`isLoggedIn(auth, req)` in `apps/server/src/login.ts`). The GM's member id is `gm`. In development, `DELVE_INSECURE_OPEN_EDIT=1` makes every browser the GM.
 - **Players:**
   - The GM creates an invite with `POST /api/v1/games/:id/invites {name?, hours?}` (default 72 hours). The link is `/play/join/<token>`: an HMAC-signed token with the game id, an invite id and the expiry, keyed from the server's session key (the same secret the sessions use).
   - Opening the link asks for a display name, creates a member (`p1`, `p2`…, role `player`) and sets the cookie `delve_player_<gameId>`, signed and holding the member id, for 30 days. It then redirects to `/play/:gameId`.
@@ -97,18 +97,18 @@ Roll20-style dynamic lighting: what the players' characters see is revealed, wal
 ### The model
 
 - **Per page:** `page.vision = { mode: 'off' | 'dynamic', ambient?: 'dark' | 'dim' | 'bright' }`.
-  - `off` (the default, also when `vision` is unset): exactly as before, the Delve map's own room fog.
-  - `dynamic`: line of sight decides, and the map's room fog is ignored. Allowed on Delve pages and blank pages; not on picture pages, whose uploaded image goes to the players whole (`page.update` refuses it).
+  - `off` (the default, also when `vision` is unset): exactly as before, the Quillwarren map's own room fog.
+  - `dynamic`: line of sight decides, and the map's room fog is ignored. Allowed on Quillwarren pages and blank pages; not on picture pages, whose uploaded image goes to the players whole (`page.update` refuses it).
   - `ambient` (default `dark`): `bright` everything is lit; `dim` everything is lit but dimmed (only bright lights, and darkvision, count as bright); `dark` only lights and darkvision show anything.
 - **Blockers** (`blockersOf`): `page.walls` plus every shut door.
-  - `page.walls` come from the Delve map as the players see it: secret doors are in them as wall, and rough maps use the rough edge as drawn (core `drawnFloor`).
+  - `page.walls` come from the Quillwarren map as the players see it: secret doors are in them as wall, and rough maps use the rough edge as drawn (core `drawnFloor`).
   - `page.doors` (`{id, a, b, style, open?}`) are the map's doors. A door is open by `page.doorState[id]` (the table's own state, which wins), else by the map's `open`. Shut doors block; a portcullis is bars you see through; an archway is always open; a secret door blocks like wall until the GM opens it.
   - Doors at any angle (a door's `angle`, docs/API.md "Doors") block exactly their line `a`–`b`: the wall they sit in is cut along them, with a jamb from the wall to the door's end where a curve or cave wall bows away from it, so no ray slips past a door's end. A turned secret door leaves its wall whole for players (no chord beside a curve). The GM clicks them on the board along their line, as any door.
-  - **Door state is table state, not map state:** the GM clicks a door on the 2D board (dynamic pages only) to open or shut it (intent `door.set {pageId, id, open}`, GM only). The Delve map stays as it is. Players don't open doors yet.
+  - **Door state is table state, not map state:** the GM clicks a door on the 2D board (dynamic pages only) to open or shut it (intent `door.set {pageId, id, open}`, GM only). The Quillwarren map stays as it is. Players don't open doors yet.
 - **Lights:**
   - Tokens: `token.light = { bright, dim }` in cells: bright out to `bright`, then dim for `dim` cells more (a torch is 4 and 4). Tokens on every layer give light, the gm layer too (an invisible lamp).
   - Map props become `page.lights` (`{id, x, y, bright, dim, asset}`) by `PROP_LIGHTS` in `packages/table/src/sight.ts`: sconce, brazier and campfire 4/4, lantern and chandelier 6/6, fireplace, cooking fire and forge 3/3, candles and oven 1/1, and the GM's light marker (a GM symbol, never drawn for players) 6/6. A light whose spot is on the wall line (a sconce hung on it) moves onto the floor.
-  - Pages from a Delve map follow it: when the map changes, the page takes its new walls, doors and lights (a `page.update`); otherwise only the picture reloads, as before.
+  - Pages from a Quillwarren map follow it: when the map changes, the page takes its new walls, doors and lights (a `page.update`); otherwise only the picture reloads, as before.
 - **Sight:** `token.sight = { enabled?, range?, darkvision? }` (cells). Unset `enabled`: a token sees when a player controls it (`controlledBy` has a player or `"all"`). Never on the gm layer.
   - What a token sees = (its visibility polygon among the blockers, cut to `range`) ∩ (lit ∪ its darkvision circle). Under a `bright` or `dim` ambient everything in its visibility polygon is lit.
   - **Party vision is shared:** players get the union of what every seeing token on the page sees. Per-player vision (each player sees only through their own tokens) is a later option.
@@ -137,7 +137,7 @@ Roll20-style dynamic lighting: what the players' characters see is revealed, wal
 
 ### GM tools
 
-- **Pages tab**, per Delve or blank page: "Vision: room fog / line of sight", the ambient, and for the explored fog (intent `vision.explored {pageId, action}`, GM only):
+- **Pages tab**, per Quillwarren or blank page: "Vision: room fog / line of sight", the ambient, and for the explored fog (intent `vision.explored {pageId, action}`, GM only):
   - **Forget explored** (`reset`): the history goes; what the party sees right now stays.
   - **Reveal all** (`reveal`): the whole page counts as explored (tokens still show only while in sight).
   - **Hide everything** (`hide`): nothing is explored or seen until anything on the page next changes (a token moves, a door turns).
@@ -150,17 +150,17 @@ Black where the party has never looked, dimmed (55 %) where it looked before, a 
 
 ## Heights and movement
 
-A Delve map's height areas (docs/API.md, "Heights within a map": ledges, hills, pits, plateaus) come to the table with its page.
+A Quillwarren map's height areas (docs/API.md, "Heights within a map": ledges, hills, pits, plateaus) come to the table with its page.
 
 - **The picture:** the page shows the edges (ledge lines, rock faces, slopes) in both views; the height labels only in the GM's.
-- **"Respect heights"** (a page option, `page.respectHeights`, **off by default**: it changes play, so the GM turns it on with "Moves: free / Moves: respect heights" in the Pages tab, Delve pages only):
+- **"Respect heights"** (a page option, `page.respectHeights`, **off by default**: it changes play, so the GM turns it on with "Moves: free / Moves: respect heights" in the Pages tab, Quillwarren pages only):
   - A player's token move (`token.move`, or `token.update` with `x` / `y`) that crosses a cliff or rock edge where no stairs or ladder cross it is refused by the server in `can()` (`packages/table/src/movement.ts`), with the reason: "That move goes over a cliff edge (a 10 ft drop): take the stairs or a ladder, or ask the GM". The client puts the token back and shows it.
   - With the option on, walls and shut doors hold moves back too ("That move goes through a wall" / "…a shut door"): the page's `walls` (secret doors shut until the GM opens one) and its doors as the table has them (`doorState`, then the map's `open`); a shut portcullis blocks a move though not sight; archways never block. With the option off, walls are not enforced for moves (as before).
   - The GM is never held back.
   - A move is checked as the straight line from the token's centre to where its centre lands, like dragging it there: a player goes round a corner in two moves, and landing on an edge counts as crossing it. Bigger tokens are checked by their centre too.
   - Slopes and steps are walked over. Hidden height areas aren't enforced (refusing a move would give them away).
 - **Page data:** `page.cliffs: [{ a: [x, y], b: [x, y], drop }]` in cells, the blocking edge pieces (core `blockingEdges`), GM only like `walls` and `doors` (`pageForPlayer` strips them). They follow the map like the walls (`followMap`). `respectHeights` reaches players too (it is no secret).
-- **Where you can go, for the GM:** the top bar's **Heights** button (or **K**) on a Delve page with height areas, in the GM view: the same overlay as the editor's Shift K, drawn from the page's map (`apps/web/src/table/movement-view.ts`): ground tinted by height, red dashes on edges nobody can walk over, green crossings. Kept per browser like the editor's.
+- **Where you can go, for the GM:** the top bar's **Heights** button (or **K**) on a Quillwarren page with height areas, in the GM view: the same overlay as the editor's Shift K, drawn from the page's map (`apps/web/src/table/movement-view.ts`): ground tinted by height, red dashes on edges nobody can walk over, green crossings. Kept per browser like the editor's.
 - **Line of sight:** cliffs don't block sight, and height doesn't change it: a token on a ledge sees what it would see on the floor (walls and shut doors still block). Seeing over low obstacles from higher ground is not modelled.
 - **3D** (`/play/:id/3d`): `scene3d.json` carries `heights` (core `heightScene`, in cells: the draped ground as `pieces`, flat or with a grid of heights where hills and ramps vary, `base` the rest of the page at 0, the plan's `bands` and `edges`, the rock tone), cut to what the viewer may see: the pieces are cut to the region and grid posts beyond it are blanked; hidden areas never reach players. The board drapes the floor picture over the ground (hills rounded, ramps, plateaus) with rock faces where it drops sheer (docs/API.md, "Heights within a map", 3D). Walls and doors stand on the ground beside them; stairs climb from the ground at their foot to the ground at their head; minis stand on the ground under their centre. Picking, dragging, pings and holding still to ping use the ground's height (a ray marched down to it: `surfaceHit` in `heights3d-logic.ts`), and so do Follow, looking at a mini or a spot, and the note pins (`project`). The grid lines and overlays (the dimmed seen-before areas) are laid over the ground, broken at sheer drops.
 
@@ -185,12 +185,12 @@ A Delve map's height areas (docs/API.md, "Heights within a map": ledges, hills, 
 | `DELETE /games/:id` | GM | Delete the game and its chat |
 | `POST /games/:id/invites {name?, hours?}` | GM | `{url, expires}` |
 | `GET /play/join/:token` (page) | anyone | The name form, then creates the member and sets the cookie |
-| `POST /games/:id/pages/from-map {mapId}` | GM | New page from a Delve map: background `{kind:'delve', mapId}`, with size and origin in cells from the map's players-view render bounds, plus `walls`, `doors` and `lights` for vision (see "Vision and light") |
-| `GET /games/:id/pages/:pageId/background.png?view=` | members | A Delve page's picture in its exact frame. Players: their own page only, players' view. In dynamic vision it is cut to the explored fog, black elsewhere |
+| `POST /games/:id/pages/from-map {mapId}` | GM | New page from a Quillwarren map: background `{kind:'delve', mapId}`, with size and origin in cells from the map's players-view render bounds, plus `walls`, `doors` and `lights` for vision (see "Vision and light") |
+| `GET /games/:id/pages/:pageId/background.png?view=` | members | A Quillwarren page's picture in its exact frame. Players: their own page only, players' view. In dynamic vision it is cut to the explored fog, black elsewhere |
 | `POST /games/:id/assets` (raw body) | GM | Upload an image, returns `{url}` |
 | `GET /games/:id/assets/:file` | members | The image |
 | `GET /games/:id/live` (WebSocket) | members | The sync channel |
-| `GET /games/:id/pages/:pageId/background.png?view=players\|gm` | members | A Delve page's picture in the page's frame (players: their own page, players' view with fog) |
+| `GET /games/:id/pages/:pageId/background.png?view=players\|gm` | members | A Quillwarren page's picture in the page's frame (players: their own page, players' view with fog) |
 | `GET /games/:id/pages/:pageId/scene3d.json?view=players\|gm` | members | The 3D view's scene, filtered for the viewer (see "3D table view") |
 | `GET /games/:id/notebook` | GM | The session notebook `{entries: [{id, title, text, created, updated}]}`, the latest change first (see "GM notes") |
 | `POST /games/:id/notebook {title?, text?}` | GM | A new entry, `201 {entry}` |
@@ -201,11 +201,11 @@ A Delve map's height areas (docs/API.md, "Heights within a map": ledges, hills, 
 | `GET /auth/discord/callback` (page) | Discord | The end of the login |
 | `POST /auth/logout {next?}` (page) | anyone | End the Discord login on this device (`GET` shows a button for it) |
 
-Pages from Delve maps draw their background from `/api/v1/maps/:mapId/render.png?view=players&ppg=70&fog=1&grid=0`. Page coordinates are in cells with the same origin as the Delve map, so Delve's walls and rooms line up with tokens. `page.origin` is the render's top-left cell (`scene.bounds.x0/y0`).
+Pages from Quillwarren maps draw their background from `/api/v1/maps/:mapId/render.png?view=players&ppg=70&fog=1&grid=0`. Page coordinates are in cells with the same origin as the Quillwarren map, so Quillwarren's walls and rooms line up with tokens. `page.origin` is the render's top-left cell (`scene.bounds.x0/y0`).
 
 ## Discord login
 
-Players can log in with Discord, so their seat is tied to their Discord account instead of one browser: a second device (or a cleared browser) needs no new invite. The Delve map editor keeps its own password login.
+Players can log in with Discord, so their seat is tied to their Discord account instead of one browser: a second device (or a cleared browser) needs no new invite. The Quillwarren map editor keeps its own password login.
 
 - **Turning it on:** set `DELVE_DISCORD_CLIENT_ID` and `DELVE_DISCORD_CLIENT_SECRET` (from the Discord developer portal, in `/etc/delve/delve.env`). Without both, nothing changes and no Discord button shows anywhere.
 - **Optional settings:**
@@ -238,8 +238,8 @@ Players can log in with Discord, so their seat is tied to their Discord account 
   - Chat: roll cards with a hover breakdown, and input history on ↑.
   - Turn order.
   - For the GM:
-    - Pages: switch, "move players here", new page from a Delve map, rename, delete.
-    - Tokens: upload an image, add it to the page, pick a Delve prop as a token.
+    - Pages: switch, "move players here", new page from a Quillwarren map, rename, delete.
+    - Tokens: upload an image, add it to the page, pick a Quillwarren prop as a token.
     - Players: invite link, member list, remove, and (with Discord login set up) "Players must log in with Discord".
     - Notes: room notes, notes on characters and NPCs, and the session notebook (see "GM notes"). The page banner has the Notes mode button, and rooms with notes a pin.
   - Members show their Discord picture (when they have one) in the member list and on their chat lines, else their colour dot.
@@ -249,7 +249,7 @@ Players can log in with Discord, so their seat is tied to their Discord account 
   - d4, d6, d8, d10, d12, d20, d100 (a tens and a units d10) and dF; other sizes get no die. At most 20 dice, then "+N more dice". Dropped dice dim once they land; rerolled ones aren't thrown. Dice rest about 2.5 s, then fade; throws may overlap.
   - Nothing is thrown for a GM roll's hidden copy (it has no rolls), for the backlog in a `hello`, or while the tab is hidden.
   - With a Discord login, the header says "Logged in as <name> · Log out".
-- **Theming:** use Delve's viewer tokens (dark and light). Everything works with mouse and touch (pointer events).
+- **Theming:** use Quillwarren's viewer tokens (dark and light). Everything works with mouse and touch (pointer events).
 - The header's **3D** button opens the same game in 3D (`/play/:gameId/3d`, see below).
 
 ## 3D table view (`/play/:gameId/3d`)
@@ -264,11 +264,11 @@ The same live game as the 2D table, for the GM and the players, with the page as
 
 - **Who:** members only, by the same page rules as `background.png`: players only the page they're on (any other page id, existing or not, is 403) and always the players' view; the GM may ask for `view=gm` (the default is `players`, as for `background.png`).
 - **What:** `{ pageId, view, kind, bounds, floor, walls, doors, stairs, region, focus }` in page cells:
-  - Delve pages: `floor` is the members-only `background.png?view=…` URL (the players' one draws only what they've seen); `walls` are segments built the way the 2D picture is (same rough floor, door gaps); `doors` `{a, b, style, open?}`; `stairs` `{box, direction}`.
+  - Quillwarren pages: `floor` is the members-only `background.png?view=…` URL (the players' one draws only what they've seen); `walls` are segments built the way the 2D picture is (same rough floor, door gaps); `doors` `{a, b, style, open?}`; `stairs` `{box, direction}`.
   - Picture pages: `floor` is the picture and the cells it covers. Blank pages: `floor` is null (the client draws a grid plane).
   - `region` is `'all'` or the polygons the viewer may see; `focus` is what the camera frames first (the page, or the seen part; null when nothing is seen yet).
-- **Filtering (server-side, one place):** `revealedRegion(state, page, map, {member, view})` decides what a viewer may see: `'all'` for the GM's own view; the Delve map's fog (revealed rooms and corridors, `show` minus `hide`, the same area the players' picture uses) for players and for the GM looking as them; `'all'` without fog. `delveGeometry` then cuts walls to that region and leaves out doors and stairs outside it, so nothing outside it is sent. Players never get secret doors (they're plain wall: no gap, a wall across), gm-layer tokens (the WebSocket's `viewFor` already strips them) or labels. The state the players get still has no `page.walls`.
-- **Following the map:** a page from a Delve map is sent again (`page.upsert`) when the map changes, and the 3D view fetches its scene and picture again, so a revealed room appears in 3D within a second.
+- **Filtering (server-side, one place):** `revealedRegion(state, page, map, {member, view})` decides what a viewer may see: `'all'` for the GM's own view; the Quillwarren map's fog (revealed rooms and corridors, `show` minus `hide`, the same area the players' picture uses) for players and for the GM looking as them; `'all'` without fog. `delveGeometry` then cuts walls to that region and leaves out doors and stairs outside it, so nothing outside it is sent. Players never get secret doors (they're plain wall: no gap, a wall across), gm-layer tokens (the WebSocket's `viewFor` already strips them) or labels. The state the players get still has no `page.walls`.
+- **Following the map:** a page from a Quillwarren map is sent again (`page.upsert`) when the map changes, and the 3D view fetches its scene and picture again, so a revealed room appears in 3D within a second.
 
 ### In the browser
 
@@ -298,7 +298,7 @@ Step 3 of the 3D GM view request: the GM keeps notes apart from the players, in 
 
 ### Notes on rooms, corridors and terrain (prep that travels with the map)
 
-- **Where they live:** the Delve map's own `notes` field on rooms, corridors and terrain (docs/API.md, "GM notes"), so the editor, Claude (`describe_map`, MCP `update {"notes"}`) and every GM tab share them. Markers keep their `text`.
+- **Where they live:** the Quillwarren map's own `notes` field on rooms, corridors and terrain (docs/API.md, "GM notes"), so the editor, Claude (`describe_map`, MCP `update {"notes"}`) and every GM tab share them. Markers keep their `text`.
 - **Never to players:** notes are never drawn, so no picture, 3D scene, players' screen or export has them, and players' pages carry no map id. The GM's client reads them from `GET /api/v1/maps/:id` (`apps/web/src/table/gm-map.ts`, shared with the GM markers) and writes them as map ops (`POST /api/v1/maps/:id/ops`, `by: "table"`) with the editor login. Without it (a co-GM through Discord) they are read only, with a note saying so; from the internet the map API needs the editor login anyway.
 - **Which area a click picks** (core `noteAreasAt`): the rooms whose shape holds the point, the topmost (the last in the map) first, then corridors (path and width, butt ends, square corners), then terrain (minus its holes). The note box lists the others under the same spot ("Also here"), so a room inside a room, a pool in a hall, or a corridor mouth is one click away.
 - **The pins:** a small note pin (`note-pins.ts`) sits beside the room number of every room with notes (corridors half way along, terrain in its middle), in the GM's own view only: never in the "Players' view". Zoomed far out they shrink. A click on a pin opens the notes.

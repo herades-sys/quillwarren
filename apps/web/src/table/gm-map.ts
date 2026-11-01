@@ -1,4 +1,4 @@
-// The Delve map behind the page the GM looks at, for what only the GM sees on top
+// The Quillwarren map behind the page the GM looks at, for what only the GM sees on top
 // of the picture: the markers' notes and the GM notes of rooms, corridors and
 // terrain. GM only: players never get a map (their pages carry no map id). It is
 // read through the map API and changed with map ops under the editor login, so
@@ -9,7 +9,7 @@ import type { DelveMap, Op } from '@delve/core';
 import type { Page } from '@delve/table';
 
 export interface GmMap {
-  /** The map of the page the GM looks at, or null (not a Delve page, not loaded yet, or it failed). */
+  /** The map of the page the GM looks at, or null (not a Quillwarren page, not loaded yet, or it failed). */
   map(): DelveMap | null;
   mapId(): string | null;
   /** The page changed: fetch its map when it is another one, or when `again` (the map changed). */
@@ -23,7 +23,7 @@ export interface GmMap {
   onChange(cb: () => void): () => void;
 }
 
-export const LOGIN_TO_EDIT = 'Log in to Delve (the map editor) as the GM to change notes on the map.';
+export const LOGIN_TO_EDIT = 'Log in to Quillwarren (the map editor) as the GM to change notes on the map.';
 
 export function createGmMap(): GmMap {
   let id: string | null = null;
@@ -79,7 +79,7 @@ export function createGmMap(): GmMap {
     reload: load,
     async send(ops) {
       const target = id;
-      if (!target) throw new Error('This page has no Delve map.');
+      if (!target) throw new Error('This page has no Quillwarren map.');
       const res = await fetch(`/api/v1/maps/${encodeURIComponent(target)}/ops`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

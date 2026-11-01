@@ -1,12 +1,12 @@
 // The training-data generator (npm run llm-train-data): conversations made by
-// the program from Delve's lean setup and real tool results, replayed and
+// the program from Quillwarren's lean setup and real tool results, replayed and
 // checked; the held-out llm-bench tasks stay out; the output formats.
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '../src/chat/local-agent.ts';
 import { LEAN_TOOLS } from '../src/chat/local-setup.ts';
 import { TASKS } from '../src/cli/llm-bench-lib.ts';
 import { Convo } from '../src/cli/llm-train/convo.ts';
-import { Delve } from '../src/cli/llm-train/delve.ts';
+import { Quillwarren } from '../src/cli/llm-train/delve.ts';
 import { FAMILIES } from '../src/cli/llm-train/families/index.ts';
 import { generate, quotas } from '../src/cli/llm-train/generate.ts';
 import type { HarnessHooks } from '../src/cli/llm-train/harness-hooks.ts';
@@ -19,7 +19,7 @@ import { benchOverlap, callErrors, schemaErrors } from '../src/cli/llm-train/val
 
 describe('the lean schema check', () => {
   it('passes calls the model may make and names what is wrong with others', async () => {
-    const d = await Delve.open();
+    const d = await Quillwarren.open();
     const c = new Convo(d, 'map_000000000000', 1);
     const tools = c.setup.tools;
     const def = (n: string) => tools.find((t) => t.name === n)!.parameters;
@@ -73,8 +73,8 @@ describe('the llm-bench tasks stay out', () => {
 describe('starting maps', () => {
   it('are the same for the same seed and never the test dungeon', async () => {
     for (const kind of ['dungeon', 'outdoor', 'small', 'empty'] as const) {
-      const a = await Delve.open();
-      const b = await Delve.open();
+      const a = await Quillwarren.open();
+      const b = await Quillwarren.open();
       const ma = await buildStart(a, { kind, seed: 4242, furnished: true });
       const mb = await buildStart(b, { kind, seed: 4242, furnished: true });
       expect(JSON.stringify(a.get(ma.mapId))).toBe(JSON.stringify(b.get(mb.mapId)));
@@ -108,8 +108,8 @@ describe('the generator', () => {
     const r = await generate({ count: 3, seed: 3, families: ['room_beside'], maxTokens: 30_000 });
     const e = r.examples[0]!;
     const user = e.messages[1] as { content: string };
-    expect(user.content).toMatch(/^\[Delve context: added by the editor, not written by the user\]/);
-    expect(user.content).toContain('[End of Delve context]');
+    expect(user.content).toMatch(/^\[Quillwarren context: added by the editor, not written by the user\]/);
+    expect(user.content).toContain('[End of Quillwarren context]');
     expect(user.content).not.toMatch(/Plan: if this request takes 3 or more steps/);
     for (const m of e.messages) if (m.role === 'assistant') for (const c of m.toolCalls ?? []) expect(c.args).not.toHaveProperty('map');
     for (const t of r.tools) expect(t.parameters.properties ?? {}).not.toHaveProperty('map');
@@ -133,7 +133,7 @@ describe('the generator', () => {
   }, 60_000);
 
   it('holds back the rest of a reply after a failed call, as the batch hook says, and records it for the final check', async () => {
-    const d = await Delve.open();
+    const d = await Quillwarren.open();
     const start = await buildStart(d, { kind: 'dungeon', seed: 11 });
     const seen: string[] = [];
     const hooks: HarnessHooks = {
@@ -172,7 +172,7 @@ describe('the generator', () => {
   }, 60_000);
 
   it('notes a third identical call in a row as runAgent does', async () => {
-    const d = await Delve.open();
+    const d = await Quillwarren.open();
     const start = await buildStart(d, { kind: 'small', seed: 3 });
     const c = new Convo(d, start.mapId, 5);
     await c.user('Check the map three times.');

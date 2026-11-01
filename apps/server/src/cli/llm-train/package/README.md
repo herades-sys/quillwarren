@@ -1,8 +1,8 @@
-# Delve training data for a local model
+# Quillwarren training data for a local model
 
-{{TRAIN}} training and {{VALID}} validation conversations of Delve's map chat, for fine-tuning a small Qwen3 model to drive Delve's **lean** tool set (17 tools, `apps/server/src/chat/lean-prompt.md`) the way `npm run llm-bench` runs it through Ollama.
+{{TRAIN}} training and {{VALID}} validation conversations of Quillwarren's map chat, for fine-tuning a small Qwen3 model to drive Quillwarren's **lean** tool set (17 tools, `apps/server/src/chat/lean-prompt.md`) the way `npm run llm-bench` runs it through Ollama.
 
-**Made by a program, not by a language model.** Every conversation was assembled by Delve's own generator (`npm run llm-train-data`, seed {{SEED}}): a procedurally made starting map, a request built from templates, a scripted solution that calls Delve's real MCP tools, and a final answer filled in from the real tool results. No language model wrote, rewrote or graded any of it: no Claude, no Ollama, no chat transcripts, no benchmark runs. No third-party maps or art were used.
+**Made by a program, not by a language model.** Every conversation was assembled by Quillwarren's own generator (`npm run llm-train-data`, seed {{SEED}}): a procedurally made starting map, a request built from templates, a scripted solution that calls Quillwarren's real MCP tools, and a final answer filled in from the real tool results. No language model wrote, rewrote or graded any of it: no Claude, no Ollama, no chat transcripts, no benchmark runs. No third-party maps or art were used.
 
 ## What is in this folder
 
@@ -19,8 +19,8 @@
 
 ## How it was made
 
-- **Exactly what the model sees at inference.** The system prompt and the tool schemas come from `buildSetup('lean')` at generation time, never copied. Each user message is framed with the context block the local harness adds (map name, rev, units, the room list with where each room lies, every object). Tool results are the real replies of Delve's MCP tools, run in process on a throwaway Delve, cut to 4000 characters like the harness does, with the map id left to the harness.
-- **Starting maps** are made procedurally: dungeons of 3 to 16 rooms (a few octagons and circles, corridors with doors of every style, pillars, stairs, water and floor textures, some rooms furnished), small maps of one to three rooms, outdoor maps (ground, ponds, rivers, roads, hills, cliffs, forests, a few huts) and empty maps, in feet and in metres. Delve's "test dungeon" template is never used.
+- **Exactly what the model sees at inference.** The system prompt and the tool schemas come from `buildSetup('lean')` at generation time, never copied. Each user message is framed with the context block the local harness adds (map name, rev, units, the room list with where each room lies, every object). Tool results are the real replies of Quillwarren's MCP tools, run in process on a throwaway Quillwarren, cut to 4000 characters like the harness does, with the map id left to the harness.
+- **Starting maps** are made procedurally: dungeons of 3 to 16 rooms (a few octagons and circles, corridors with doors of every style, pillars, stairs, water and floor textures, some rooms furnished), small maps of one to three rooms, outdoor maps (ground, ponds, rivers, roads, hills, cliffs, forests, a few huts) and empty maps, in feet and in metres. Quillwarren's "test dungeon" template is never used.
 - **{{FAMILIES}} task families**, each a request grammar with varied phrasing plus a scripted solution that prefers the meaning-level options (`beside`, `in` + `place`, `region`, `room` + `wall`, lengths with units): rooms beside rooms, corridors, doors on named walls, small layouts from scratch, outdoor maps from scratch, renaming / numbers / notes / door styles, moving, resizing, deleting (asking first before most of the map goes), furnishing by theme, single props by place, props found with `list_assets`, the prop brush (forests, groves, rows), terrain by region, heights with units, labels, explicit coordinates, questions answered without changing the map, follow-ups in a second message ("make it bigger", "move it north", "undo that"), recovery after a real refusal (the wall has no free stretch, no free spot, a prop on a tree) and fixing what `check_map` lists. See `stats.md` for the counts.
 - **Checked.** Every conversation was replayed from scratch and kept only if the replay gave the same messages, the family's own checks held (the room is east of room 4, the door is locked…), `check_map` shows no new problem, every tool call fits the lean schema, and no refusal or warning is answered over. {{DROPPED}} drafts failed and were replaced by new ones.
 - **The llm-bench tasks are held out.** No request matches one of the 8 benchmark prompts or a paraphrase of one (the same text, similar wording, or all the concepts of a task such as "a tavern in room 2", "water with a bridge", "trees along the north edge", "a hill with a path"), so the benchmark still measures something the model hasn't seen.
@@ -62,35 +62,35 @@ What the script does, and why (every setting is a flag with a comment in the scr
 - For hybrid Qwen3 models (Qwen3-4B, Qwen3-8B), every assistant turn starts after an empty `<think>\n\n</think>\n\n` block: that is how Ollama starts each reply with thinking off, while the Hugging Face template only puts it on the last turn. Non-thinking models (Qwen3-4B-Instruct-2507) get no think tags at all.
 - Trains only the assistant turns (Unsloth's `train_on_responses_only`): the system prompt, the tools, the user messages with their context block and the tool results are masked out of the loss.
 - QLoRA on all attention and MLP projections, rank 16, alpha 16, no dropout, learning rate 1e-4 with a cosine schedule, AdamW 8-bit, batch 1 × 16 accumulation steps, one epoch, no packing.
-- Saves the LoRA adapter to `delve-qwen3-lora/`. `--eval-steps N` evaluates on `valid.jsonl` along the way.
+- Saves the LoRA adapter to `quillwarren-qwen3-lora/`. `--eval-steps N` evaluates on `valid.jsonl` along the way.
 
-LLaMA-Factory works too: put `train_sharegpt.jsonl`, `valid_sharegpt.jsonl` and `dataset_info.json` in its `data/` folder and use the datasets `delve_train` / `delve_valid` with a Qwen3 template that switches thinking off (`qwen3_nothink` in recent versions).
+LLaMA-Factory works too: put `train_sharegpt.jsonl`, `valid_sharegpt.jsonl` and `dataset_info.json` in its `data/` folder and use the datasets `quillwarren_train` / `quillwarren_valid` with a Qwen3 template that switches thinking off (`qwen3_nothink` in recent versions).
 
 ## Into Ollama
 
 ```
-python train_unsloth.py --export-gguf q4_k_m --adapter delve-qwen3-lora   # merges the adapter, writes a GGUF
+python train_unsloth.py --export-gguf q4_k_m --adapter quillwarren-qwen3-lora   # merges the adapter, writes a GGUF
 ollama show qwen3:4b --modelfile > Modelfile                               # the base model's template and settings
-# edit Modelfile: FROM ./delve-qwen3-lora-gguf/<the .gguf file>
-ollama create delve-qwen3-4b -f Modelfile
+# edit Modelfile: FROM ./quillwarren-qwen3-lora-gguf/<the .gguf file>
+ollama create quillwarren-qwen3-4b -f Modelfile
 ```
 
 Copy the GGUF and the Modelfile to the PC that runs Ollama (the backup PC) and run `ollama create` there. Starting from the base model's own Modelfile keeps its chat template, which is what lets Ollama pass the tools and switch thinking off; `Modelfile.template` is the same with comments, if you'd rather write it by hand. q4_k_m keeps the 4B model at about 2.5 GB; q5_k_m or q8_0 are a little better and bigger.
 
 ## Testing it against the baseline
 
-The 8 llm-bench tasks were kept out of the data, so they are a fair test. From the Delve repo on the dev container, with thinking off for both, twice each (the runs vary):
+The 8 llm-bench tasks were kept out of the data, so they are a fair test. From the Quillwarren repo on the dev container, with thinking off for both, twice each (the runs vary):
 
 ```
 npm run llm-bench -- --base-url http://192.168.1.40:11434/v1 --model qwen3:4b --think off --name base-4b
-npm run llm-bench -- --base-url http://192.168.1.40:11434/v1 --model delve-qwen3-4b --think off --name delve-4b
+npm run llm-bench -- --base-url http://192.168.1.40:11434/v1 --model quillwarren-qwen3-4b --think off --name quillwarren-4b
 ```
 
-`llm-bench/report.md` then shows both side by side: pass / partial / fail per task, checks, tool calls, errors, malformed calls and time. For reference, `docs/llm-bench/2026-10-06-qwen3-8b-smarter-tools.md`: qwen3:8b with thinking passed 14 of 16 task runs, about 4 minutes per 8 tasks, 92–96 % of its output thinking. The hope for the fine-tuned model is that pass rate or close to it without the thinking, so it answers in seconds. Also try a few requests of your own with `npm run local-llm -- --model delve-qwen3-4b --think off "…"`.
+`llm-bench/report.md` then shows both side by side: pass / partial / fail per task, checks, tool calls, errors, malformed calls and time. For reference, `docs/llm-bench/2026-10-06-qwen3-8b-smarter-tools.md`: qwen3:8b with thinking passed 14 of 16 task runs, about 4 minutes per 8 tasks, 92–96 % of its output thinking. The hope for the fine-tuned model is that pass rate or close to it without the thinking, so it answers in seconds. Also try a few requests of your own with `npm run local-llm -- --model quillwarren-qwen3-4b --think off "…"`.
 
 ## Making the data again
 
-This data was made from Delve {{SOURCE}}, with these harness hooks wired in: {{HOOKS}}. In the Delve repo: `npm run llm-train-data -- --count {{COUNT}} --seed {{SEED}} --out ~/llm-train` (same code and seed, same files; about 10 minutes on the dev container). The system prompt, the tool schemas and every tool result come from the code as it is then, so after a change to the tools, `lean-prompt.md` or the harness, generate again and retrain: a model trained on the old wording expects the old wording. What the harness adds on its own (a line in the context block comes from `buildSetup` by itself; notes on held-back calls in a batch, the repeat note and the final check before an answer is accepted go through `apps/server/src/cli/llm-train/harness-hooks.ts`) must be wired in there before generating; see docs/API.md, "Training data for a local model".
+This data was made from Quillwarren {{SOURCE}}, with these harness hooks wired in: {{HOOKS}}. In the Quillwarren repo: `npm run llm-train-data -- --count {{COUNT}} --seed {{SEED}} --out ~/llm-train` (same code and seed, same files; about 10 minutes on the dev container). The system prompt, the tool schemas and every tool result come from the code as it is then, so after a change to the tools, `lean-prompt.md` or the harness, generate again and retrain: a model trained on the old wording expects the old wording. What the harness adds on its own (a line in the context block comes from `buildSetup` by itself; notes on held-back calls in a batch, the repeat note and the final check before an answer is accepted go through `apps/server/src/cli/llm-train/harness-hooks.ts`) must be wired in there before generating; see docs/API.md, "Training data for a local model".
 
 ## Limits
 
@@ -101,4 +101,4 @@ This data was made from Delve {{SOURCE}}, with these harness hooks wired in: {{H
 - The local harness repeats the map id in the tool calls of its history (`"map": "map_…"`), which the training data leaves out (the model never writes it). Harmless, but the harness could drop it.
 - Token counts are estimates (calibrated on the benchmark's own prompts, largest error about 4 %); the training script counts exactly.
 - The training script has not been run here (no GPU, no Python packages on the dev container): expect to adjust a version detail or two.
-- The conversations match the harness of Delve {{SOURCE}}. If the harness has changed since (helping steps such as an extra context line, held-back calls in a batch or a final check, or a new prompt or tools), generate the data again before training.
+- The conversations match the harness of Quillwarren {{SOURCE}}. If the harness has changed since (helping steps such as an extra context line, held-back calls in a batch or a final check, or a new prompt or tools), generate the data again before training.

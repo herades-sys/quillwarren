@@ -1,10 +1,10 @@
-// The whole stylesheet, in cascade order: tokens, the Nocturne layer, Delve's
+// The whole stylesheet, in cascade order: tokens, the Nocturne layer, Quillwarren's
 // components. The server sends it as /assets/delve-ui.css?v=<UI_CSS_VERSION>.
 import { NOCTURNE_CSS } from './base.ts';
 import { COMPONENTS_CSS } from './components.ts';
 import { TOKENS_CSS } from './tokens.ts';
 
-export const UI_CSS = `/* Delve UI v1: tokens, Nocturne base, Delve components. Source: packages/ui. */
+export const UI_CSS = `/* Quillwarren UI v1: tokens, Nocturne base, Quillwarren components. Source: packages/ui. */
 ${TOKENS_CSS}
 ${NOCTURNE_CSS}
 ${COMPONENTS_CSS}`;

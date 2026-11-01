@@ -1,6 +1,6 @@
 // The GM's pages tab: every page with where you and the players are, switching
 // your own view, moving the players ("player banner"), renaming, the grid and
-// deleting; plus new pages from a Delve map, from a picture, or blank.
+// deleting; plus new pages from a Quillwarren map, from a picture, or blank.
 import type { Page } from '@delve/table';
 import type { TableCtx } from './ctx.ts';
 import { $, api, button, h, postJson, toast } from './dom.ts';
@@ -23,7 +23,7 @@ export function initPages(ctx: TableCtx): void {
   let filter = '';
   let busy = false;
 
-  const search = h('input', { type: 'search', placeholder: 'Find a map', 'aria-label': 'Find a Delve map' });
+  const search = h('input', { type: 'search', placeholder: 'Find a map', 'aria-label': 'Find a Quillwarren map' });
   search.addEventListener('input', () => {
     filter = search.value.trim().toLowerCase();
     draw();
@@ -79,7 +79,7 @@ export function initPages(ctx: TableCtx): void {
   }
 
   function pageRow(p: Page, viewing: boolean, players: boolean, only: boolean): HTMLElement {
-    const bg = p.background.kind === 'delve' ? 'Delve map' : p.background.kind === 'image' ? 'Picture' : 'Blank';
+    const bg = p.background.kind === 'delve' ? 'Quillwarren map' : p.background.kind === 'image' ? 'Picture' : 'Blank';
     return h(
       'li',
       { class: 'page-item' },
@@ -129,7 +129,7 @@ export function initPages(ctx: TableCtx): void {
         h(
           'div',
           { class: 'row' },
-          button('From a Delve map…', () => void openPicker(), { class: 'btn primary' }),
+          button('From a Quillwarren map…', () => void openPicker(), { class: 'btn primary' }),
           h('span', { class: 'btn file-btn' }, 'From a picture…', file),
           button('Blank', () =>
             void ctx.act({
@@ -138,7 +138,7 @@ export function initPages(ctx: TableCtx): void {
             }),
           ),
         ),
-        h('p', { class: 'hint' }, 'A Delve map page shows the players’ view with fog of war, and follows the map as you reveal it. A picture page is sized at 70 px per cell.'),
+        h('p', { class: 'hint' }, 'A Quillwarren map page shows the players’ view with fog of war, and follows the map as you reveal it. A picture page is sized at 70 px per cell.'),
       );
     } else {
       kids.push(h('div', { class: 'row' }, search, button('Cancel', () => {
@@ -148,7 +148,7 @@ export function initPages(ctx: TableCtx): void {
       if (!maps) kids.push(h('p', { class: 'empty' }, 'Loading maps…'));
       else {
         const shown = maps.filter((m) => !filter || m.name.toLowerCase().includes(filter) || (m.level?.name ?? '').toLowerCase().includes(filter));
-        if (!shown.length) kids.push(h('p', { class: 'empty' }, maps.length ? 'No map matches.' : 'There are no Delve maps yet. Make one in Delve first.'));
+        if (!shown.length) kids.push(h('p', { class: 'empty' }, maps.length ? 'No map matches.' : 'There are no Quillwarren maps yet. Make one in Quillwarren first.'));
         const ml = h('ul', { class: 'list' });
         for (const m of shown) {
           ml.append(

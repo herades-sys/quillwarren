@@ -1,4 +1,4 @@
-// The editor's side of custom props (this Delve's own, drawn by Claude): the
+// The editor's side of custom props (this Quillwarren's own, drawn by Claude): the
 // "New prop…" button in the Prop picker, which opens the Claude panel with a
 // message to finish, and each custom prop's menu: rename, category, size,
 // blocks, "Ask Claude to change it", delete. Changes go to /api/v1/props and
@@ -21,7 +21,7 @@ export function askClaude(text: string, pick?: string): boolean {
   return true;
 }
 
-const NO_CHAT = 'Drawing props needs the Claude panel, and the chat isn’t set up on this server. Claude Code with Delve’s MCP can draw one too (create_prop).';
+const NO_CHAT = 'Drawing props needs the Claude panel, and the chat isn’t set up on this server. Claude Code with Quillwarren’s MCP can draw one too (create_prop).';
 /** The desktop app's chat panel answers with a local model (it carries the assistant's name), not Claude. */
 const localAssistant = (): boolean => Boolean(document.getElementById('chat')?.dataset.assistant);
 const noChat = (): string => (localAssistant() ? 'Drawing new props needs Claude: the local model in the desktop app can’t draw them yet.' : NO_CHAT);
@@ -86,7 +86,7 @@ document.addEventListener('keydown', (e) => {
 
 /** A custom prop's tile: the picker's button, a "custom" badge and the ⋯ menu. */
 export function customTile(button: HTMLElement, a: AssetInfo, host: PropMakerHost): HTMLElement {
-  button.querySelector('.ed-asset-pic')?.append(h('span', { class: 'tag tag-sm tag-accent ed-asset-badge', title: `Drawn for this Delve${a.by ? ` by ${a.by}` : ''}` }, 'custom'));
+  button.querySelector('.ed-asset-pic')?.append(h('span', { class: 'tag tag-sm tag-accent ed-asset-badge', title: `Drawn for this Quillwarren${a.by ? ` by ${a.by}` : ''}` }, 'custom'));
   const more = iconBtn('more', `${a.name}: rename, change or delete`, (e) => {
     e.stopPropagation();
     if (openMenu) return closeMenu();
@@ -167,7 +167,7 @@ export function editDialog(id: string, host: PropMakerHost, focus: 'name' | 'cat
     'Edit prop',
     [
       h('div', { class: 'ed-propdlg-preview' }, h('img', { src: row.preview, alt: `${a.name} on a floor in three map styles` })),
-      h('p', { class: 'dialog-body' }, `${id} · drawn ${row.created.slice(0, 10)} by ${row.by}. Shared with every GM on this Delve.`),
+      h('p', { class: 'dialog-body' }, `${id} · drawn ${row.created.slice(0, 10)} by ${row.by}. Shared with every GM on this Quillwarren.`),
       field('Name', name),
       field('Category', cat, { hint: 'Where it shows in the Prop picker. Decals lie under the walls; GM symbols only show in the GM view.' }),
       h('div', { class: 'ed-two' }, field('Width', wSel, { unit: 'sq' }), field('Height', hSel, { unit: 'sq' })),

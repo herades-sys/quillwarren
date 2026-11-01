@@ -1,4 +1,4 @@
-// This Delve's own props in the browser: GET /api/v1/props, registered with
+// This Quillwarren's own props in the browser: GET /api/v1/props, registered with
 // core (registerAssets) so the renderer, propBounds and the pickers know their
 // footprints. The editor, the viewer and segment thumbnails load it through
 // art.ts; it reloads when something says the library changed (the editor's

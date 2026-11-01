@@ -1,4 +1,4 @@
-// The GM's "Respect heights" switch for a page in the Pages tab (Delve pages):
+// The GM's "Respect heights" switch for a page in the Pages tab (Quillwarren pages):
 // with it on, the server refuses a player's move over a cliff edge of the map's
 // height areas where no stairs or ladder cross it, and through walls and shut
 // doors (packages/table movement.ts). Off by default: it changes play.

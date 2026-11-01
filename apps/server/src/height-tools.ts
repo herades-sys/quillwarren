@@ -64,7 +64,7 @@ export function registerHeightTools(server: McpServer, service: MapService, by: 
         profile: z.enum(HEIGHT_PROFILES).optional().describe('hill (rounded: rises from its edge to its height toward the middle; natural hills, ridges) or plateau (flat top: ledges, terraces, arenas, built platforms). Default: hill for a slope edge, else plateau'),
         name: z.string().max(200).optional().describe('e.g. "Archers\' ledge", "Sunken arena"'),
         notes: z.string().max(10000).optional().describe('GM notes, never drawn'),
-        hidden: z.boolean().optional().describe('Hidden from players (their view shows flat ground there; Delve Table doesn\'t enforce it)'),
+        hidden: z.boolean().optional().describe('Hidden from players (their view shows flat ground there; Quillwarren Table doesn\'t enforce it)'),
         id: z.string().optional().describe('Defaults to the next h<n>'),
       },
     },

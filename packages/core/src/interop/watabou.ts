@@ -1,6 +1,6 @@
-// Watabou's Medieval Fantasy City Generator (MFCG) JSON export -> a Delve map.
+// Watabou's Medieval Fantasy City Generator (MFCG) JSON export -> a Quillwarren map.
 // The export (v0.11) is a GeoJSON-style FeatureCollection in metres with
-// y pointing north; Delve's y points south, so the map is flipped on import.
+// y pointing north; Quillwarren's y points south, so the map is flipped on import.
 // Buildings become rooms (pulled apart a little so each keeps its walls),
 // city walls become wall strips with round towers and gaps at the gates,
 // and roads, water, plazas, fields and parks become terrain. The import is
@@ -22,7 +22,7 @@ export interface CityImportOptions {
   id: string;
   name?: string;
   seed?: number;
-  /** Feet per grid square (default 10: a whole town fits on one map). 5 is true Delve scale. */
+  /** Feet per grid square (default 10: a whole town fits on one map). 5 is true Quillwarren scale. */
   feetPerSquare?: number;
   /** The square size as a unit ("10 ft", "3 m"); wins over feetPerSquare. */
   unit?: string;

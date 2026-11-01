@@ -1,4 +1,4 @@
-// The desktop app's model files: GGUF files in %LOCALAPPDATA%\Delve\models
+// The desktop app's model files: GGUF files in %LOCALAPPDATA%\Quillwarren\models
 // (DELVE_MODELS_DIR), from "import from Ollama", a download (later), or put
 // there by hand. Plus the built-in runtime's settings (which model, GPU or
 // CPU, context size) in <DELVE_DATA>/runtime.json.

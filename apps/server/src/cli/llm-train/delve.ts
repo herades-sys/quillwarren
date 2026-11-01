@@ -1,7 +1,7 @@
-// A throwaway Delve in this process for the training-data generator: an
+// A throwaway Quillwarren in this process for the training-data generator: an
 // in-memory map store and the real MCP server (mcp.ts), reached through the
 // MCP SDK's in-memory transport, so every tool result is exactly what the
-// model would read from Delve. Nothing listens on a port and nothing is
+// model would read from Quillwarren. Nothing listens on a port and nothing is
 // written to disk; one instance per conversation, closed afterwards.
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -27,7 +27,7 @@ export interface ToolRun {
 
 const BASE = 'http://127.0.0.1:8791';
 
-export class Delve {
+export class Quillwarren {
   readonly client: Client;
   readonly tools: McpToolInfo[];
   readonly store: MapStore;
@@ -42,7 +42,7 @@ export class Delve {
     this.server = server;
   }
 
-  static async open(): Promise<Delve> {
+  static async open(): Promise<Quillwarren> {
     const store = new MapStore(':memory:');
     const service = new MapService(store, new LiveHub());
     const server = buildMcpServer(service, BASE, 'llm-train');
@@ -51,7 +51,7 @@ export class Delve {
     const client = new Client({ name: 'delve-llm-train', version: '1.0.0' });
     await client.connect(b);
     const { tools } = await client.listTools();
-    return new Delve(client, tools as McpToolInfo[], store, service, server);
+    return new Quillwarren(client, tools as McpToolInfo[], store, service, server);
   }
 
   /** A new map from a document (its id, name, unit, style and seed chosen by the caller, so runs repeat). */

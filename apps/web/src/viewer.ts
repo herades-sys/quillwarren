@@ -24,7 +24,7 @@ interface Initial {
   chat?: { enabled: boolean; model: string; backend?: string; backends?: string[]; name?: string };
   /** Snip an area to a PNG (snip.ts): admin and GM accounts only. */
   snip?: boolean;
-  /** false in the desktop app: no Delve Table or players' screen (editor-page.ts). */
+  /** false in the desktop app: no Quillwarren Table or players' screen (editor-page.ts). */
   multiplayer?: false;
 }
 type Incoming =
@@ -198,7 +198,7 @@ function highlight(ids: string[], kind: 'focus' | 'change', ms: number): Bounds 
 
 function updateChrome(): void {
   nameEl.textContent = map.name;
-  document.title = `${map.name} · Delve`;
+  document.title = `${map.name} · Quillwarren`;
   shell.syncView(view);
   const url = new URL(location.href);
   url.searchParams.delete('view');

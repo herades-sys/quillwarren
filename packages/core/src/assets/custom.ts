@@ -1,4 +1,4 @@
-// The checks a custom prop's SVG must pass before Delve keeps it (custom props
+// The checks a custom prop's SVG must pass before Quillwarren keeps it (custom props
 // are drawn by Claude in the editor's chat, or sent over the API, and shared by
 // every GM on the server). Stricter than parseAssetSvg, which quietly fixes the
 // design system's files: here anything outside the art rules (docs/ASSETS.md)

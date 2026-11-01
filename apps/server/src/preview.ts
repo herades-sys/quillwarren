@@ -45,7 +45,7 @@ interface Access {
   account: { name: string; role: string } | null;
   /** Logged in with the shared password while there's no admin account yet. */
   bootstrap: boolean;
-  /** Delve Table is here (everywhere but the desktop app): the Play link. */
+  /** Quillwarren Table is here (everywhere but the desktop app): the Play link. */
   table: boolean;
   /** One local user (the desktop app): no accounts, no logging in or out. */
   singleUser: boolean;
@@ -59,7 +59,7 @@ const initials = (name: string): string => {
 
 /** The right end of the top bar: Play, Admin, the theme, and who is logged in. */
 function barEnd(a: Access): string {
-  const play = a.table ? `<a class="btn btn-primary" href="/play" title="Delve Table: your games, invite players, play">${icon('play', { size: 15 })}Play</a>` : '';
+  const play = a.table ? `<a class="btn btn-primary" href="/play" title="Quillwarren Table: your games, invite players, play">${icon('play', { size: 15 })}Play</a>` : '';
   const admin = a.account?.role === 'admin' ? `<a class="btn btn-plain lib-wide" href="/admin" title="Accounts, GMs and logins">${icon('admin', { size: 16 })}Admin</a>` : '';
   const ideas = a.loggedIn ? `<a class="btn btn-plain lib-wide lib-ideas" href="/feedback" title="Request a feature: ask for one, or report a problem">${icon('send', { size: 15 })}<span>Request a feature</span></a>` : '';
   const logout = `<form method="post" action="/logout" class="inline"><button class="btn btn-ghost" type="submit">Log out</button></form>`;
@@ -214,7 +214,7 @@ function page(info: AppInfo, view: View, store: MapStore, access: Access): strin
   ${access.bootstrap ? secureBanner() : ''}
   <section class="stack" style="gap:var(--space-6)">
     <div class="lib-head">
-      <div><span class="kicker">Delve · ${count} map${count === 1 ? '' : 's'}</span><h1 class="display-xl">Library</h1>
+      <div><span class="kicker">Quillwarren · ${count} map${count === 1 ? '' : 's'}</span><h1 class="display-xl">Library</h1>
       <p class="lead">Your dungeons, towers and towns. Open one to edit it live, with Claude if you like; players see only what you reveal.</p></div>
       ${loggedIn ? `<div class="row"><button class="btn btn-primary btn-lg" type="button" data-new-map>${icon('plus', { size: 16 })}New map<span class="key">N</span></button></div>` : ''}
     </div>
@@ -247,7 +247,7 @@ ${cards}
     <a href="/health">/health</a><a href="/api/v1/maps">/api/v1/maps</a><a href="/ui">Style guide</a><a href="/feedback">Request a feature</a>
   </footer>
 </main>`;
-  return htmlDocument({ title: 'Delve', body, extra: `<style>${PAGE_CSS}${LIBRARY_CSS}</style>` });
+  return htmlDocument({ title: 'Quillwarren', body, extra: `<style>${PAGE_CSS}${LIBRARY_CSS}</style>` });
 }
 
 /** `o` (the desktop app): multiplayer false leaves out the Play link, singleUser the account, admin and log-out links and the admin set-up banner. */

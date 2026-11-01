@@ -1,4 +1,4 @@
-// Builds Delve's asset catalog from delve-props-design-system/assets:
+// Builds Quillwarren's asset catalog from delve-props-design-system/assets:
 //   packages/core/src/assets/catalog.json   what the editor, renderer and Claude know about each asset
 //   delve-props-design-system/assets/manifest.json   the design system's full manifest (it only listed the samples)
 // Metadata comes from the batch generators' META tables (tools/*.js) plus the samples' manifest

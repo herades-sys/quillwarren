@@ -1,4 +1,4 @@
-// Benchmark a local model on Delve's map chat: 8 tasks from easy to hard, each
+// Benchmark a local model on Quillwarren's map chat: 8 tasks from easy to hard, each
 // on a fresh map, checked automatically; saves a picture and a transcript per
 // task and a Markdown report (report.md, all runs in the folder).
 //   npm run llm-bench -- --base-url http://192.168.1.40:11434/v1 --model qwen3:8b [--tools lean|full] [--tasks 1,3,5] [--out dir]
@@ -90,7 +90,7 @@ const runDir = `${slug(model.model)}-${tools}${values.name ? `-${slug(values.nam
 mkdirSync(join(out, runDir), { recursive: true });
 
 const delve = await connectDelve();
-console.log(`model ${model.client.label} (${model.api} API) · tools ${tools} · steps ${stepsText(steps)} · Delve ${delve.version} at ${delve.base} · ${tasks.length} tasks`);
+console.log(`model ${model.client.label} (${model.api} API) · tools ${tools} · steps ${stepsText(steps)} · Quillwarren ${delve.version} at ${delve.base} · ${tasks.length} tasks`);
 
 const started = new Date().toISOString();
 let warmupMs: number | undefined;

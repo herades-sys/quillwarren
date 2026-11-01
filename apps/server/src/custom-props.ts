@@ -1,4 +1,4 @@
-// This Delve's own props: one shared library for every GM and admin, drawn by
+// This Quillwarren's own props: one shared library for every GM and admin, drawn by
 // Claude in the editor's chat (MCP create_prop) or sent over the API. Each prop
 // is <dir>/<id>.svg (the checked, inked, cleaned art the renderer draws) and
 // <dir>/<id>.source.svg (the SVG as it was sent, for redrawing it later), with

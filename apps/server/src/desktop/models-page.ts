@@ -52,7 +52,12 @@ export function registerModelManager(app: FastifyInstance, d: ModelManagerDeps):
     try {
       const r = await importOllamaModel(found, d.models.dir);
       d.log?.(`imported ${name} from Ollama (${r.method}, ${r.size} bytes)`);
-      return { imported: name, file: r.file.split(/[\\/]/).pop(), method: r.method, size: r.size };
+      const file = r.file.split(/[\\/]/).pop()!;
+      // with nothing chosen yet, what was just imported is what Start should run
+      const settings = d.settings.get();
+      const selected = !settings.model;
+      if (selected) d.settings.set({ ...settings, model: file });
+      return { imported: name, file, method: r.method, size: r.size, selected };
     } catch (e) {
       return bad(reply, 409, (e as Error).message);
     }
@@ -115,7 +120,7 @@ export function modelsPage(): string {
   const body = `${topBar({ crumbs: [{ href: '/', text: 'Library' }], title: 'Models' })}
 <main class="mm">
   <div><h1>Models for the chat</h1>
-  <p class="mm-note">The chat can use a model server you already run (Ollama, LM Studio, llama-server: choose it in the editor’s chat settings), or Delve’s own built-in runtime with a model file from this page.</p></div>
+  <p class="mm-note">The chat can use a model server you already run (Ollama, LM Studio, llama-server: choose it in the editor’s chat settings), or Quillwarren’s own built-in runtime with a model file from this page.</p></div>
   <section class="card" id="rt"><h2>Built-in runtime</h2><p class="mm-note">Loading…</p></section>
   <section class="card" id="mine"><h2>Model files</h2><p class="mm-note">Loading…</p></section>
   <section class="card" id="ollama"><h2>Import from Ollama</h2><p class="mm-note">Loading…</p></section>
@@ -144,7 +149,7 @@ async function load() {
   const rt = s.runtime;
   const state = { unavailable: 'not in this build', stopped: 'stopped', starting: 'starting…', ready: 'running', crashed: 'stopped after an error' }[rt.state] || rt.state;
   $('rt').innerHTML = '<h2>Built-in runtime</h2>' +
-    (rt.bundled ? '' : '<p class="mm-note">This build of Delve doesn’t include the runtime (llama.cpp’s llama-server) yet. Until it does, run a model server yourself and choose it in the editor’s chat settings. You can already prepare a model file below.</p>') +
+    (rt.bundled ? '' : '<p class="mm-note">This build of Quillwarren doesn’t include the runtime (llama.cpp’s llama-server) yet. Until it does, run a model server yourself and choose it in the editor’s chat settings. You can already prepare a model file below.</p>') +
     '<div class="mm-row"><span class="spacer"><span class="mm-name">State: ' + esc(state) + '</span><span class="mm-sub">' +
     (rt.model ? esc(rt.model) + ' on the ' + (rt.device === 'gpu' ? 'GPU' : 'CPU') + (rt.fellBack ? ' (the GPU didn’t work)' : '') + ', port ' + rt.port : 'no model loaded') +
     (rt.lastError ? ' · <span class="mm-bad">' + esc(rt.lastError) + '</span>' : '') + '</span></span>' +
@@ -165,7 +170,7 @@ document.addEventListener('click', async (e) => {
   const t = e.target.closest('button');
   if (!t) return;
   try {
-    if (t.dataset.import) { t.disabled = true; say('Importing ' + t.dataset.import + '…'); const r = await call('POST', '/api/v1/runtime/import', { name: t.dataset.import }); say('Imported as ' + r.file + (r.method === 'link' ? ' (linked)' : ' (copied)') + '.'); }
+    if (t.dataset.import) { t.disabled = true; say('Importing ' + t.dataset.import + '…'); const r = await call('POST', '/api/v1/runtime/import', { name: t.dataset.import }); say('Imported as ' + r.file + (r.method === 'link' ? ' (linked)' : ' (copied)') + (r.selected ? ', and chosen for the built-in runtime.' : '.')); }
     else if (t.dataset.del) { if (!confirm('Delete ' + t.dataset.del + '?')) return; await call('DELETE', '/api/v1/runtime/models/' + encodeURIComponent(t.dataset.del)); say('Deleted.'); }
     else if (t.dataset.act === 'start') { say('Starting the model…'); await call('POST', '/api/v1/runtime/start'); say('Running.'); }
     else if (t.dataset.act === 'stop') { await call('POST', '/api/v1/runtime/stop'); say('Stopped.'); }

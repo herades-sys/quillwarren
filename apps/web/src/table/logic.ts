@@ -1,4 +1,4 @@
-// Pure Delve Table client logic (no DOM, no Pixi), so it can be unit-tested:
+// Pure Quillwarren Table client logic (no DOM, no Pixi), so it can be unit-tested:
 // the camera, snapping and hit-testing, what the UI lets a member try, the
 // local view reducer with optimistic moves, and chat/roll formatting.
 import type { Bar, ChatMessage, GameEvent, GameView, Layer, Member, Page, RollResult, Token, TurnEntry, TurnOrder } from '@delve/table';
@@ -62,7 +62,7 @@ export const pageBox = (p: Pick<Page, 'origin' | 'width' | 'height'>): Box => ({
 
 /**
  * The background picture's URL, or null for a page without one. `bust` forces a
- * reload (the Delve map changed). A Delve page is drawn in the players' view with
+ * reload (the Quillwarren map changed). A Quillwarren page is drawn in the players' view with
  * only what they've seen, or for the GM the whole map with the unseen parts dimmed
  * and the GM's notes; both exactly in the page's frame, so they line up.
  */
@@ -81,7 +81,7 @@ export function backgroundUrl(p: Page, bust = 0, view: 'gm' | 'players' = 'playe
   return null;
 }
 
-/** Where the background goes, in cells: at the origin, sized by the page (images) or by its pixels (Delve renders). */
+/** Where the background goes, in cells: at the origin, sized by the page (images) or by its pixels (Quillwarren renders). */
 export function backgroundBox(p: Page, pxW: number, pxH: number): Box {
   const [x0, y0] = p.origin;
   if (p.background.kind === 'image') return { x0, y0, x1: x0 + p.background.w, y1: y0 + p.background.h };
@@ -91,7 +91,7 @@ export function backgroundBox(p: Page, pxW: number, pxH: number): Box {
 
 /**
  * Should a page.upsert fetch the background again? A rename or a grid switch
- * changes nothing on the picture; any other upsert may mean the Delve map
+ * changes nothing on the picture; any other upsert may mean the Quillwarren map
  * behind it changed (fog revealed, a room added), so it reloads.
  */
 export function needsReload(prev: Page | null, next: Page): boolean {

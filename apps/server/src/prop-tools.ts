@@ -1,4 +1,4 @@
-// MCP tools for this Delve's own props: Claude draws a prop the GM describes
+// MCP tools for this Quillwarren's own props: Claude draws a prop the GM describes
 // (prop_rules, then create_prop), looks at the preview it gets back, and fixes
 // it with update_prop. Kept out of mcp.ts, which only registers them.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -13,7 +13,7 @@ type ToolResult = { content: Content[]; isError?: boolean };
 
 const text = (s: string, isError = false): ToolResult => ({ content: [{ type: 'text', text: s }], ...(isError ? { isError: true } : {}) });
 
-export const PROP_RULES = `How to draw a Delve prop (for create_prop and update_prop)
+export const PROP_RULES = `How to draw a Quillwarren prop (for create_prop and update_prop)
 
 FOOTPRINT AND FILE
 - One standalone <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w*100} {h*100}">: 100 units per grid square. w and h are ${PROP_MIN_SIZE} to ${PROP_MAX_SIZE} squares, in half squares.
@@ -23,7 +23,7 @@ FOOTPRINT AND FILE
 
 WHAT A FILE MAY CONTAIN
 - Elements: path, rect, circle, ellipse, line, polyline, polygon, g. Attributes: geometry, fill, stroke, stroke-width, stroke-linecap, stroke-linejoin, fill-rule, and transform with translate() / rotate() only.
-- Exactly three inks, written as these strings (Delve swaps them for each map style):
+- Exactly three inks, written as these strings (Quillwarren swaps them for each map style):
   #000000 ink: every line, openings (a pit, a keyhole, the gap behind a handle), tiny marks (rivets, nail heads). Never a surface.
   #FFFFFF paper: the main top surface (a table top, a lid, a barrel head, a statue's arms).
   #999999 shade: the second surface, for one of four reasons: metal fittings (bands, hoops, lock plates, blades); a darker material; something lower than its neighbour (a step, a recessed lid); contents and hair (liquid, coins, soil, coals).
@@ -38,15 +38,15 @@ LINES
 - No marks that read as letters or digits at 70 px: a ring with a centre dot, zigzags, radiating fans, paired brackets, a circle with a bar through it.
 
 THE HAND-INKED LINE
-- Draw clean geometry. Delve inks it for you (ink true, the default): every shape gets the built-in art's slightly uneven, smooth pen line. Identical shapes get identical lines, so a fill and its outline stay together. Marks under 6 units (rivets, keyholes) stay exactly as drawn, and round caps and joins are added. Use ink false only for art that is hand-drawn already.
+- Draw clean geometry. Quillwarren inks it for you (ink true, the default): every shape gets the built-in art's slightly uneven, smooth pen line. Identical shapes get identical lines, so a fill and its outline stay together. Marks under 6 units (rivets, keyholes) stay exactly as drawn, and round caps and joins are added. Use ink false only for art that is hand-drawn already.
 
 CHECKING YOUR DRAWING
 - create_prop refuses anything outside these rules and lists what to fix. When it accepts, you get a preview: the prop on a floor of at least 3 × 3 squares at 70 px per square (Roll20's grid), in ${PREVIEW_STYLES.join(', ')}, and the prop alone, enlarged, to check the drawing itself.
 - Look at the preview as a GM would: does it read at that size, are the parts told apart, does it face south, is anything solid black that shouldn't be, is anything too thin to see? One square is 70 px, so a 2-unit line is 1.4 px: a few bold parts beat many small ones.
 - Fix it with update_prop (same id, new svg). Stop after about 3 tries and show the GM what you have.`;
 
-/** Two clean drawings that follow the rules, for Delve to ink. */
-const EXAMPLES = `EXAMPLE 1, clean geometry (what you send; Delve inks it). "Strongbox", 1×1, storage: a paper lid, shade iron bands and lock plate, an ink keyhole, one grain line, the outline last over the surface.
+/** Two clean drawings that follow the rules, for Quillwarren to ink. */
+const EXAMPLES = `EXAMPLE 1, clean geometry (what you send; Quillwarren inks it). "Strongbox", 1×1, storage: a paper lid, shade iron bands and lock plate, an ink keyhole, one grain line, the outline last over the surface.
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
 <rect x="20" y="29" width="60" height="42" rx="3" fill="#FFFFFF" stroke="none"/>
 <rect x="31" y="29" width="7" height="42" fill="#999999" stroke="#000000" stroke-width="2"/>
@@ -75,7 +75,7 @@ const metaArgs = {
   h: z.number().min(PROP_MIN_SIZE).max(PROP_MAX_SIZE).describe('Footprint height in squares (0.5 steps)'),
   tags: z.array(z.string().max(24)).max(12).optional().describe('Search words, e.g. ["smithy", "metal", "tools"]'),
   blocks: z.enum(['none', 'movement', 'sight']).optional().describe('none: walk over it (rug, web); movement (default): blocks walking (table, anvil); sight: blocks walking and the view (wardrobe, tree)'),
-  ink: z.boolean().optional().describe('Default true: Delve gives your clean shapes the hand-inked line. false keeps every line exactly as drawn'),
+  ink: z.boolean().optional().describe('Default true: Quillwarren gives your clean shapes the hand-inked line. false keeps every line exactly as drawn'),
 };
 
 export function registerPropTools(server: McpServer, props: PropLibrary, store: MapStore, base: string, by: string): void {
@@ -107,13 +107,13 @@ export function registerPropTools(server: McpServer, props: PropLibrary, store: 
     'prop_rules',
     {
       title: 'How to draw a prop',
-      description: "The rules for drawing a new prop (Delve's ink style, footprint, colours, line weights) and two example SVGs. Read it before create_prop.",
+      description: "The rules for drawing a new prop (Quillwarren's ink style, footprint, colours, line weights) and two example SVGs. Read it before create_prop.",
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
     () => {
       const chair = assets.svg('chair');
-      const real = chair ? `\n\nEXAMPLE 3, a built-in prop as Delve draws it (chair, 1×1, furniture: the seat in paper, the shade back rail along the top edge, two grain lines; this is the inked line your shapes get):\n${chair}` : '';
+      const real = chair ? `\n\nEXAMPLE 3, a built-in prop as Quillwarren draws it (chair, 1×1, furniture: the seat in paper, the shade back rail along the top edge, two grain lines; this is the inked line your shapes get):\n${chair}` : '';
       return text(`${PROP_RULES}\n\n${EXAMPLES}${real}`);
     },
   );
@@ -123,7 +123,7 @@ export function registerPropTools(server: McpServer, props: PropLibrary, store: 
     {
       title: 'Create a prop',
       description:
-        'Draw a new prop for this Delve\'s shared library, when the GM asks for one the catalog (list_assets) does not have. Call prop_rules first. ' +
+        'Draw a new prop for this Quillwarren\'s shared library, when the GM asks for one the catalog (list_assets) does not have. Call prop_rules first. ' +
         'Refused drawings come back with what to fix. Saved ones come back with a preview picture to check; fix them with update_prop. The prop shows in every GM\'s Prop picker; place it on a map only if asked (add_prop with its id).',
       inputSchema: { ...metaArgs, svg: svgArg, id: z.string().max(60).optional().describe('Wanted id; it becomes my-<words>. Default: from the name') },
     },

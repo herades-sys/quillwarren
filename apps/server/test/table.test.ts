@@ -1,5 +1,5 @@
-// Delve Table's server: games, invites and player cookies, the live channel's
-// per-member filtering, uploads, and pages made from Delve maps.
+// Quillwarren Table's server: games, invites and player cookies, the live channel's
+// per-member filtering, uploads, and pages made from Quillwarren maps.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join as joinPath } from 'node:path';
@@ -526,7 +526,7 @@ describe('images', () => {
   });
 });
 
-describe('pages from Delve maps', () => {
+describe('pages from Quillwarren maps', () => {
   it('sizes the page from the players’ render bounds and keeps the walls, secret doors shut', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/v1/maps', headers: bearer, payload: { template: 'test-dungeon', name: 'Test dungeon' } });
     const { id: mapId, map } = res.json() as { id: string; map: DelveMap };
@@ -560,7 +560,7 @@ describe('pages from Delve maps', () => {
     expect((await app.inject({ method: 'POST', url: `/api/v1/games/${id}/pages/from-map`, payload: { mapId } })).statusCode).toBe(401);
   });
 
-  it('sends the page again when its Delve map changes, so the picture reloads', async () => {
+  it('sends the page again when its Quillwarren map changes, so the picture reloads', async () => {
     const { id: mapId } = (await app.inject({ method: 'POST', url: '/api/v1/maps', headers: bearer, payload: { template: 'test-dungeon', name: 'Crypt' } })).json() as { id: string };
     const id = await createGame();
     const { page } = (await app.inject({ method: 'POST', url: `/api/v1/games/${id}/pages/from-map`, headers: bearer, payload: { mapId } })).json();

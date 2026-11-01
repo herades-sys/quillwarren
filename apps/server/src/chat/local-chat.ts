@@ -1,9 +1,9 @@
 // The chat with a local model: the desktop app's chat backend. The editor's
 // chat panel sends its message as always (POST /api/v1/maps/:id/chat); this
 // answers it with a model on the user's own machine or network (Ollama, LM
-// Studio, llama.cpp's llama-server, later Delve's built-in runtime) through the
+// Studio, llama.cpp's llama-server, later Quillwarren's built-in runtime) through the
 // local-model harness (local-agent.ts runAgent, the lean setup of
-// local-setup.ts and its helping steps LEAN_STEPS), with Delve's MCP tools run
+// local-setup.ts and its helping steps LEAN_STEPS), with Quillwarren's MCP tools run
 // in this process. What the harness reports is turned into the panel's chat
 // events (text, tool calls, the plan / activity card, errors) by feeding it
 // through the same StreamTranslator the Claude bridge uses, so the panel can't
@@ -44,7 +44,7 @@ import { apiChat, checkModelId, DEFAULT_API_SETTINGS, isKeyProvider, KEY_PROVIDE
 // ---------- settings ----------
 
 export interface LocalModelSettings {
-  /** server: an OpenAI-compatible (or Ollama) server at url; builtin: Delve's own runtime (desktop/runtime.ts). */
+  /** server: an OpenAI-compatible (or Ollama) server at url; builtin: Quillwarren's own runtime (desktop/runtime.ts). */
   source: 'server' | 'builtin';
   /** e.g. http://127.0.0.1:11434/v1 (Ollama) or http://127.0.0.1:8080/v1 (llama-server). */
   url: string;
@@ -171,7 +171,7 @@ export class ChatSettingsStore {
 
 // ---------- the built-in runtime (desktop/runtime.ts) ----------
 
-/** Delve's own llama-server, as the chat sees it. */
+/** Quillwarren's own llama-server, as the chat sees it. */
 export interface BuiltinModel {
   /** Whether it can run now (the binary is bundled and a model file is chosen), and if not, why. */
   status(): { available: boolean; model?: string; note?: string };
@@ -244,7 +244,7 @@ export class LocalTranslator {
     return this.feed({ type: 'assistant', message: { id: `m${++this.n}`, content: [{ type: 'text', text: content }] } });
   }
 
-  /** A call to one of Delve's tools starts. */
+  /** A call to one of Quillwarren's tools starts. */
   toolStart(name: string, args: unknown): ChatEvent[] {
     const id = `local_${++this.n}`;
     this.running = { id, name };
@@ -363,7 +363,7 @@ export async function serverModels(url: string, timeoutMs = 5000): Promise<{ api
   return { api: 'openai', models };
 }
 
-/** Delve's MCP tools in this process (no HTTP, no token): the same server /mcp runs per request. */
+/** Quillwarren's MCP tools in this process (no HTTP, no token): the same server /mcp runs per request. */
 async function inProcessTools(ctx: AppContext, base: string): Promise<{ client: Client; tools: McpToolInfo[]; close(): Promise<void> }> {
   const server = buildMcpServer(ctx.service, base, ctx.info.version, ctx.images, ctx.props);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();

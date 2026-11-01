@@ -29,6 +29,6 @@ export interface TableCtx {
   on(fn: (c: Change) => void): () => void;
   /** Every message from the server, after the app has handled it (the GM's notes listen for theirs). */
   onMessage(fn: (m: ServerMessage) => void): () => void;
-  /** Which picture of a Delve page the member looks at: the GM's own, or as the players see it. */
+  /** Which picture of a Quillwarren page the member looks at: the GM's own, or as the players see it. */
   seeAs(): 'gm' | 'players';
 }

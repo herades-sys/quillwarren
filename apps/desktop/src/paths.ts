@@ -1,21 +1,21 @@
 // Where the desktop app keeps things. Pure (no Electron), so it is tested on
 // its own: apps/desktop/test/paths.test.ts.
 //
-//   %APPDATA%\Delve\              Electron's userData: the window's browser
+//   %APPDATA%\Quillwarren\              Electron's userData: the window's browser
 //                                 storage, window-state.json, desktop.json,
 //                                 claude-desktop.json (while Claude Desktop is
 //                                 connected: claude-desktop.ts)
-//   %APPDATA%\Delve\data\         the server's DELVE_DATA: maps (delve.db),
+//   %APPDATA%\Quillwarren\data\         the server's DELVE_DATA: maps (delve.db),
 //                                 pictures, props, chat settings
-//   %APPDATA%\Delve\logs\         main.log, server.log, llama-server.log
-//   %LOCALAPPDATA%\Delve\models\  GGUF model files (gigabytes: kept out of the
+//   %APPDATA%\Quillwarren\logs\         main.log, server.log, llama-server.log
+//   %LOCALAPPDATA%\Quillwarren\models\  GGUF model files (gigabytes: kept out of the
 //                                 roaming profile)
 //   <install>\resources\          node\node.exe, server\ (the bundled server),
-//                                 Delve.mcpb (the Claude Desktop extension),
+//                                 Quillwarren.mcpb (the Claude Desktop extension),
 //                                 later llama\llama-server.exe
 import { join } from 'node:path';
 
-export const APP_FOLDER = 'Delve';
+export const APP_FOLDER = 'Quillwarren';
 
 export interface DesktopPaths {
   userData: string;
@@ -62,6 +62,6 @@ export function resourcePaths(resources: string, platform: NodeJS.Platform = pro
     llama: join(resources, 'llama', `llama-server${exe}`),
     notices: join(resources, 'THIRD-PARTY-NOTICES.txt'),
     icon: join(resources, 'icon.png'),
-    mcpb: join(resources, 'Delve.mcpb'),
+    mcpb: join(resources, 'Quillwarren.mcpb'),
   };
 }

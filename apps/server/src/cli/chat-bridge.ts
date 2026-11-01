@@ -29,4 +29,4 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     setTimeout(() => process.exit(0), 4000).unref();
   });
 }
-server.listen(port, host, () => console.log(`delve chat bridge on http://${host}:${port}, using ${claudeBin}`));
+server.listen(port, host, () => console.log(`quillwarren chat bridge on http://${host}:${port}, using ${claudeBin}`));

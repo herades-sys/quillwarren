@@ -1,4 +1,4 @@
-// Dynamic vision for Delve Table (docs/TABLE.md, "Vision and light"): which
+// Dynamic vision for Quillwarren Table (docs/TABLE.md, "Vision and light"): which
 // walls and doors block sight on a page, which tokens and map props give light,
 // which tokens see, what the party sees together, how the explored fog grows,
 // and which tokens a player may be sent. Pure, like the rest of @delve/table;
@@ -25,7 +25,7 @@ import {
 } from './vision.ts';
 
 /**
- * Lights of the Delve props, in cells (5 ft each): bright, then dim for that
+ * Lights of the Quillwarren props, in cells (5 ft each): bright, then dim for that
  * many cells more. A torch sheds 20 ft bright and 20 ft dim, a lantern 30 and 30.
  * The GM's light marker (a GM symbol, never drawn for players) is an invisible lamp.
  */

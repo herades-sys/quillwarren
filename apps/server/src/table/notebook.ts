@@ -34,7 +34,7 @@ export function registerNotebook(app: FastifyInstance, { store, hub, access }: N
     }
     const member = memberOf(access, req, state, { write });
     if (!member) {
-      void reply.code(401).send({ error: 'only the GM can use the notebook: log in to Delve' });
+      void reply.code(401).send({ error: 'only the GM can use the notebook: log in to Quillwarren' });
       return null;
     }
     if (member.role !== 'gm') {

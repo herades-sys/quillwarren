@@ -1,5 +1,5 @@
 // Pure helpers for raised and sunken ground in the 3D views (the editor's stack
-// and Delve Table's): the height of the draped ground anywhere, how high a wall,
+// and Quillwarren Table's): the height of the draped ground anywhere, how high a wall,
 // a door or a mini stands, cutting the ground's triangles along the height
 // lattice, the sheer faces between pieces, where a ray meets the ground, and
 // the floor picture's UVs. No DOM, no WebGL, no @delve/core (the table's bundle

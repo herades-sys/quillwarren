@@ -22,7 +22,7 @@ export function pageFor(state: GameState, memberId: string): string {
 const GM_PAGE_FIELDS = ['walls', 'doors', 'doorState', 'lights', 'cliffs'] as const;
 
 export function pageForPlayer(p: Page): Page {
-  // nor the Delve map's id: players draw the page through the game's members-only routes, and from
+  // nor the Quillwarren map's id: players draw the page through the game's members-only routes, and from
   // the home network the map's own API would hand them the whole map
   const mapId = p.background.kind === 'delve' && p.background.mapId !== '';
   if (!mapId && !GM_PAGE_FIELDS.some((k) => p[k] !== undefined)) return p;

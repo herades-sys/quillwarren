@@ -1,5 +1,5 @@
 // "Respect heights" (docs/TABLE.md, "Heights and movement"): on a page with it on,
-// a player's move may not cross a cliff edge of the Delve map's height areas
+// a player's move may not cross a cliff edge of the Quillwarren map's height areas
 // where no stairs or ladder cross it, nor a wall or a shut door. The GM is never
 // held back. A move is checked as the straight line from the token's centre to
 // where its centre lands (like dragging it there), so a player walks round a

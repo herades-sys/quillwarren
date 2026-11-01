@@ -1,4 +1,4 @@
-// Delve Table storage on node:sqlite (${DELVE_DATA}/table.db). Each game is one
+// Quillwarren Table storage on node:sqlite (${DELVE_DATA}/table.db). Each game is one
 // JSON row, kept in memory and written back at most every 300 ms (and on
 // close); chat is an append-only log. "Seats" hold a random nonce per player,
 // so a player cookie dies with its member even if a later player gets the same id.

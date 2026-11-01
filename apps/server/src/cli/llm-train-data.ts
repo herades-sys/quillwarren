@@ -1,5 +1,5 @@
-// Training data for a Delve-specific local model, made by a program: every
-// conversation is assembled from Delve's own lean setup (system prompt, tool
+// Training data for a Quillwarren-specific local model, made by a program: every
+// conversation is assembled from Quillwarren's own lean setup (system prompt, tool
 // schemas, the context block as the local harness frames it) and the real MCP
 // tools run in process, from procedurally generated starting maps and
 // templated requests with scripted solutions. No language model writes,
@@ -80,7 +80,7 @@ if (!values['no-sharegpt']) {
     writeFileSync(join(out, 'train_sharegpt.jsonl'), sgTrain.map((s) => JSON.stringify(s)).join('\n') + '\n');
     writeFileSync(join(out, 'valid_sharegpt.jsonl'), sgValid.map((s) => JSON.stringify(s)).join('\n') + '\n');
     const info = (file: string) => ({ file_name: file, formatting: 'sharegpt', columns: { messages: 'conversations', system: 'system', tools: 'tools' } });
-    writeFileSync(join(out, 'dataset_info.json'), JSON.stringify({ delve_train: info('train_sharegpt.jsonl'), delve_valid: info('valid_sharegpt.jsonl') }, null, 2) + '\n');
+    writeFileSync(join(out, 'dataset_info.json'), JSON.stringify({ quillwarren_train: info('train_sharegpt.jsonl'), quillwarren_valid: info('valid_sharegpt.jsonl') }, null, 2) + '\n');
   }
 }
 // what every example shares, and one line per example about where it came from

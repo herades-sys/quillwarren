@@ -1,11 +1,11 @@
-// A small agent loop that runs Delve's map chat on a local model (Ollama,
+// A small agent loop that runs Quillwarren's map chat on a local model (Ollama,
 // LM Studio, any server with OpenAI-style function calling) instead of Claude.
 // It is a test harness (`npm run local-llm`, `npm run llm-bench`) for deciding
 // whether a local model is worth integrating; the live chat (bridge.ts) is
 // untouched.
 //
 // The loop: send the system prompt, the context block plus the request, and
-// the tools; run each tool call through Delve's MCP; feed the results back
+// the tools; run each tool call through Quillwarren's MCP; feed the results back
 // (trimmed, pictures replaced by a note, because these models read text
 // only); repeat until the model answers without a tool call or a limit is hit.
 // Small models are sloppy, so it repairs JSON arguments, reads tool calls that
@@ -664,7 +664,7 @@ export function coerceArgs(args: Json, schema: JsonSchema): { args: Json; change
 /** The tool a sloppy name means: functions.add_room, mcp__delve__add_room, Add-Room. */
 export function resolveToolName(name: string, known: readonly string[]): string | undefined {
   if (known.includes(name)) return name;
-  const norm = (s: string) => s.toLowerCase().replace(/^(functions?|tools?|mcp__delve|delve)[._:]+/, '').replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
+  const norm = (s: string) => s.toLowerCase().replace(/^(functions?|tools?|mcp__delve|delve|mcp__quillwarren|quillwarren)[._:]+/, '').replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
   const n = norm(name);
   return known.find((k) => norm(k) === n);
 }
@@ -871,7 +871,7 @@ export type StopReason = 'answer' | 'turns' | 'tool_calls' | 'time' | 'errors' |
 export interface AgentStats {
   turns: number;
   toolCalls: number;
-  /** Calls that came back as errors (Delve refused them, unknown tool, unreadable arguments). */
+  /** Calls that came back as errors (Quillwarren refused them, unknown tool, unreadable arguments). */
   toolErrors: number;
   /** Arguments that were not JSON even after repair. */
   badJson: number;

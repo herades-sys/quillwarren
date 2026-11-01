@@ -1,4 +1,4 @@
-// What Delve knows about each asset (props and terrain tiles), from catalog.json,
+// What Quillwarren knows about each asset (props and terrain tiles), from catalog.json,
 // which `npm run assets` builds from delve-props-design-system/assets, and the
 // colour props from catalog-colour.json, which `npm run colour-props` builds.
 // The SVG bodies themselves are loaded separately (server: from disk; browser:
@@ -30,7 +30,7 @@ export interface AssetInfo {
   file: string;
   /** Hidden from players unless a prop says otherwise (gmOnly: false): traps and other secrets. */
   hidden?: boolean;
-  /** 'colour': a colour prop, drawn in the Delve palette (assets/colour.ts) instead of the three inks. */
+  /** 'colour': a colour prop, drawn in the Quillwarren palette (assets/colour.ts) instead of the three inks. */
   palette?: 'colour';
   /** Colour props: 'floor' ones (rugs, trapdoors, leaf piles) lie with the decals, under the other props. */
   layer?: 'floor' | 'props';
@@ -40,7 +40,7 @@ export interface AssetInfo {
   modular?: boolean;
   /** A tree's crown (see "canopies" below): drawn in the canopy layer, over every other prop. Set by this file, not by the catalogs. */
   canopy?: true;
-  /** A prop from this Delve's own library (see "Custom props" below), not the built-in catalog. */
+  /** A prop from this Quillwarren's own library (see "Custom props" below), not the built-in catalog. */
   custom?: boolean;
   /** Custom props: who made it and when (ISO times). */
   by?: string;
@@ -95,7 +95,7 @@ export const CANOPY_CATEGORY = 'trees';
 export const ASSETS: readonly AssetInfo[] = (catalog as AssetInfo[]).map((a) => (CANOPY_INK.has(a.id) ? { ...a, canopy: true as const } : a));
 
 // ---------- colour props and textures ----------
-// A second built-in library in the Delve palette (docs/ASSETS-COLOUR.md).
+// A second built-in library in the Quillwarren palette (docs/ASSETS-COLOUR.md).
 // catalog-colour.json keeps one compact row per asset, because every browser
 // bundle carries it: [id, name, category, w, h, "tags,with,commas", blocks,
 // layer, group or "", "hidden modular tile difficult" flags or nothing]. The
@@ -224,7 +224,7 @@ export function modularAt(p: Pick<Prop, 'asset' | 'at' | 'rotation' | 'scale'>):
 }
 
 // ---------- custom props ----------
-// This Delve's own props (drawn by Claude in the editor's chat, shared by every
+// This Quillwarren's own props (drawn by Claude in the editor's chat, shared by every
 // GM on the server) live beside the built-in catalog. Their ids start with
 // CUSTOM_PREFIX, so they can never clash with a built-in one. The server keeps
 // the library (apps/server/src/custom-props.ts) and registers it here at start

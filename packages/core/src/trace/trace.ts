@@ -1,11 +1,11 @@
-// Tracing a map picture into a Delve map, in one of two modes.
+// Tracing a map picture into a Quillwarren map, in one of two modes.
 // - Dungeon (and battle maps): light floor drawn inside dark wall lines, often on
-//   a grid. The floor becomes rooms and corridors and Delve draws the walls; see
+//   a grid. The floor becomes rooms and corridors and Quillwarren draws the walls; see
 //   dungeon.ts.
 // - City plan (Watabou's generator and other flat-colour plans): each main colour
 //   gets a role; buildings and walls become rooms, the other roles become
 //   terrain. Thin lines (grid, outlines) are cleaned away, text holes in
-//   buildings are filled, and shapes with holes that Delve can't hold in one
+//   buildings are filled, and shapes with holes that Quillwarren can't hold in one
 //   piece (a city wall ring, a park around houses) are split in two.
 import { FORMAT, FORMAT_VERSION, type DelveMap, type MapObject, type Point } from '../schema.ts';
 import { validateMap } from '../validate.ts';

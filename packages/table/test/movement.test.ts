@@ -1,5 +1,5 @@
 // "Respect heights": with it on, a player's move over a cliff edge of the page's
-// Delve map (no stairs or ladder there) is refused, and so is one through a wall
+// Quillwarren map (no stairs or ladder there) is refused, and so is one through a wall
 // or a shut door; the GM is never held back, and it is off by default.
 import { describe, expect, it } from 'vitest';
 import { crossingAt, moveRefusal, pageForPlayer, viewFor, type GameState, type Page } from '../src/index.ts';

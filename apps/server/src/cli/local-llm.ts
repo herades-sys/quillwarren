@@ -1,6 +1,6 @@
-// Send one chat message to a local model with Delve's tools and watch it work.
+// Send one chat message to a local model with Quillwarren's tools and watch it work.
 //   npm run local-llm -- --base-url http://192.168.1.40:11434/v1 --model qwen3:8b [--tools lean|full] [--map <id> | --template test-dungeon|empty] [--png out.png] "Add a 6×4 room east of room 1"
-// The map is DELVE_URL's (with DELVE_API_TOKEN), or a new one on a throwaway in-process Delve.
+// The map is DELVE_URL's (with DELVE_API_TOKEN), or a new one on a throwaway in-process Quillwarren.
 // --steps picks the helping steps for small models (local-steps.ts; default ids,final for lean).
 // See docs/API.md, "Testing local models".
 import { writeFileSync } from 'node:fs';

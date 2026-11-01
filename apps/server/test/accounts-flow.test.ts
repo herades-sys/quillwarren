@@ -294,7 +294,7 @@ describe('the admin page and GM setup links', () => {
     const link = linkOf(made.body);
     const token = link.split('=')[1]!;
     const first = await get(link);
-    expect(first.body).toContain('Welcome to Delve');
+    expect(first.body).toContain('Welcome to Quillwarren');
     expect(first.headers['referrer-policy']).toBe('same-origin'); // "no-referrer" would make browsers post "Origin: null"
     expect(first.headers['cache-control']).toBe('no-store');
     expect((await post('/account/setup', { token, step: 'password', password: 'short', password2: 'short' })).statusCode).toBe(400);

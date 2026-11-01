@@ -1,4 +1,4 @@
-// The app icon from Delve's own brand mark (delve-props-design-system/assets/brand/mark.svg):
+// The app icon from Quillwarren's own brand mark (delve-props-design-system/assets/brand/mark.svg):
 // build/icon.ico (16–256 px, PNG-compressed entries, as Windows Vista and
 // later read them) and build/resources/icon.png (the window icon, 256 px).
 // Rendered with resvg, the renderer the server uses anyway.

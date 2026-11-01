@@ -1,5 +1,5 @@
 // The picture of a page with dynamic vision (GET …/pages/:pageId/background.png):
-// the Delve map with the table's doors (vision.ts withTableDoors), the map's own
+// the Quillwarren map with the table's doors (vision.ts withTableDoors), the map's own
 // room fog left out (line of sight decides instead), and for players cut to the
 // explored fog with everything else black (core RenderOptions.reveal: one SVG
 // clipPath around every layer, so the PNG holds no pixel of what wasn't seen;

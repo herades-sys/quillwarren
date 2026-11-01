@@ -14,9 +14,9 @@ export interface RenderQuery {
   background?: string;
   /** "1": apply fog of war (players' view: only what's revealed; GM view: the rest shaded). */
   fog?: string;
-  /** "full": with fog, keep the picture at the unfogged size (Delve Table page backgrounds). */
+  /** "full": with fog, keep the picture at the unfogged size (Quillwarren Table page backgrounds). */
   bounds?: string;
-  /** "x0,y0,x1,y1" in squares: draw exactly this part (Delve Table pages, so the GM and players pictures line up). */
+  /** "x0,y0,x1,y1" in squares: draw exactly this part (Quillwarren Table pages, so the GM and players pictures line up). */
   frame?: string;
   /**
    * "content": fit the picture to what is drawn (core contentFrame), not to the

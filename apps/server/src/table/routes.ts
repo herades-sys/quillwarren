@@ -1,4 +1,4 @@
-// Delve Table's HTTP side: the REST API under /api/v1/games, the pages under
+// Quillwarren Table's HTTP side: the REST API under /api/v1/games, the pages under
 // /play (the GM's lobby, invite links, the table itself), uploaded images, the
 // live channel and, when it's set up, Discord login (discord.ts). See
 // docs/TABLE.md for the routes and who may call them.
@@ -35,7 +35,7 @@ import { newGameId, TableStore, type Account } from './store.ts';
 import { pageSightData } from './vision.ts';
 
 export interface TableDeps {
-  /** Delve's maps, for pages made from a map. */
+  /** Quillwarren's maps, for pages made from a map. */
   maps: MapStore;
   auth: EditorAuth;
   /** DELVE_API_TOKEN: it also keys the invite and player-cookie signatures. */
@@ -43,7 +43,7 @@ export interface TableDeps {
   version: string;
   /** The data dir (DELVE_DATA, via buildApp). Without it games live in memory and uploads in a temp dir (tests). */
   dataDir?: string;
-  /** Subscribe to changes of Delve maps (MapService.onChange), so pages drawn from a map follow it. */
+  /** Subscribe to changes of Quillwarren maps (MapService.onChange), so pages drawn from a map follow it. */
   onMapChange?: (cb: (mapId: string, change?: { notesOnly: boolean }) => void) => void;
   /** Discord login for players (DELVE_DISCORD_CLIENT_ID/SECRET). Without it there's no Discord anywhere. */
   discord?: DiscordConfig;
@@ -92,7 +92,7 @@ function cleanName(v: unknown, max: number): string | null {
 }
 
 /**
- * A Delve map as a page: its players'-view render bounds, grid unit, and for
+ * A Quillwarren map as a page: its players'-view render bounds, grid unit, and for
  * vision its walls, doors and lights (vision.ts pageSightData). Walls are the
  * players' view of them: secret doors open no gap and close their opening, so
  * the page data never gives a secret door away.
@@ -147,7 +147,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdent
     return { loginUrl: discordLoginUrl(next), ...(account ? { account: { name: account.name } } : {}) };
   };
 
-  // Pages drawn from a Delve map follow it: when the map changes (the GM
+  // Pages drawn from a Quillwarren map follow it: when the map changes (the GM
   // reveals a room, moves a door), everyone sees the page again, and the client
   // reloads its picture. When the map's walls, doors or lights changed, the page
   // takes the new ones (a page.update, so vision follows); otherwise nothing
@@ -229,7 +229,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdent
   const gmOnly = (write: boolean) => async (req: FastifyRequest, reply: FastifyReply) => {
     if (isGm(access, req, { write })) return;
     if (!deps.token && !deps.auth.sessions.open) return reply.code(503).send({ error: 'this server has no API token configured, so there is no GM login' });
-    return reply.code(401).send({ error: 'only the GM can do that: log in to Delve (or send the API token)' });
+    return reply.code(401).send({ error: 'only the GM can do that: log in to Quillwarren (or send the API token)' });
   };
 
   /** The game named in the URL, or a 404 already sent. */
@@ -357,13 +357,13 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdent
       return reply.code(204).send();
     });
 
-    // ---------- pages from Delve maps ----------
+    // ---------- pages from Quillwarren maps ----------
 
     t.post('/api/v1/games/:id/pages/from-map', { preHandler: gmOnly(true) }, async (req, reply) => {
       const state = gameOf(req, reply);
       if (!state) return reply;
       const body = (req.body ?? {}) as { mapId?: unknown; name?: unknown };
-      if (typeof body.mapId !== 'string' || !body.mapId) return reply.code(400).send({ error: 'mapId: the Delve map to use' });
+      if (typeof body.mapId !== 'string' || !body.mapId) return reply.code(400).send({ error: 'mapId: the Quillwarren map to use' });
       const name = body.name === undefined ? undefined : cleanName(body.name, 80);
       if (name === null) return reply.code(400).send({ error: 'name: 1 to 80 characters' });
       try {
@@ -408,7 +408,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdent
         .send(found.bytes);
     });
 
-    // A Delve page's picture, for members of the game only (from the internet the map API needs an
+    // A Quillwarren page's picture, for members of the game only (from the internet the map API needs an
     // editor login). Players get what they have seen, on their own page; the GM may ask for the whole
     // map (view=gm: fog dimmed, room numbers, notes). Both in the page's exact frame.
     t.get('/api/v1/games/:id/pages/:pageId/background.png', async (req, reply) => {
@@ -418,7 +418,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdent
       if (!member) return reply.code(403).send({ error: 'only members of this game can see its pages' });
       const { pageId } = req.params as { pageId: string };
       const page = state.pages.find((p) => p.id === pageId);
-      if (!page || page.background.kind !== 'delve') return reply.code(404).send({ error: 'no Delve page with that id' });
+      if (!page || page.background.kind !== 'delve') return reply.code(404).send({ error: 'no Quillwarren page with that id' });
       const gm = member.role === 'gm';
       if (!gm && pageFor(state, member.id) !== page.id) return reply.code(403).send({ error: 'that page is not open to players' });
       const view = gm && (req.query as { view?: string }).view === 'gm' ? 'gm' : 'players';
@@ -427,7 +427,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdent
       try {
         ({ map, rev: mapRev } = deps.maps.get(page.background.mapId));
       } catch (e) {
-        if (e instanceof NotFoundError) return reply.code(404).send({ error: 'the Delve map behind this page is gone' });
+        if (e instanceof NotFoundError) return reply.code(404).send({ error: 'the Quillwarren map behind this page is gone' });
         throw e;
       }
       // dynamic vision: the table's doors; players get only what the party has explored, black elsewhere (vision-render.ts)
@@ -479,7 +479,7 @@ export function registerTable(app: FastifyInstance, deps: TableDeps): TableIdent
     t.get('/play/:id', async (req, reply) => {
       const { id } = req.params as { id: string };
       const state = GAME_ID.test(id) ? store.get(id) : undefined;
-      if (!state) return html(reply, 404, messagePage('No such game', ['This game does not exist (any more).'], [{ href: '/play', text: 'Delve Table' }]));
+      if (!state) return html(reply, 404, messagePage('No such game', ['This game does not exist (any more).'], [{ href: '/play', text: 'Quillwarren Table' }]));
       const me = memberOf(access, req, state);
       const account = accountOf(req);
       if (!me) {
